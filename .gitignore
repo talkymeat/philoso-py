@@ -37,7 +37,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-philoso_py/
+phil_venv/
 
 # Installer logs
 pip-log.txt
