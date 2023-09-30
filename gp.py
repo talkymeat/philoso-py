@@ -114,7 +114,7 @@ class GP(TypeLabelledTreebank):
         return list(best)
     
     def get_estimates(self, observatory: Observatory) -> pd.DataFrame:
-        
+        pass
 
     def score_trees(
                 self, trees_, target, best_tree=False, 
