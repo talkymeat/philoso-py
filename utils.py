@@ -43,6 +43,9 @@ def linear_interpolated_slice(ls, s, e):
         ]
     return slice
 
+def nice_list(li: list[str]):
+    return ', '.join(li[:-2] + [f'{"," if len(li) > 2 else ""} and '.join(li[-2:])])
+
 def main():
     import doctest
     doctest.testmod()

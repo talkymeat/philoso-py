@@ -1,16 +1,21 @@
 from treebanks import TypeLabelledTreebank
-from tree_factories import TreeFactory
 from gp_trees import GPTerminal, GPNonTerminal
 import pandas as pd
 import numpy as np
 from copy import copy
-from typing import Union, List
+from typing import Union, List, Callable, Mapping
 from random import choices, choice
+from observatories import *
+from tree_factories import *
 
+DEBUG = False
 
+def _print(*args, **kwargs):
+    if DEBUG:
+        print(*args, **kwargs)
 
 class GP(TypeLabelledTreebank):
-    DEBUG = False
+    
 
     def __init__(self,
             crossover_rate: float = 0.0,
@@ -18,7 +23,7 @@ class GP(TypeLabelledTreebank):
             mutation_sd: float = 0.0,
             temperature_coeff: float = 1.0,
             seed_pop_node_max: int = None,
-            seed_pop_tree_max = None,
+            seed_pop_tree_max: int = None,
             default_op = None,
             operators = None):
         super().__init__(default_op = default_op, operators = operators)
@@ -31,10 +36,11 @@ class GP(TypeLabelledTreebank):
         self.T = GPTerminal
         self.N = GPNonTerminal
 
-    def create_seed_polynomial(self, vars_, order=None, const_min=None, const_max=None):
+    def create_seed_polynomial(
+            self, vars_, order=None, const_min=None, const_max=None):
         pass
 
-    def k_best(self, k, trees, scores, mark_4_del=True):
+    def k_best(self, k, scoreboard, mark_4_del=True):
         """Selects the $k$ best trees in a collection based on a provided list
         of fitness scores. Optionally, marks the $|trees| - k$ non-best trees
         for deletion.
@@ -67,8 +73,9 @@ class GP(TypeLabelledTreebank):
         ...     gp.tree("([float]<SUM>([int]8)([int]9))")
         ... ]
         >>> s = [6.66, 10.1, 0.02, 4.2, 9.9]
+        >>> scoreboard = pd.DataFrame({'trees': t, 'fitness': s})
         >>> for k in range(6):
-        ...     best = gp.k_best(k, t, s)
+        ...     best = gp.k_best(k, scoreboard)
         ...     print(len(best))
         ...     print(sorted([tb().item() for tb in best]))
         ...     print([tt.metadata["to_delete"] for tt in t])
@@ -94,23 +101,25 @@ class GP(TypeLabelledTreebank):
         >>> s.append(12.34)
         >>> t.append(gp.tree("([float]<SUM>([int]12)([int]13))"))
         >>> s.append(-12.34)
-        >>> best = gp.k_best(1, t, s, mark_4_del=False)
+        >>> best = gp.k_best(1, scoreboard, mark_4_del=False)
         >>> print([tt.metadata.get("to_delete", None) for tt in t])
         [False, False, False, False, False, None, None]
         >>> print(best[0]().item())
-        21.0
+        5.0
         """
-        scoreboard = pd.DataFrame({
-            't': trees,
-            's': scores
-        })
-        best = scoreboard.nlargest(k, 's')['t']
+        best = scoreboard.nlargest(k, 'fitness')['trees']
         if mark_4_del:
-            scoreboard['t'].apply(lambda t: t.metadata.__setitem__('to_delete', True))
+            scoreboard['trees'].apply(lambda t: t.metadata.__setitem__('to_delete', True))
             best.apply(lambda t: t.metadata.__setitem__('to_delete', False))
         return list(best)
+    
+    def get_estimates(self, observatory: Observatory) -> pd.DataFrame:
+        
 
-    def score_trees(self, target, best_tree=False, rmses=False, best_rmse=False):
+    def score_trees(
+                self, trees_, target, best_tree=False, 
+                rmses=False, best_rmse=False
+            ):
         """
         This calculates a number of measures of the accuracy of the estimates of
         the trees in the treebank, including the negative of the Mean Squared
@@ -157,16 +166,16 @@ class GP(TypeLabelledTreebank):
         >>> gp = GP(operators = op, temperature_coeff=0.5)
         >>> df = pd.DataFrame({'x': [0., 2., 4., 6., 8.,]})
         >>> t = [
-        ...     gp.tree("([float]<PROD>([float]x)([int]1))", x=df['x']),
-        ...     gp.tree("([float]<PROD>([float]x)([int]3))", x=df['x']),
-        ...     gp.tree("([float]<PROD>([float]x)([int]5))", x=df['x']),
-        ...     gp.tree("([float]<PROD>([float]x)([int]7))", x=df['x']),
-        ...     gp.tree("([float]<PROD>([float]x)([int]9))", x=df['x']),
+        ...     gp.tree("([float]<PROD>([float]$x)([int]1))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([int]3))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([int]5))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([int]7))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([int]9))"),
         ...     gp.tree("([float]<PROD>([float]6.)([int]6))")
         ... ]
         >>> t0 = pd.Series([0., 0., 0., 0., 0.])
         >>> t1 = pd.Series([0., 10., 20., 30., 40.])
-        >>> res0, bes0 = gp.score_trees(t0, best_tree=True, rmses=True, best_rmse=True)
+        >>> res0, bes0 = gp.make_scoreboard(t, t0, best_tree=True, rmses=True, best_rmse=True)
         >>> res0['mses']
         0      24.0
         1     216.0
@@ -197,7 +206,7 @@ class GP(TypeLabelledTreebank):
         4.899
         >>> bes0['best_tree']
         '([float]<PROD>([float]x)([int]1))'
-        >>> res1, bes1 = gp.score_trees(t1, best_tree=True, rmses=True, best_rmse=True)
+        >>> res1, bes1 = gp.make_scoreboard(t, t1, best_tree=True, rmses=True, best_rmse=True)
         >>> res1['mses']
         0    384.0
         1     96.0
@@ -232,44 +241,57 @@ class GP(TypeLabelledTreebank):
         # Using a dataframe to store error measures and scores - C under the
         # hood and SIMD funtimes
         # Retrieve the current population
-        pop = pd.DataFrame({'trees': self.get_all_root_nodes()[float]})
+        scoreboard = pd.DataFrame({'trees': trees_})
         # if the variables are df columns of length > 1, estimates will also be
         # a df column--so using df.apply to generate a column in which each cell
         # contains a df of shape (len(target), 1) doesn't work: pandas assumes
         # you're doing something weird with multiple columns and
         # exception-shames you for it. So, instead make an empty columns and
         # fill it using a for loop
-        results = pd.DataFrame({'estimates': [None]*pop.shape[0]})
-        for i, t in enumerate(pop['trees']):
+        results = pd.DataFrame({'estimates': [None]*len(trees_)})
+        for i, t in enumerate(scoreboard['trees']):
             results['estimates'][i] = t()
         # Calculate MSE: this takes slightly different code for the case where
-        # there is no variable anywher in the tree, so the output is a df
+        # there is no variable anywhere in the tree, so the output is a df
         # containing a single number: if I subtract the target from a 1x1 df,
         # the result will be a df with on numerical value and a load of nulls:
         # if I subtract the target from a raw number `x`, the result will be a
         # df containing `x-target[i]` for all values of `i`
-        results["mses"] = results['estimates'].apply(
+        scoreboard["mses"] = results['estimates'].apply(
             lambda estimate:
                 np.square(estimate - target).mean() # MSE
                 if len(estimate) > 1               # In case a tree has no vars,
                 else np.square(estimate[0] - target).mean() #  in which case the
         )                                          # output will be one number
         # use the temp over temp+MSE as fitness.
-        temp = results['mses'].mean() * self.temperature_coeff
-        results["fitness"] = temp/(results["mses"]+temp) # return value
+        temp = scoreboard['mses'].mean() * self.temperature_coeff
+        scoreboard["fitness"] = temp/(scoreboard["mses"]+temp) # return value
         best = {} # ... so will `best`
-        best["best_mse"] = min(results["mses"]) # ... with the best MSE (lowest)
+        best["best_mse"] = min(scoreboard["mses"]) # ... with the best MSE (lowest)
         if rmses: # optional return values: Root Mean Squard Error
-            results['rmses'] = [mse**.5 for mse in results["mses"]]
+            scoreboard['rmses'] = [mse**.5 for mse in scoreboard["mses"]]
         # Find the best tree
-        best_tr = self.k_best(1, pop['trees'], results["fitness"], mark_4_del=False)
+        best_tr = self.k_best(1, scoreboard, mark_4_del=False)
         if best_tree: # optionally, include the string representation of the
             best["best_tree"] = str(best_tr[0]) # best tree in best
         if best_rmse: # and, optionally, the best RMSE
             best["best_rmse"] = best["best_mse"]**.5
-        return results, best
-
-    def gp_update(self, pop=None, scores=None, elitism=0, **kwargs):
+        return scoreboard, best
+    
+    # XXX score_trees has been chenged - new name & new sig XXX
+    def gp_update(
+                self, 
+                observatory: Observatory,
+                pop=None, 
+                fitness: Callable[
+                    [list[GPNonTerminal], pd.DataFrame, dict], tuple[pd.DataFrame, dict]
+                ]=lambda trees, target, param_dict: GP.score_trees(trees, target, **param_dict),  
+                elitism=0, 
+                best_tree: bool=True, 
+                rmses: bool=True,
+                best_rmse: bool=True,
+                **kwargs
+            ):
         """Once fitness scores are calculated, this generates the next
         generation of trees. If `elitism` > 0, the value of the `elitism` param
         gives the number of trees that will be spared without chance of mutation
@@ -310,107 +332,95 @@ class GP(TypeLabelledTreebank):
         old_gen = self.get_all_root_nodes()[float]
         if pop is None:
             pop = len(old_gen)
-        self.k_best(elitism, old_gen, scores)
+        scoreboard, best = fitness(
+            old_gen, 
+            observatory, 
+            **kwargs
+        )
+        self.k_best(elitism, scoreboard['trees'], scoreboard['fitness'])
         new_gen = [
-            t.copy(gp_copy=True) for t in choices(old_gen, scores, k=pop-elitism)
+            t.copy(gp_copy=True) for t in choices(old_gen, scoreboard['fitness'], k=pop-elitism)
         ]
         for t in filter(lambda t: t.metadata['to_delete'] == True, old_gen):
             t.delete()
+        return scoreboard, best
+        
 
     def generate_starting_sample(self, pop, genfunc=None, vars_=None, **kwargs):
         self.clear()
         for i in range(pop):
-            genfunc(vars_, **kwargs)
+            genfunc(*vars_, **kwargs)
 
-    def gp_step(self, target, pop, scores=[], vars_=None, elitism=0,
-                fitness=lambda s: s['fitness'], best_tree=False, rmses=False,
-                best_rmse=False,
-                tree_factories: Union[TreeFactory, List[TreeFactory]] = None,
-                tree_factory_weights: List[Union[int, float]] = None):
-        """...
+    # The type hint for fitness ... maybe replace with pydantic?
+    # def gp_step(self, target, pop, vars_=None, elitism=0,
+    #         fitness: Callable[
+    #             [list[GPNonTerminal]], tuple[pd.DataFrame, dict]
+    #         ]=self.score_trees, 
+    #         best_tree=False, rmses=False, best_rmse=False,
+    #         tree_factories: Union[TreeFactory, List[TreeFactory]]=None,
+    #         tree_factory_weights: List[Union[int, float]] = None):
+    #     """...
 
-        >>> import operators as op
-        >>> from tree_factories import TestTreeFactory
-        >>> import math
-        >>> GP.DEBUG = True
-        >>> ops = [op.SQ, op.CUBE]
-        >>> gp = GP(crossover_rate=0.5, temperature_coeff=0.5, operators=ops)
-        >>> gpx = GP(operators=ops)
-        >>> tf0 = TestTreeFactory(gp, gpx.tree("([float]<SQ>([float]3.0))"))
-        >>> tf1 = TestTreeFactory(gp, gpx.tree("([float]<CUBE>([float]2.0))"))
-        >>> res = gp.gp_step(pd.DataFrame({'targ': [4.0]}), pop=20000, tree_factories=[tf0, tf1])
-        generate initial sample, multiple factories
-        >>> gp.get_all_root_nodes().keys()
-        >>> pop = pd.DataFrame({'trees': gp.get_all_root_nodes()[float]})
-        >>> pop['ests'] = pop['trees'].apply(lambda t: t())
-        >>> pop['ests'].value_counts()
-        >>> res = gp.gp_step(pd.DataFrame({'targ': [4.0]}), pop=20000, tree_factories=[tf0, tf1], elitism=20000, scores=pd.DataFrame({'fitness': [0.0]*20000}))
-        evolution step
-        >>> pop = pd.DataFrame({'trees': gp.get_all_root_nodes()[float]})
-        >>> pop['ests'] = pop['trees'].apply(lambda t: t())
-        >>> pop['ests'].value_counts()
-        """
-        if scores is not None:
-            if GP.DEBUG:
-                print('evolution step')
-            self.gp_update(pop, fitness(scores), elitism=elitism)
-        elif tree_factory_weights:
-            if GP.DEBUG:
-                print('generate initial sample, multiple factories, with weights')
-            self.generate_starting_sample(pop,
-                genfunc=lambda vs: choices(
-                    tree_factories, tree_factory_weights
-                )[0](vs),
-                vars_=vars_
-            )
-        elif tree_factories:
-            if isinstance(tree_factories, list):
-                if len(tree_factories) > 1:
-                    if GP.DEBUG:
-                        print('generate initial sample, multiple factories')
-                    self.generate_starting_sample(pop,
-                            genfunc=lambda vs: choice(tree_factories)(vs),
-                            vars_=vars_)
-                else:
-                    if GP.DEBUG:
-                        print('generate initial sample, singleton list of factories')
-                    self.generate_starting_sample(
-                            pop, genfunc=tree_factories[0], vars_=vars_)
-            else:
-                if GP.DEBUG:
-                    print('generate initial sample')
-                self.generate_starting_sample(
-                        pop, genfunc=tree_factories, vars_=vars_)
-        else:
-            raise AttributeError("if GP.gp_step() isn't given a non-empty " +
-                "scores attribute, it must be given one or more TreeFactories")
-        return self.score_trees(
-            target, best_tree=best_tree, rmses=rmses, best_rmse=best_rmse
-        )
+    #     >>> import operators as op
+    #     >>> from tree_factories import TestTreeFactory
+    #     >>> import math
+    #     >>> GP.DEBUG = True
+    #     >>> ops = [op.SQ, op.CUBE]
+    #     >>> gp = GP(crossover_rate=0.5, temperature_coeff=0.5, operators=ops)
+    #     >>> gpx = GP(operators=ops)
+    #     >>> tf0 = TestTreeFactory(gp, gpx.tree("([float]<SQ>([float]3.0))"))
+    #     >>> tf1 = TestTreeFactory(gp, gpx.tree("([float]<CUBE>([float]2.0))"))
+    #     >>> res = gp.gp_step(pd.DataFrame({'targ': [4.0]}), pop=20000, tree_factories=[tf0, tf1])
+    #     generate initial sample, multiple factories
+    #     >>> gp.get_all_root_nodes().keys()
+    #     >>> pop = pd.DataFrame({'trees': gp.get_all_root_nodes()[float]})
+    #     >>> pop['ests'] = pop['trees'].apply(lambda t: t())
+    #     >>> pop['ests'].value_counts()
+    #     >>> res = gp.gp_step(pd.DataFrame({'targ': [4.0]}), pop=20000, tree_factories=[tf0, tf1], elitism=20000, scores=pd.DataFrame({'fitness': [0.0]*20000}))
+    #     evolution step
+    #     >>> pop = pd.DataFrame({'trees': gp.get_all_root_nodes()[float]})
+    #     >>> pop['ests'] = pop['trees'].apply(lambda t: t())
+    #     >>> pop['ests'].value_counts()
+    #     """
+        # if scores is not None:
+        #     _print('evolution step')
+        #     self.gp_update(pop, fitness(scores), elitism=elitism)
+        # else:
+        #     raise AttributeError("if GP.gp_step() isn't given a non-empty " +
+        #         "scores attribute, it must be given one or more TreeFactories")
+        # return self.score_trees(
+        #     target, best_tree=best_tree, rmses=rmses, best_rmse=best_rmse
+        # )
 
     def run_gp(
             self,
-            vars_: pd.DataFrame,
-            target: pd.Series,
+            # vars_: pd.DataFrame,
+            # target: pd.Series,
+            tree_factory: TreeFactory,
+            observatory: Observatory,
             steps: int,
-            pop:int,
+            pop: int, 
+            fitness: Callable[
+                [list[GPNonTerminal], Observatory, dict], tuple[pd.DataFrame, dict]
+            ]=lambda trees, target, param_dict: GP.score_trees(trees, target, **param_dict), 
             elitism: int = 0,
             best_tree: bool = False,
             rmses: bool = False,
-            best_rmse: bool = False,
-            tree_factories: Union[TreeFactory, List[TreeFactory]] = None,
-            tree_factory_weights: Union[
-                List[Union[int, float]],
-                None
-            ] = None):
+            best_rmse: bool = False):
         scores = {}
         record = {}
+        # First generate the initial population that will be evolved
+        tree_factory.set_treebank(self)
+        self.generate_starting_sample(pop, tree_factory, *observatory.ivs)
         for i in range(steps):
-            scores, best = self.gp_step(target, pop, scores, vars_=vars_,
-                                  best_tree=best_tree, rmses=rmses,
-                                  elitism=elitism, best_rmse=best_rmse,
-                                  tree_factories=tree_factories,
-                                  tree_factory_weights=tree_factory_weights)
+            scores, best = self.gp_update(
+                observatory, 
+                pop=pop,
+                fitness=fitness,
+                elitism=elitism,
+                best_tree=best_tree, 
+                rmses=rmses, 
+                best_rmse=best_rmse)
             # TODO make functions for the following... (or even a class?)
             for k, v in scores.items():
                 if not k in record:
@@ -421,22 +431,6 @@ class GP(TypeLabelledTreebank):
                     record[k].append(v)
         record['best'] = best[0]
         return record
-    
-    def is_debugging(self):
-        """...
-        
-        >>> gp = GP()
-        >>> GP.DEBUG = False
-        >>> gp.is_debugging()
-        no
-        >>> GP.DEBUG = True
-        >>> gp.is_debugging()
-        yes
-        """
-        if GP.DEBUG:
-            print('yes')
-        else:
-            print('no')
 
 
 def main():

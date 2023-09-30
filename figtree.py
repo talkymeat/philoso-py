@@ -58,22 +58,28 @@ class FigTree:
             texfile.write(tex)
 
     def _make_svg(self):
-        subprocess.run([
-            "./tex2svg.sh",
-            f"{self.fname}.tex",
-            f"{self.fname}.svg"
-        ])
+        subprocess.run(
+            [
+                "./tex2svg.sh",
+                f"{self.fname}.tex",
+                f"{self.fname}.svg"
+            ],
+            shell=True
+        )
 
     def _make_png(self):
         #drawing = svg2rlg(f"{self.fname}.svg")
         #renderPM.drawToFile(drawing, f"{self.fname}.png", fmt='PNG')
         #svg2png(url=f"{self.fname}.svg", write_to=f"{self.fname}.png")
-        subprocess.run([
-            "cairosvg",
-            f"{self.fname}.svg",
-            "-o",
-            f"{self.fname}.png"
-        ])
+        subprocess.run(
+            [
+                "cairosvg",
+                f"{self.fname}.svg",
+                "-o",
+                f"{self.fname}.png"
+            ],
+            shell=True
+        )
 
     def _show_png(self):
         display(Image(f"{self.fname}.png"))

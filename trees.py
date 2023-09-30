@@ -158,7 +158,7 @@ class Tree(ABC):
         pass
 
     @abstractmethod
-    def __call__(self):
+    def __call__(self, **kwargs): ## XXX kwargs, update comments
         """All nodes are callable: Terminals return their leaf, always:
         NonTerminals call an Operator that belongs to the Label
         """
@@ -192,6 +192,14 @@ class Tree(ABC):
     def __repr__(self) -> str:
         """Returns a string such that tree == eval(tree.__repr__())"""
         return f'tree("{str(self)}")'
+    
+    @property
+    def is_valid(self):
+        """Some tree algorithms may have validity criteria for trees - 
+        this defaults to true, but can be implemented to do meaningful
+        checking when needed.
+        """
+        return True
 
 
 class NonTerminal(Tree):
@@ -1288,12 +1296,12 @@ class NonTerminal(Tree):
                 )
             )
 
-    def __call__(self):
+    def __call__(self, **kwargs): ## XXX document changes - added kwargs
         """Magic method that makes NonTerminals Callable: but really it's just
         calling label (Labels are also callable), which is just calling an
         Operator (also also callable).
         """
-        return self._operator(*[c() for c in self])
+        return self._operator(*[c(**kwargs) for c in self])
 
     def index_of(self, child: Tree, descendants=False, strict=True) -> Union[int, Tuple[int]]:
         """Takes a child node and returns its position in the `NonTerminal`'s
@@ -1761,8 +1769,13 @@ class Terminal(Tree):
         LaTeX += f"[{self.label.to_LaTeX()} {self.leaf} ] "
         return LaTeX.strip() if top else LaTeX
 
-    def __call__(self):
+    def __call__(self, **kwargs):
         """All nodes are callable, but on Terminals it just returns the leaf.
+
+        Parameters
+        ----------
+        **kwargs:
+            Not used, but included in signature for compatibility
 
         Returns
         -------
@@ -1899,7 +1912,7 @@ class Label:
         self.is_default = False
 
     @property
-    def class_id(self): ##-OK
+    def class_id(self, **kwargs): ##-OK
         """(str) The ID of the Label, and of the corresponding category of
         trees. Identical to class_id, but some subclasses may have non-string
         labels, such that the raw class_id and a nice version for printing might
@@ -1923,7 +1936,7 @@ class Label:
     @class_id.setter ##-OK
     def class_id(self, class_id): ##-OK
         """Setter for class_id. Checks that the name is a `str`, as this is the
-        only valid type for class_ids, and checks that the name is unique.
+        only valid type for labels, and checks that the name is unique.
 
         Parameters
         ----------
@@ -2149,10 +2162,10 @@ class Label:
         >>> x_tree = tbs.tree("(('list')(('of')(('all')(('the')(('fucks')('I')('give'))))))", tb)
         >>> hippo = tbs.tree("([NP]([Det]'a')([AdjP]([Adj]'giant')([N]'hippopotamus')))", tb)
         >>> sad = tbs.tree("([Adv]'alone')", tb)
-        >>> print(tb.class_ids['V'].roots)
+        >>> print(tb.labels['V'].roots)
         []
         >>> def print_roots(name):
-        ...     for root in tb.class_ids[name].roots:
+        ...     for root in tb.labels[name].roots:
         ...         print(root)
         ...
         >>> print_roots('S')
@@ -2191,8 +2204,9 @@ class TypeLabel(Label):
         """
         return self._class_id.__name__ ##-OK
 
+
     @class_id.setter ##-OK
-    def class_id(self, class_id): ##-OK
+    def class_id(self, class_id): ##-OK XXX test this
         """Setter for classname. Checks that the name is a `str` that evaluates
         to a `type`, or a `type`: if neither of those obtain, the type of the
         parameter is used instead. Also checks that the name is unique.
@@ -2207,15 +2221,19 @@ class TypeLabel(Label):
         TypeError:
             If `name` is not a `type`
         """
-        if isinstance(name, str):
+        if isinstance(class_id, str):
             try:
-                name = eval(name)
+                class_id = eval(class_id)
             except Exception:
                 raise AttributeError("Invalid label")
-        if isinstance(name, type): # Type check
-            name = type(name)
+        #### XXX just commented out the lines below - looks like they should break stuff 
+        #### XXX but will this brak other stuff? Why was this even working at all?
+        #### XXX also, it had `name` instead of `class_id` in the method body, but 
+        #### XXX 'class_id` as the param. WTF?
+        # if isinstance(class_id, type): # Type check
+        #     class_id = type(class_id)
         # OK, fine I guess.
-        self._class_id = name ##-OK
+        self._class_id = class_id ##-OK
 
     def __str__(self):
         """String representation of TypeLabel for use with __str__ methods in

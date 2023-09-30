@@ -2,11 +2,47 @@ from trees import Terminal, NonTerminal
 from mutators import MutatorFactory, CrossoverMutator
 import pandas as pd
 from copy import copy
+from treebanks import TypeLabelledTreebank
+from tree_errors import OperatorError
 
 class GPNonTerminal(NonTerminal):
+    """GPNonTerminals carry operators, and take valid return types of their operators
+    as Label values. They can be called with arguments that are passed down to the 
+    GPTerminals, which can be Constants or Variables. When the `kwargs`
+    `dict`/`DataFrame` is passed down the tree, if a Variable has a name corresponding 
+    to a key of `kwargs`, the corresponding value/`Series` will be passed back up the
+    tree and operated on
+
+    >>> from gp import GP
+    >>> import operators as ops
+    >>> op = [ops.SUM, ops.PROD, ops.SQ, ops.CUBE, ops.POW]
+    >>> gp = GP(operators=op)
+    >>> mewtwo = gp.tree("([float]<SUM>([float]<SQ>([int]$mu))([float]<SUM>([float]<PROD>([int]3)([int]$mu))([int]2)))")
+    >>> mewtwo(mu=-2)
+    0.0
+    >>> mewtwo(mu=-1)
+    0.0
+    >>> mewtwo(mu=-3)
+    2.0
+    """
     def __init__(self, treebank, label, *children, operator=None, metadata=None):
         super().__init__(treebank, label, *children, operator=operator, metadata=metadata)
         self.gp_operator = CrossoverMutator(treebank.crossover_rate)
+
+    @property
+    def is_valid(self):
+        if not issubclass(self.label.class_id, self._operator.return_type): ##-OK TL RAW
+            raise OperatorError(
+                f"{self} has a mismatch of label-type " +
+                f"({self.label.classname}) and operator " +  ##-OK TL NAME
+                f"return-type ({self._operator.return_type.__name__})"
+            )
+        if not self._operator._type_seq_legal(*[ch.label.class_id for ch in self]): ##-OK TL RAW
+            raise OperatorError(
+                f"the children of {self} are not a legal argument-sequence " +
+                f"for its operator {self._operator.name}"
+            )
+        return True
 
     def copy_out(self, treebank = None, gp_copy=False, **kwargs):
         """Generates a deep copy of a tree: the same structure, same Labels, and
@@ -34,7 +70,7 @@ class GPNonTerminal(NonTerminal):
         """
         # If `treebank` is None...
         if not treebank:
-            # create a dummy treebank, and then it won't be None
+            # create a dummy treebank, and then it won't be None. 
             treebank = TypeLabelledTreebank()
         #### ALSO this needs to be able to handle operators
         # Then create the copied NonTerminal, and recursively copy its children,
@@ -55,27 +91,31 @@ class GPNonTerminal(NonTerminal):
 class GPTerminal(Terminal):
     def __new__(cls, treebank, label, leaf, operator=None, metadata=None):
         if isinstance(leaf, str):
+            if leaf.startswith('$'):
+                return cls.__new__(
+                    Variable, treebank, label, leaf,
+                    operator=operator, metadata=metadata
+                )
             try:
-                leaf = eval(leaf)
+                leaf = eval(leaf) # the eval'd leaf doesn't get passed to Constant
             except Exception:
                 pass
-        if isinstance(leaf, pd.Series) and len(leaf) > 1:
-            return cls.__new__(
-                Variable, treebank, label, leaf,
-                operator=operator, metadata=metadata
-            )
-        else:
-            return cls.__new__(
-                Constant,
-                treebank,
-                label, leaf,
-                operator=operator,
-                metadata=metadata
-            )
+        return cls.__new__(
+            Constant,
+            treebank,
+            label, leaf,
+            operator=operator,
+            metadata=metadata
+        )
+
 
 class Variable(GPTerminal):
     def __new__(cls, treebank, label, leaf, operator=None, metadata=None):
         return Terminal.__new__(cls)
+    
+    def __init__(self, treebank, label, leaf, operator=None, metadata=None):
+        leaf = leaf.strip('$')
+        super().__init__(treebank, label, leaf, operator=None, metadata=None)
 
     def __str__(self):
         """Readable string representation of a Terminal. This consists of a pair
@@ -84,7 +124,7 @@ class Variable(GPTerminal):
 
         ([float]x).
         """
-        return f"({self.label if self.label else ''}{self.leaf.name})"
+        return f"({self.label if self.label else ''}${self.leaf})"
 
     def __eq__(self, other):
         """Magic method to operator-overload `==` and `!=`
@@ -93,8 +133,13 @@ class Variable(GPTerminal):
         -------
             bool: True if class, label and leaf are the same, else False.
         """
-        return self.__class__ == other.__class__ and (self.leaf == other.leaf).all() and self.label == other.label
+        return (self.__class__ == other.__class__) and (self.leaf == other.leaf) and (self.label == other.label)
 
+    def __call__(self, **kwargs):
+        """When a GP Tree is called, it is given kwargs corresponding to the 
+        variables of the expression"""
+        #if self.label
+        return kwargs[self.leaf]
 
     def to_LaTeX(self, top = True):
         """Converts trees to LaTeX expressions using the `qtree` package.
@@ -118,8 +163,12 @@ class Variable(GPTerminal):
         # prepends \Tree if needed
         LaTeX = r"\Tree " if not (hasattr(self, 'parent') and self.parent) or top else ""
         # LaTeX of the Label is . followed by the label name
-        LaTeX += f"[{self.label.to_LaTeX()} {self.leaf.name} ] "
+        LaTeX += f"[{self.label.to_LaTeX()} {self.leaf} ] "
         return LaTeX.strip() if top else LaTeX
+    
+    @property
+    def is_valid(self):
+        return True
 
 class Constant(GPTerminal):
     """A Terminal in which the leaf is always a pd.Series of length 1, with a
@@ -237,3 +286,25 @@ class Constant(GPTerminal):
             copy(self.leaf).apply(self.gp_operator) if gp_copy else copy(self.leaf),
             operator = self._operator
         )
+
+    @property
+    def is_valid(self):
+        if isinstance(self[0], self.label.class_id): ##-OK TL RAW
+            return True
+        elif issubclass(self.treebank.tn.type_ify(self[0]), self.label.class_id):
+            return True
+            #return term[0].apply(lambda _: type(_) == term.label.class_id).all() ##-OK TL RAW
+        else:
+            raise OperatorError(
+                f"{self} has a mismatch of label-type " +
+                f"({self.label.classname}) and leaf-type " + ##-OK TL NAME
+                f"({type(self[0]).__name__})"
+            )
+
+
+def main():
+    import doctest
+    doctest.testmod()
+
+if __name__ == '__main__':
+    main()

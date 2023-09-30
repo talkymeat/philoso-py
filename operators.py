@@ -151,15 +151,35 @@ class Operator:
     def __str__(self):
         return f"<{self.name}>" if self.name else ""
 
-    def _arg_lengths(self, *args):
+    # def _arg_lengths(self, *args):
+    #     leng = 1
+    #     for arg in args:
+    #         if not len(arg) in [1, leng]:
+    #             if leng == 1:
+    #                 leng = len(arg)
+    #             else:
+    #                 raise ValueError("Argument lengths do not match")
+    #     return [pd.Series([arg[0]]*leng) if len(arg) == 1 else arg for arg in args]
+
+    def _preprocess(self, *args):
         leng = 1
-        for arg in args:
-            if not len(arg) in [1, leng]:
-                if leng == 1:
+        indicators = [-1]*len(args)
+        no_series = True
+        for i, arg in enumerate(args):
+            if isinstance(arg, pd.Series):
+                no_series = False
+                indicators[i] = len(arg)
+                if len(arg) in [1, leng]:
+                    pass
+                elif leng == 1:
                     leng = len(arg)
                 else:
                     raise ValueError("Argument lengths do not match")
-        return [pd.Series([arg[0]]*leng) if len(arg) == 1 else arg for arg in args]
+        if no_series:
+            return args, False
+        if self.apply:
+            return [pd.Series([arg[0]]*leng) if (ind == 1) else pd.Series([arg]*leng) if (ind==-1) else arg for ind, arg in zip(indicators, args)], True
+        return [arg[0] if ind == 1 else arg for ind, arg in zip(indicators, args)], False
 
     def __call__(self, *args):
         """A magic method which makes `Operator`s Callable. Checks that the
@@ -248,29 +268,34 @@ class Operator:
         # checks on whether or not args is empty: these appear first because in
         # both cases, we want to prevent `reduce` from being called on an
         # empty list, which throws an exception
-        all_pd = args and reduce(lambda p, q: p and q, [type(arg) == pd.Series for arg in args])
-        no_pd = not args or reduce(lambda p, q: p and q, [type(arg) != pd.Series for arg in args])
-        # if the arguments are mixed, this is a problem, as setting up the rest
-        # of the function to handle this (probably infrequent) case would
-        # greatly increase complexity - so this raises an AttributeError instead
-        if not all_pd and not no_pd:
-            raise AttributeError(
-                f"operators.{self.name} was called with a mixture of" +
-                " arguments, some pandas.Series, others not. Handling this " +
-                "case is a huge pain and it's not worth adding so much " +
-                "complexity to the code. Wrap your non-Series args in Series " +
-                "wrappers, `pd.Series([arg], dtype=something_suitable)`"
-            )
+        # XXX XXX XXX Studff that maybe isn't neded any more
+        # no_pd = not args or reduce(lambda p, q: p and q, [(not isinstance(arg, pd.Series)) for arg in args])
+        # if self.apply:                                 # XXX only chucking out mixed args if apply is needed - this is new, test this
+        #     all_pd = args and reduce(lambda p, q: p and q, [isinstance(arg, pd.Series) for arg in args])
+        #     # if the arguments are mixed, this is a problem, as setting up the rest
+        #     # of the function to handle this (probably infrequent) case would
+        #     # greatly increase complexity - so this raises an AttributeError instead
+        #     if not all_pd and not no_pd:
+        #         print('\n'.join([str(arg) for arg in args]))
+        #         raise AttributeError(
+        #             f"operators.{self.name} was called with a mixture of" +
+        #             " arguments, some pandas.Series, others not. Handling this " +
+        #             "case is a huge pain and it's not worth adding so much " +
+        #             "complexity to the code. Wrap your non-Series args in Series " +
+        #             "wrappers, `pd.Series([arg], dtype=something_suitable)`"
+        #         )
         # Now check that the arguments are legal ...
         if self._arg_seq_legal(*args):
             # ... if so, call the function ...
-            output = pd.concat(
-                    self._arg_lengths(*args), axis=1
-                ).apply(
-                    lambda row: self.func(*tuple(row)), axis = 1
-                ) if self.apply and not no_pd else self.func(
-                    *(args if no_pd else self._arg_lengths(*args))
-                )
+            args, applicable = self._preprocess(*args)
+            if applicable:
+                output = pd.concat(args, axis=1).apply(
+                        lambda row: self.func(*tuple(row)), axis = 1
+                    ) 
+            else: 
+                output = self.func(*args)
+            if isinstance(output, pd.Series):
+                output.name = f"{self.name}({','.join([arg.name if hasattr(arg, 'name') and arg.name else str(arg[0]) if isinstance(arg, pd.Series) else str(arg) for arg in args])})"
             # ... and return the result if it's also legal.
             if self.return_type is Any or issubclass(Operator.tn.type_ify(output), self.return_type):
                 return output
@@ -729,7 +754,7 @@ class OperatorFactory:
         operator_dictionary = {}
         for name in names:
             try:
-                operator_dictionary[name] = op_dic[name]
+                operator_dictionary[name] = self.op_dic[name]
             except KeyError:
                 raise AttributeError(f"OperatorFactory lacks Operator {name}")
         return operator_dictionary
@@ -782,7 +807,7 @@ def main():
     1      (two, something's, got, to, give)
     2    (three, something's, got, to, give)
     3     (four, something's, got, to, give)
-    dtype: object
+    Name: ID(s1,something's,got,to,give), dtype: object
     >>> CONCAT('pet', 'that', 'cat')
     'pet that cat'
     >>> CONCAT(df["s1"], df1["w1"], df1["w2"], df1["w3"], df1["w4"])
@@ -790,11 +815,13 @@ def main():
     1      two something's got to give
     2    three something's got to give
     3     four something's got to give
-    dtype: string
+    Name: CONCAT(s1,something's,got,to,give), dtype: string
     >>> CONCAT(df["s1"], "something's", "got", "to", "give")
-    Traceback (most recent call last):
-        ....
-    AttributeError: operators.CONCAT was called with a mixture of arguments, some pandas.Series, others not. Handling this case is a huge pain and it's not worth adding so much complexity to the code. Wrap your non-Series args in Series wrappers, `pd.Series([arg], dtype=something_suitable)`
+    0      one something's got to give
+    1      two something's got to give
+    2    three something's got to give
+    3     four something's got to give
+    Name: CONCAT(s1,something's,got,to,give), dtype: string
     >>> SUM(4, 5)
     9.0
     >>> SUM(df["i1"], df['i2'])
@@ -802,13 +829,13 @@ def main():
     1     71.0
     2    423.0
     3    670.0
-    dtype: float64
+    Name: SUM(i1,i2), dtype: float64
     >>> SUM(df['i2'], df['f2'], df1['i2'], df1['f2'])
     0     458.142
     1     484.718
     2     834.414
     3    1080.618
-    dtype: float64
+    Name: SUM(i2,f2,404,9.0), dtype: float64
     >>> PROD(1, 2, 3, 4)
     24.0
     >>> PROD(df['i1'], df['f1'])
@@ -816,13 +843,13 @@ def main():
     1     4.0
     2     9.0
     3    16.0
-    dtype: float64
+    Name: PROD(i1,f1), dtype: float64
     >>> PROD(df['i1'], df['i1'], df1['f2'])
     0      9.0
     1     36.0
     2     81.0
     3    144.0
-    dtype: float64
+    Name: PROD(i1,i1,9.0), dtype: float64
     >>> SQ(12)
     144.0
     >>> SQ(df['i1'])
@@ -830,13 +857,13 @@ def main():
     1     4.0
     2     9.0
     3    16.0
-    Name: i1, dtype: float64
+    Name: SQ(i1), dtype: float64
     >>> SQ(df['f1'])
     0     1.0
     1     4.0
     2     9.0
     3    16.0
-    Name: f1, dtype: float64
+    Name: SQ(f1), dtype: float64
     >>> CUBE(3)
     27.0
     >>> CUBE(df['i1'])
@@ -844,13 +871,13 @@ def main():
     1     8.0
     2    27.0
     3    64.0
-    Name: i1, dtype: float64
+    Name: CUBE(i1), dtype: float64
     >>> CUBE(df['f1'])
     0     1.0
     1     8.0
     2    27.0
     3    64.0
-    Name: f1, dtype: float64
+    Name: CUBE(f1), dtype: float64
     >>> POW(2, 8)
     256.0
     >>> POW(df['i1'], df['i1'])
@@ -858,37 +885,37 @@ def main():
     1      4.0
     2     27.0
     3    256.0
-    Name: i1, dtype: float64
+    Name: POW(i1,i1), dtype: float64
     >>> POW(df['i1'], df['f1'])
     0      1.0
     1      4.0
     2     27.0
     3    256.0
-    dtype: float64
+    Name: POW(i1,f1), dtype: float64
     >>> POW(df['f1'], df['i1'])
     0      1.0
     1      4.0
     2     27.0
     3    256.0
-    dtype: float64
+    Name: POW(f1,i1), dtype: float64
     >>> POW(df['f1'], df['f1'])
     0      1.0
     1      4.0
     2     27.0
     3    256.0
-    Name: f1, dtype: float64
+    Name: POW(f1,f1), dtype: float64
     >>> POW(df1['i1'], df['f1'])
     0      5.0
     1     25.0
     2    125.0
     3    625.0
-    dtype: float64
+    Name: POW(5,f1), dtype: float64
     >>> POW(df['f1'], df1['f2'])
     0         1.0
     1       512.0
     2     19683.0
     3    262144.0
-    dtype: float64
+    Name: POW(f1,9.0), dtype: float64
     >>> EQ(1, 2)
     False
     >>> EQ(1, 1.0)
@@ -898,19 +925,19 @@ def main():
     1    True
     2    True
     3    True
-    dtype: bool
+    Name: EQ(i1,f1), dtype: bool
     >>> EQ(df["i3"], df["f1"])
     0    False
     1     True
     2    False
     3     True
-    dtype: bool
+    Name: EQ(i3,f1), dtype: bool
     >>> EQ(df["i1"], df1["f3"])
     0    False
     1    False
     2     True
     3    False
-    dtype: bool
+    Name: EQ(i1,3.0), dtype: bool
     >>> NEQ(1, 2)
     True
     >>> NEQ(1, 1.0)
@@ -920,67 +947,67 @@ def main():
     1    False
     2    False
     3    False
-    dtype: bool
+    Name: NEQ(i1,f1), dtype: bool
     >>> NEQ(df["i3"], df["f1"])
     0     True
     1    False
     2     True
     3    False
-    dtype: bool
+    Name: NEQ(i3,f1), dtype: bool
     >>> NEQ(df["i1"], df1["f3"])
     0     True
     1     True
     2    False
     3     True
-    dtype: bool
+    Name: NEQ(i1,3.0), dtype: bool
     >>> GT(df['i1'], df1['f3'])
     0    False
     1    False
     2    False
     3     True
-    dtype: bool
+    Name: GT(i1,3.0), dtype: bool
     >>> EGT(df['i1'], df1['f3'])
     0    False
     1    False
     2     True
     3     True
-    dtype: bool
+    Name: EGT(i1,3.0), dtype: bool
     >>> LT(df['i1'], df1['f3'])
     0     True
     1     True
     2    False
     3    False
-    dtype: bool
+    Name: LT(i1,3.0), dtype: bool
     >>> ELT(df['i1'], df1['f3'])
     0     True
     1     True
     2     True
     3    False
-    dtype: bool
+    Name: ELT(i1,3.0), dtype: bool
     >>> NOT(df['b1'])
     0     True
     1     True
     2    False
     3    False
-    dtype: bool
+    Name: NOT(b1), dtype: bool
     >>> OR(df['b2'], df['b1'])
     0     True
     1    False
     2     True
     3     True
-    dtype: bool
+    Name: OR(b2,b1), dtype: bool
     >>> AND(df['b2'], df['b1'])
     0    False
     1    False
     2     True
     3    False
-    dtype: bool
+    Name: AND(b2,b1), dtype: bool
     >>> EQ(df['i3'], TERN(df['b2'], df['i2'], df['i1']))
     0    True
     1    True
     2    True
     3    True
-    dtype: bool
+    Name: EQ(i3,TERN(b2,i2,i1)), dtype: bool
     """
     import doctest
     doctest.testmod()
