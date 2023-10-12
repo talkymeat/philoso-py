@@ -1,5 +1,6 @@
 from treebanks import TypeLabelledTreebank
 from gp_trees import GPTerminal, GPNonTerminal
+from gp_fitness import FitnessFunction, imse_fitness
 import pandas as pd
 import numpy as np
 from copy import copy
@@ -77,7 +78,7 @@ class GP(TypeLabelledTreebank):
         >>> for k in range(6):
         ...     best = gp.k_best(k, scoreboard)
         ...     print(len(best))
-        ...     print(sorted([tb().item() for tb in best]))
+        ...     print(sorted([tree() for tree in best])) # XXX this was tree().item() - what's changed
         ...     print([tt.metadata["to_delete"] for tt in t])
         0
         []
@@ -104,7 +105,7 @@ class GP(TypeLabelledTreebank):
         >>> best = gp.k_best(1, scoreboard, mark_4_del=False)
         >>> print([tt.metadata.get("to_delete", None) for tt in t])
         [False, False, False, False, False, None, None]
-        >>> print(best[0]().item())
+        >>> print(best[0]()) # .item() no longer needed here
         5.0
         """
         best = scoreboard.nlargest(k, 'fitness')['trees']
@@ -278,14 +279,12 @@ class GP(TypeLabelledTreebank):
             best["best_rmse"] = best["best_mse"]**.5
         return scoreboard, best
     
-    # XXX score_trees has been chenged - new name & new sig XXX
+    # XXX score_trees has been changed - new name & new sig XXX
     def gp_update(
                 self, 
                 observatory: Observatory,
                 pop=None, 
-                fitness: Callable[
-                    [list[GPNonTerminal], pd.DataFrame, dict], tuple[pd.DataFrame, dict]
-                ]=lambda trees, target, param_dict: GP.score_trees(trees, target, **param_dict),  
+                fitness: FitnessFunction=imse_fitness,  
                 elitism=0, 
                 best_tree: bool=True, 
                 rmses: bool=True,
@@ -301,7 +300,7 @@ class GP(TypeLabelledTreebank):
 
         >>> #Note that the doctest for this method has been placed in a function
         >>> #and SKIPped. The SKIP tag should be removed if the method is
-        >>> #changed and neds to be re-tested
+        >>> #changed and needs to be re-tested
         >>> def test():
         ...     import operators as ops
         ...     op = [ops.PROD]

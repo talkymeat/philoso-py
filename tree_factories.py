@@ -1,14 +1,15 @@
-from typing import Protocol, Type, Union, Iterable
+from typing import Protocol, Type, Union, Iterable, Mapping
 import operators as ops
 from trees import Terminal, NonTerminal, Tree
 from gp_trees import GPTerminal, GPNonTerminal
 import pandas as pd
 from itertools import chain, combinations
+from scipy.special import comb
 from random import uniform, choices
 from functools import reduce
 from dataclasses import dataclass
-from type_ify import TypeNativiser
-from observatories import GenFunc
+# from type_ify import TypeNativiser
+# from observatories import GenFunc
 from treebanks import Treebank
 
 class TreeFactory(Protocol):
@@ -32,7 +33,7 @@ class TestTreeFactory:
     
 class CompositeTreeFactory:
     def __init__(self, 
-            treebank: Treebank=None, 
+            treebank: Treebank, 
             tree_factories: list[TreeFactory], 
             weights: Iterable[float|int], 
             *args, **kwargs):
@@ -59,9 +60,10 @@ class RandomPolynomialFactory:
     order (`order`) and set of variables (`vars`), with random coefficients uniformly 
     distributed in a specified range (`const_min` to `const_max`)
     """
+
     def __init__(
             self,
-            treebank: Treebank = Non,
+            treebank: Treebank = None,
             order: int = None,
             const_min: float = None,
             const_max: float = None):
@@ -76,11 +78,13 @@ class RandomPolynomialFactory:
             "CUBE": ops.CUBE,
             "POW": ops.POW
         }
-        self.treebank.operators = self.operators
+        if treebank:
+            self.treebank.operators = self.operators
+        
         self.order = order
         
 
-    def _poly_terms(self, vars_, order) -> tuple[tuple[str|int]]:
+    def _poly_terms(self, vars_: Iterable[str], order: int) -> tuple[tuple[str|int]]:
         """Generates a tuple of tuples, in which each tuple represents a term of 
         the polynomial. Each tuple representing a term is itself comprised of 
         two tuples, the first listing the variables of the term, and the second
@@ -199,7 +203,7 @@ class RandomPolynomialFactory:
     def _binarise_tree(self, 
             op_name: str, 
             tree_list: Iterable[Tree], 
-            start: Tree=None, 
+            initial: Tree=None, 
             nt: NonTerminal=None
         ) -> Tree:
         """Takes a list of trees and combines them by repeatedly applying an 
@@ -210,7 +214,7 @@ class RandomPolynomialFactory:
         ==========  
             op_name (str): Name of operator
             tree_list (list[Tree]): List of trees to be combined
-            start (Tree or None): An aditional tree may be included to be 
+            initial (Tree or None): An aditional tree may be included to be 
                 operated with the first tree in the list
 
         Returns
@@ -226,26 +230,42 @@ class RandomPolynomialFactory:
         ...     ops.SUM, ops.PROD, ops.SQ, ops.CUBE, ops.POW
         ... ])
         >>> rpf = RandomPolynomialFactory(tlt, 3, -10.0, 10.0)
-        >>> start = tlt.tree('([float]0.0)')
+        >>> initial = tlt.tree('([float]0.0)')
         >>> tl = [tlt.tree('([float]1.0)'), tlt.tree('([float]2.0)'), tlt.tree('([float]3.0)'), tlt.tree('([float]4.0)')]
         >>> t0 = rpf._binarise_tree('SUM', tl)
         >>> t0
         tree("([float]<SUM>([float]<SUM>([float]<SUM>([float]1.0)([float]2.0))([float]3.0))([float]4.0))")
-        >>> t1 = rpf._binarise_tree('SUM', tl, start)
+        >>> t1 = rpf._binarise_tree('SUM', tl, initial)
         >>> t1
         tree("([float]<SUM>([float]<SUM>([float]<SUM>([float]<SUM>([float]0.0)([float]1.0))([float]2.0))([float]3.0))([float]4.0))")
         >>> t2 = rpf._binarise_tree('PROD', tl)
         >>> t2
         tree("([float]<PROD>([float]<PROD>([float]<PROD>([float]1.0)([float]2.0))([float]3.0))([float]4.0))")
-        >>> t3 = rpf._binarise_tree('PROD', tl, start)
+        >>> t3 = rpf._binarise_tree('PROD', tl, initial)
         >>> t3
         tree("([float]<PROD>([float]<PROD>([float]<PROD>([float]<PROD>([float]0.0)([float]1.0))([float]2.0))([float]3.0))([float]4.0))")
         """
-###==#----#====#----##===#----#====#----###==#----#====#----##===#----#====#---+
-        # if start:
+        # First, make sure we have a node-type `N` for NonTerminals
         N = nt if nt else self.N
+        # If the provided operator is in the `tree_factory`'s operator set, we
+        # can proceed 
         if op_name in self.operators:
-            args = [start] if start else []
+            # We use `functools.reduce` to turn the list of subtrees into a 
+            # single binary tree. This takes a function arg (itself having 2 
+            # args, in this case all of type `Tree`, return type also `Tree`) to
+            # pairwise combine all the elements of a list (here, a list of 
+            # `Trees`). The function we use takes two `Trees` and combines them
+            # under a new parent with the provided operator; the resulting 
+            # subtree is then combined with the next `Tree` in the list in the
+            # same way, and so on. `functools.reduce` has an optional arg,
+            # `initial`, which if passed is combined by the pairwise function
+            # with the first list element, which is then pased along with the
+            # second element to the pairwise function, and so on---if `initial`
+            # is not passed, reduce starts with the first two list items instead. 
+            # Since we want 'initial' also to be optional for `_binarise_tree`, 
+            # we place it in a list if passed, to be unrolled as *args in
+            # `reduce`, or use an empty list as *args otherwise  
+            args = [initial] if initial else []
             return reduce(
                 lambda t1, t2: N(
                     self.treebank, 
@@ -259,40 +279,108 @@ class RandomPolynomialFactory:
             )
         else:
             raise ValueError('op_name must be in the tree factory\'s operators dict')
-        # else:
-        #     return reduce(
-        #         lambda t1, t2: N(
-        #             self.treebank, 
-        #             float, 
-        #             t1, 
-        #             t2, 
-        #             operator=self.operators[op_name]
-        #         ), 
-        #         tree_list
-        #     )
 
     def set_treebank(self, treebank: Treebank):
         self.treebank = treebank
         self.T = treebank.T
         self.N = treebank.N
 
-    def __call__(self, *vars: Iterable[str], treebank: Treebank=None) -> Tree:
+    def __call__(
+            self, 
+            *vars: str, 
+            treebank: Treebank=None, 
+            coefficients: Mapping[float, tuple[tuple[str], tuple[int]]]=None
+        ) -> Tree:
+        """Generates `gp_tree` representations of polynomials of a given order 
+        (specified at `__init__`) and set of variables `*vars` with either random
+        coefficients, or coefficients specified by the optional keyword arg 
+        `coefficients`
+        
+        Parameters
+        ==========
+            *vars (str): one or more positional arguments, representing the
+                names of the variables of the polynomial
+            treebank (Treebank): a treebank for the output tree nodes may 
+                optionally be provided, if the treebank provided as `__init__` 
+                is not to be used
+            coefficients (dict[tuple[tuple[str], tuple[int]], float]): a  
+                dictionary providing values for some or all of the coefficients 
+                of the polynomial may optionally given. The values should be 
+                floats, and the keys should tuples comprising two tuples of 
+                equal length. The first should contain between zero and 
+                `len(vars)` strings, each being a unique member of `vars`, with
+                elements in the same order they appear in `vars`; the second 
+                should be integers that sum to no more than `order`, 
+                corresponding to the powers the variables in the first tuple are
+                raised to in some coefficient of the polynomial. Invalid keys 
+                are ignored without error, and if no key is provided for a given 
+                term, the coefficient for that term will be randomly generated 
+                using a uniform distribution between `self.const_min` and 
+                `self.const_max`. If no value is passed, all coefficients will
+                be randomly generated.
+
+        >>> from gp import GP
+        >>> gp = GP()
+        >>> rpf = RandomPolynomialFactory(treebank=gp, order=3, const_min=-10.0, const_max=10.0)
+        >>> p1 = rpf('x', coefficients={((), ()): 1, (('x',), (1,)): 1, (('x',), (2,)): 1, (('x',), (3,)): 1})
+        >>> list(p1(**pd.DataFrame({'x': [1, 2, 3, 4]})))
+        [4.0, 15.0, 40.0, 85.0]
+        """
+        # The overall proceedure here is to create subtrees for the terms of the
+        # polynomial, then use  `_binarise_tree` to make a binary tree that adds
+        # them up. `term_subtrees` is the container for the subtrees.
         term_subtrees = []
+        # If no treebank is provided in the args, use self.treebank
         treebank = treebank if treebank else self.treebank
+        # The `coefficients` dict arg is intended to allow some of the 
+        # coefficients of the polynomial to be specified; for any coeffs not 
+        # specified in the dict, a uniformly distributed random coefficient is 
+        # generated. If no dict is provided, use an empty dict:
+        if not coefficients:
+            coefficients = {}
+        # `_poly_terms` generates the terms of the polynomial, as a tuple of 
+        # tuples, where the member tuples each represent a term.
         for term in self._poly_terms(vars, self.order):
-            b = treebank.T(self.treebank, float, uniform(self.const_min, self.const_max))
+            # The coefficient for a term is either the coefficient specified in 
+            # `coefficients`, or, if the corresponding key is not found, a
+            # uniformly distributed random value between `const_min` and 
+            # `const_max` will be used 
+            coeff = coefficients.get(term, uniform(self.const_min, self.const_max))
+            # the procedure for making the terms is to make subtrees for each 
+            # variable, which are then combined using `_binarise_tree` and the 
+            # 'PROD' operator. The factors can be ...
             var_pows = []
             for var, pow in zip(term[0], term[1]):
+                # ... the variable by itself, (that is, raised to the 1st power)
+                # ...
                 if pow == 1:
                     var_pows.append(treebank.T(self.treebank, float, f'${var}'))
+                # ... or, if it's raised to the 2nd or 3rd power, the variable
+                # under a node with with the 'SQ' or 'CUBE' operator 
+                # respectively ... 
                 elif pow == 2:
                     var_pows.append(treebank.N(self.treebank, float, treebank.T(self.treebank, float, f'${var}'), operator=self.operators['SQ']))
                 elif pow == 3:
                     var_pows.append(treebank.N(self.treebank, float, treebank.T(self.treebank, float, f'${var}'), operator=self.operators['CUBE']))
+                # ... or, for a higher power, under a node with the 'POW' 
+                # operator, with the second argument being the specified power
                 else:
                     var_pows.append(treebank.N(self.treebank, float, treebank.T(self.treebank, float, f'${var}'), treebank.T(self.treebank, int, pow), operator=self.operators['POW']))
-            term_subtrees.append(self._binarise_tree('PROD', var_pows, start=b))
-        return self._binarise_tree('SUM', term_subtrees, nt=N)
+            # Once we have the variables raised to their respective powers, they 
+            # are joined together in to make subtree for the whole terms with
+            # the 'PROD' operator, along with the coefficient. If the 
+            # coefficient equals 1 and the set of variables is non-empty, the
+            # coefficient is implicit; otherwise it is provided as the `initial` 
+            # arg for `_binarise_tree`. If the coefficient equals zero, then the 
+            # term is redundant and need not be included.
+            if var_pows and coeff == 1:
+                term_subtrees.append(self._binarise_tree('PROD', var_pows, nt=treebank.N))
+            elif coeff:
+                term_subtrees.append(self._binarise_tree('PROD', var_pows, initial=treebank.T(self.treebank, float, float(coeff)), nt=treebank.N))
+        # Finally, the terms are combined in a binary tree with 'SUM'
+        return self._binarise_tree('SUM', term_subtrees, nt=treebank.N)
+
+# XXX consider `full` and `grow` (Poli et al. p.12) methods for tree seeding
 
 # class RandomTreeFactory:
 #     tn = TypeNativiser()
@@ -385,6 +473,8 @@ class RandomPolynomialFactory:
 def main():
     import doctest
     doctest.testmod()
+        
+
 
 if __name__ == '__main__':
     main()
