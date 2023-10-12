@@ -91,9 +91,9 @@ class TypeNativiser:
         <class 'float'>
         <class 'complex'>
         <class 'int'>
-        <class 'numpy.float128'>
+        <class 'numpy.longdouble'>
         <class 'int'>
-        <class 'numpy.complex256'>
+        <class 'numpy.clongdouble'>
         <class 'bool'>
         <class 'int'>
         <class 'int'>
@@ -111,9 +111,9 @@ class TypeNativiser:
         <class 'int'>
         <class 'complex'>
         <class 'bytes'>
-        <class 'numpy.float128'>
-        <class 'numpy.complex256'>
-        <class 'numpy.complex256'>
+        <class 'numpy.longdouble'>
+        <class 'numpy.clongdouble'>
+        <class 'numpy.clongdouble'>
         <class 'int'>
         """
         if isinstance(arg, pd.Series) or isinstance(arg, np.generic):

@@ -298,6 +298,7 @@ class Operator:
                 output.name = f"{self.name}({','.join([arg.name if hasattr(arg, 'name') and arg.name else str(arg[0]) if isinstance(arg, pd.Series) else str(arg) for arg in args])})"
             # ... and return the result if it's also legal.
             if self.return_type is Any or issubclass(Operator.tn.type_ify(output), self.return_type):
+                # print(output, 'xxds')
                 return output
             # ... there's a possible complication if the return_type is one that
             # doesn't have a built-in numpy dtype - for instance, `pd.Series` of

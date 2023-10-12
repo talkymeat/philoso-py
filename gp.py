@@ -1,6 +1,6 @@
 from treebanks import TypeLabelledTreebank
 from gp_trees import GPTerminal, GPNonTerminal
-from gp_fitness import FitnessFunction, imse_fitness
+from gp_fitness import FitnessFunction
 import pandas as pd
 import numpy as np
 from copy import copy
@@ -284,7 +284,7 @@ class GP(TypeLabelledTreebank):
                 self, 
                 observatory: Observatory,
                 pop=None, 
-                fitness: FitnessFunction=imse_fitness,  
+                fitness: FitnessFunction=None,  
                 elitism=0, 
                 best_tree: bool=True, 
                 rmses: bool=True,

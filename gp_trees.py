@@ -189,7 +189,7 @@ class Constant(GPTerminal):
         leaf_type = None
         if not isinstance(leaf, pd.Series):
             leaf_type = type(leaf)
-            leaf = pd.Series([leaf])
+            # leaf = pd.Series([leaf]) # XXX CHG
         self.gp_operator = MutatorFactory(
             leaf_type if leaf_type else treebank.tn.type_ify(leaf),
             treebank.mutation_rate,
@@ -197,14 +197,14 @@ class Constant(GPTerminal):
         )
         super().__init__(treebank, label, leaf, operator=operator, metadata=metadata)
 
-    def _leaf_str(self):
-        leaf_len = len(self.leaf)
-        return ("" if not leaf_len else
-            self.leaf[0] if leaf_len == 1 else
-            str(list(self.leaf)) if leaf_len < 7 else
-            f"[{self.leaf[0]}, {self.leaf[1]}, {self.leaf[2]} ... " +
-            f"{self.leaf[leaf_len-3]}, {self.leaf[leaf_len-2]}, {self.leaf[leaf_len-1]}]"
-        )
+    # def _leaf_str(self):
+    #     leaf_len = len(self.leaf)
+    #     return ("" if not leaf_len else
+    #         self.leaf[0] if leaf_len == 1 else
+    #         str(list(self.leaf)) if leaf_len < 7 else
+    #         f"[{self.leaf[0]}, {self.leaf[1]}, {self.leaf[2]} ... " +
+    #         f"{self.leaf[leaf_len-3]}, {self.leaf[leaf_len-2]}, {self.leaf[leaf_len-1]}]"
+    #     )
 
     def __str__(self):
         """Readable string representation of a Terminal. This consists of a pair
@@ -213,7 +213,7 @@ class Constant(GPTerminal):
 
         ([float]x).
         """
-        return f"({self.label if self.label else ''}{self._leaf_str()})"
+        return f"({self.label if self.label else ''}{self.leaf})" # XXX CHG `...{self._leaf_str()})"`
 
     def __eq__(self, other):
         """Magic method to operator-overload `==` and `!=`
@@ -252,7 +252,7 @@ class Constant(GPTerminal):
     def __getitem__(self, position):
         if not position in (0, (0,)):
             return super.__getitem__(position)
-        return self.leaf[0]
+        return self.leaf # XXX CHG
 
     def copy_out(self, treebank = None, gp_copy=False, **kwargs):
         """Generates a deep copy of a Terminal: same Labels, and same content:
@@ -279,6 +279,7 @@ class Constant(GPTerminal):
         if not treebank:
             # ...make a dummy treebank for the copied Terminal to live in
             treebank = TypeLabelledTreebank()
+            # XXX SHould that have been GP()?
         # return the copy Terminal, with `treebank=treebank`
         return Constant(
             treebank,

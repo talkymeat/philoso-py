@@ -41,22 +41,9 @@ class DepthFirstBottomUp(TreeIter):
 
     ...it would visit h, D, i, E, B, j, F, k, G, C, A.
 
-    XXX FIXME
-
-    **********************************************************************
-    File "/Users/Squiddo/github/philoso-py/tree_iter.py", line 42, in __main__.DepthFirstBottomUp
-    Failed example:
-        tlt = TypeLabelledTreebank(op)
-    Exception raised:
-        Traceback (most recent call last):
-        File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/doctest.py", line 1348, in __run
-            exec(compile(example.source, filename, "single",
-        File "<doctest __main__.DepthFirstBottomUp[2]>", line 1, in <module>
-            tlt = TypeLabelledTreebank(op)
-        NameError: name 'TypeLabelledTreebank' is not defined
-    **********************************************************************
-
     >>> from trees import *
+    >>> from treebanks import *
+    >>> import operators as ops
     >>> op = [ops.SUM, ops.PROD, ops.SQ, ops.EQ, ops.NOT, ops.OR, ops.AND]
     >>> tlt = TypeLabelledTreebank(op)
     >>> gpt0 = tlt.tree("([bool]<AND>([bool]<EQ>([float]<SQ>([int]6))([float]<PROD>([int]9)([float]<SUM>([float]2.5)([float]1.5))))([bool]<OR>([bool]<NOT>([bool]<EQ>([int]0)([int]1)))([bool]False)))")
