@@ -23,7 +23,7 @@ class Observatory(Protocol):
 
 @runtime_checkable
 class TargetFunc(Protocol):
-    def __call__(self, **ivs: pd.Series) -> pd.Series:
+    def __call__(self, ivs: pd.Series) -> pd.Series:
         ...
 
 @runtime_checkable
@@ -211,9 +211,10 @@ class FunctionObservatory:
     @property
     def target(self) -> pd.DataFrame:
         if not self._dv_ready:
-            self._dv_data = pd.DataFrame({
-                name: self.sources[name](**self._iv_data) for name in self.dvs
-            })
+            dvdic = {
+                name: self.sources[name](self._iv_data) for name in self.dvs
+            }
+            self._dv_data = pd.DataFrame(dvdic)
             self._dv_ready = True
         return self._dv_data.copy()
 

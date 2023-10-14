@@ -5,25 +5,69 @@ from observatories import Observatory
 from dataclasses import dataclass
 from copy import deepcopy
 from functools import wraps
+from utils import collect
 
-def collect(a, t: type[Collection]):
-    return a if isinstance(a, t) else t(a) if isinstance(a, Collection) and not isinstance(a, str) else t([a])
-
-
-# use pydantic/pandera to specify Dataframe should have 'trees: Tree' (can I make a custon dtype?) and 'fitness: float'
-class FitnessFunction(Protocol):
-    def __call__(trees: Collection[GPNonTerminal], obs: Observatory, temp_coeff: float, **kwargs) -> pd.DataFrame:
-        ...
+# use pydantic/pandera to specify Dataframe should have 'trees: Tree' (can I make a custon dtype?) and 'fitness: float' XXX This isn't needed
+# class FitnessFunction(Protocol):
+#     def __call__(trees: Collection[GPNonTerminal], obs: Observatory, temp_coeff: float, **kwargs) -> pd.DataFrame:
+#         ...
 
 @dataclass
 class ScoreboardPipelineElement:
+    """The `GPScoreboard` class is an extension of `pandas.DataFrame` which 
+    takes a column of GP Trees, and has an amount of apparatus for processing 
+    the trees' output and giving calculating their fitness. The main system for
+    doing this is a pipeline of operators which performs operations on the
+    dataframe, usually by taking one or more columns of the dataframe and 
+    performing an operation, the result of which is appended as a new column.
+    The elements of this pipeline are ScoreboardPipelineElements, which is a
+    Callable dataclass.
+
+    To allow the Scoreboard to validate the pipeline before running, a set of 
+    exist properties that track how the pipeline changes the set of columns in 
+    the scoreboard. In most cases, this can be worked out from the attributes, 
+    but in some cases, where no calues of `arg_keys` and `out_key` are given
+    and `fn` operates on the whole dataframe, they can't; so additional 
+    attributes may be added to provide that information. The properties 
+    (documented below) are `requires`, `adds`, and `deletes`: the optional 
+    attributes are `_reqs`, `_adds`, and `_dels`
+
+    Attributes
+    ==========
+        arg_keys (string or list of strings): Keys which identify dataframe
+            columns which be the input to the function, `fn`. If a `str` is
+            passed, `__post_init__` will wrap the string in a singleton list.
+            If no function is given, this and `out_key` will be used to rename
+            a column, with `arg_keys[0]` being the column to be renamed and
+            `out_key` being the new name: if a function is given but no values 
+            for `arg_keys` and`out_key`, the function is assumed to apply to 
+            the whole dataframe
+        out_key (string): In most cases, this is the name given to the new 
+            column output by `fn` - see ``arg_keys` for details of exceptions
+        vec (bool): If true, it is assumed that `fn` vectorises: that is, it
+            can operate on a pd.Series without needing to loop or use `df.map` 
+            or `df.apply` to apply the function to each entry. If False, it 
+            will be applied using `df.apply`
+        fn (function): a function which can either be applied to one or more
+            `pd.Series`, or a whole GPScoreboard. It takes positional arguments
+            corresponding to `arg_keys`, and may have other kwargs to provide
+            values that are stored in a parameter dictionary in GPScoreboard
+
+#---##---##---##---##---##---##---##---##---##---##---##---##---##---##---##---#
+    """
     arg_keys: list[str]|str
     out_key: str
     vec: bool = False
     fn: Callable = None
 
     def __post_init__(self):
-        self.arg_keys = collect(self.arg_keys, list)
+        """A housekeeping method that tidies the data a bit after 
+        initialisation: it converts string `argkeys` values to singleton lists,
+        sets `vec` to true if the function operates on the 'trees' column (which
+        cannot vectorise), and raises errors for some non-permitted combinations
+        of attributes
+        """
+        self.arg_keys = collect(self.arg_keys, list, empty_if_none=True)
         if 'tree' in self.arg_keys:
             self.vec = False
         if len(self.arg_keys) != 1 and self.fn is None:
@@ -36,28 +80,94 @@ class ScoreboardPipelineElement:
             )
 
     def __call__(self, sb: pd.DataFrame, **kwargs):
+        """The GPScoreboard pipeline calls the ScoreboardPipelineElements in 
+        sequence: __call__ is the method than enables this. This behaves 
+        slightly differently in different cases:
+
+        1)  The Standard Case: `arg_keys` identifies scoreboard columns which 
+            are passed to `fn`, the output of which is assigned to a new column
+            named by `out_key`. `arg_keys`, `out_key` and `fn` must all be 
+            non-null and non-empty
+        2)  Renaming Mask: `arg_keys` is a singleton list, the member of which 
+            is the label of the column to be renamed, and `out_key` is the key 
+            that is output. `arg_keys`, `out_key` and `fn` must all be non-null 
+            and non-empty, bu `fn` must be `None`.
+        3)  Other: `fn` is called on the whole dataframe, `fn` must be non-null,
+            but `arg_keys` and `out_key` must be empty.
+        """
+        # This method behaves differently depending on the existence of three
+        # optional attributes, `arg_keys`, `out_keys` (together 'the keys) and
+        # `fn` 
         if not self.fn:
+            # If there is no `fn`, either we have an invalid element, if 
+            # one or both keys are missing...
+            if len(self.arg_keys !=1) or not self.out_key:
+                raise ValueError(
+                    "If no function is given, `arg_keys` `out_key` must each " +
+                    "be a single non-empty string"
+                )
+            # ...or both exist, and we are in the 'Renaming Mask' case
             sb.rename(columns={self.arg_keys[0]: self.out_key}, inplace=True)
+        #  The renaming conditions are those where we know `fn` exists...
         elif not (self.arg_keys or self.out_key):
+            # If neither 'key' exists, it's the 'Other' case...
             self.fn(sb)
+        elif not (self.arg_keys or self.out_key):
+            # If only one, it's invalid
+            raise ValueError(
+                'If `fn` exists, either both `out_key` and `arg_keys` must ' +
+                'exist, or neither'    
+            )
+        # At this stage, all three optional attributes are known to exist.
+        # `vec` Should be set to true if `fn` uses vectorisation to operate
+        # directly on whole columns 
         elif self.vec:
             sb[self.out_key] = self.fn(**sb[self.arg_keys], **kwargs)
+        # If it can't, `vec` should be false, and `apply` will be used to go row
+        # by row 
         else:
             sb[self.out_key] = sb.apply(lambda row: self.fn(**row, **kwargs), axis=1)
 
     def __str__(self):
+        """Returns a string representation of the ScoreboardPipelineElement"""
         return f"ScoreboardPipelineElement(arg_keys={self.arg_keys}, out_key='{self.out_key}', vec={self.vec}, fn={self.fn.__name__ if self.fn else 'None'})"
     
+
     @property
     def requires(self) -> list[str]:
+        """The columns which must be in the scoreboard for the 
+        ScoreboardPipelineElement to run. The element must have values for 
+        `arg_keys` or `_reqs`: otherwise ['<UNK>'] is returned, the indicating  
+        that the element's needs are unknown, and it may unpredicatably fail if
+        run: this will cause validation to fail. Note that `_reqs` (but not
+        `arg_keys`) can be empty.
+        """
         return self.arg_keys if self.arg_keys else self._reqs if hasattr(self, '_reqs') else ['<UNK>']
     
     @property
     def adds(self) -> list[str]:
+        """The columns which the ScoreboardPipelineElement adds the scoreboard 
+        when run. The element must have values for `out_key` or `_adds`: 
+        otherwise ['<UNK>'] is returned, the indicating that the element leaves
+        the scoreboard in an unknown state, and it may unpredicatably fail if
+        run: this will cause validation to fail. Note that `_reqs` (but not
+        `arg_keys`) can be empty.
+        """
         return [self.out_key] if self.out_key else self._adds  if hasattr(self, '_adds') else ['<UNK>']
     
     @property
     def deletes(self) -> list[str]:
+        """The columns which the ScoreboardPipelineElement removes from the 
+        scoreboard when run. If the element has values for `arg_keys` and 
+        `out_key`, either we are in the `Renaming Mask` condition (if there is 
+        no `fn`), and `out_key` will be removed from the scoreboard (the column 
+        remains, but has a new name), or `fn` exists, and we are in the Standard
+        Case, which does not remove columns. Otherwise, we are in the Other 
+        Case, in which case either `_dels` has been set, and can be returned, or
+        ['<UNK>'] is returned, indicating that the element leaves the scoreboard 
+        in an unknown state, and it may unpredicatably fail if run: this will 
+        cause validation to fail. 
+        """
         if self.out_key and self.arg_keys:  
             return self.arg_keys if self.fn is None else []
         else:
@@ -65,22 +175,119 @@ class ScoreboardPipelineElement:
         
     @property
     def __name__(self):
+        """The name of the element is given by the function `fn`, unless `fn` is
+        None, in which case it is 'rename'
+        """
         return 'rename' if self.fn is None else self.fn.__name__
         
-    def _set_validators(self, reqs, adds, dels):
-        self._reqs = reqs
-        self._adds = adds
-        self._dels = dels
+    def _set_validators(self, 
+            reqs: str|list[str], 
+            adds: str|list[str], 
+            dels: str|list[str]
+        ):
+        """If no calues are given for the 'key' attributes, the element must
+        be hard-coded with values for it to pass during validation. Rules are 
+        specified below for how to handle cases where the changes to the set of
+        columns in the scoreboard are non-deterministic. The goal is always to 
+        ensure that the pipeline provides each element with the columns it cannot
+        function without. If this cannot be guaranteed, validation should fail.
+        
+        Parameters
+        ==========
+            reqs (string or list of strings):
+                Hard-coded value for property `requires`. Note that `reqs` 
+                should only be the columns the element cannot reliably function
+                without: columns which may optionally be used, if present
+                should not be included
+            adds (string or list of strings):
+                Hard-coded value for property `adds`. Note that this should only
+                be used for columns that the element will definitely always add;
+                if a function sometimes adds a column, but not always, it should
+                not be included
+            dels (string or list of strings):
+                Hard-coded value for property `requires`. Any column which might
+                be deleted, even if it is not certain that it will be, should be 
+                included
+        """
+        self._reqs = collect(reqs, list)
+        self._adds = collect(adds, list)
+        self._dels = collect(dels, list)
 
 
 def scoreboard_pipeline_element(arg_keys=['tree'], out_key='fitness', vec=False):
-    # Outer decorator returns the inner decorator
+    """A double-decker decorator, which converts the decorated function to a
+    ScoreboardPipelineElement, which is callable. The decorator must be provided
+    with arguments, which are all the attributes of the 
+    ScoreboardPipelineElement *except* `fn`, which will be the decorated 
+    function. It's a 'double decker' because it returns another decorator, which
+    is what actually decorates the decorated function.
+
+    Functions decorated with this decorator should be listed by name in the 
+    pipeline list in GPScoreboard, and should not be called there.
+
+    Parameters
+    ==========
+        arg_keys (string or list of strings)
+        out_key (string)
+        vec (bool)
+    """
+#---##---##---##---##---##---##---##---##---##---##---##---##---##---##---##---#
+    # Outer decorator is called with the arguments and returns the inner 
+    # decorator
     def spe_decorator(fn: Callable):
+        # which returns the ScoreboardPipelineElement, which takes the
+        # place of the decorated function in the namespace 
         return ScoreboardPipelineElement(arg_keys=arg_keys, out_key=out_key, vec=vec, fn=fn)
     # return the decorator that actually takes the function in as the input
     return spe_decorator
 
 def flexi_pipeline_element(vec=True, out_key_maker: Callable = None):
+    """Kind of a triple-decker. That is, it's a double-decker decorator again,
+    but with the output being a function which, given some more arguments,
+    returns a ScoreboardPipelineElement, with the following values:
+    
+    `vec`:      given as an argument to the decorator 
+    `fn`:       is the function generated by the function generated by the inner
+                decorator, which is a wrapper for the decorated function. This 
+                differs only in name and names of arguments from the decorated
+                function, but this is needed to ensure the 
+                `ScoreboardPipelineElement` uses with the correct columns
+    `out_key`   is generated by a function, `out_key_maker`, which is passed as  
+                an argument to the decorator, *unless* the function the inner 
+                decorator returns is given an overriding value as `out_key`, or 
+                neither are provided, in which case a value is generated by 
+                joining the name of the decorated function and the `arg_keys`
+                all with underscores (e.g. `add_x_y`)
+    `arg_keys`  are passed as `*arg_keys` to the function the inner decorator
+                outputs. The function takes the `arg_keys` and uses `exec` and
+                an f-string to make a function which wraps the decorated 
+                function. `arg_keys` must be the same length as the number of
+                positional arguments the decorated function takes
+
+    The purpose here is to allow a base function which may be used with 
+    different columns to be used to generate multiple 
+    `ScoreboardPipelineElement`s, differing based on which columns they handle.
+    
+    To use functions decorated with `@flexi_pipeline_element` in the pipeline 
+    list, a call to the function should be placed in the list, not the bare 
+    name, like `@scoreboard_pipeline_element` functions. This should take the
+    same args as `spe_maker` (below), *not* those of the decorated function.
+
+    Parameters
+    ==========
+        vec (bool): The 'vec' attribute of the ScoreboardPipelineElement
+        out_key_maker (function): Function to generate the value of the 
+            `out_key` attribute of the ScoreboardPipelineElement
+
+    Parameters of the Decorator-Created Function
+    ============================================
+        *arg_keys (string): The 'arg_keys' attribute of the 
+            ScoreboardPipelineElement, which are mapped in sequence to the 
+            positional arguents of the wrapped function
+        `out_key` (string): `out_key` attribute of the 
+            ScoreboardPipelineElement, overriding `out_key_maker`
+    """
+#---##---##---##---##---##---##---##---##---##---##---##---##---##---##---##---#
     # Outer decorator returns the inner decorator
     def fpe_decorator(fn: Callable):
         # For reasons which will become clear in a few lines time,
@@ -89,8 +296,17 @@ def flexi_pipeline_element(vec=True, out_key_maker: Callable = None):
         # the call to `flexi_pipeline_element` decorates 
         @wraps(fn)
         def spe_maker(*arg_keys, out_key=None, **kwargs):
+            # Sets the value for `out_key` - using the spe_maker override if
+            # available, else a generated value from `out_key_maker`, else
+            # a default made from the function and argument names
             out_key = out_key if out_key else out_key_maker(arg_keys) if out_key_maker else f"{fn.__name__}_{'_'.join(arg_keys)}"
+            # To keep the f-string that creates the wrapper function simple,
+            # the string representing the argumenrs of the function is 
+            # generated here
             argstr = ', '.join(arg_keys)
+            # The code for the wrapper function is generated using an f-string,
+            # and run using exec. This adds a function to the local namespace,
+            # with a name equal to the value of `out_key`
             # Note that in the global namespace, the function name in the line
             # below does not refer to the function `fn` the decorator wraps, 
             # but the decorated function, which is underlyingly `spe_maker`.
@@ -104,6 +320,8 @@ def flexi_pipeline_element(vec=True, out_key_maker: Callable = None):
                 f"def {out_key}({argstr}, **kwargs):\n" +
                 f"\treturn {fn.__name__}.__wrapped__({argstr}, **kwargs)\n"
             )
+            # Note `locals()` is the dict of all local variables, so
+            # `locals()[out_key]` retrieves the function generated by `exec`
             return ScoreboardPipelineElement(
                 arg_keys=arg_keys, 
                 out_key=out_key, 
@@ -116,32 +334,66 @@ def flexi_pipeline_element(vec=True, out_key_maker: Callable = None):
 
 @flexi_pipeline_element(out_key_maker=lambda args: f"i{args[0]}")
 def safe_inv(arg, **kwargs):
+    """Multiplicative inversion operator, protected from ZeroDivisionErrors
+    by adding 1 to the denominator. Generates the name of the new column by
+    prepending `i` to the name of the old. Pass the name of the column you 
+    want to invert to get the ScoreboardPipelineElement you need. e.g.: 
+    `safe_inv('rmse')` gives an element `irmse` that inverts `rmse` 
+    """
     return 1/(arg+1)
 
 @scoreboard_pipeline_element(out_key='mse')
 def mse(tree: GPNonTerminal, target: pd.Series=None, ivs=None, **kwargs):
+    """Calculates the Mean Squared Error of tree outputs. Adds `mse`, 
+    requires `tree`
+    """
     return ((target - tree(**ivs))**2).mean()
 
 @scoreboard_pipeline_element(out_key='sae')
 def sae(tree: GPNonTerminal, target: pd.Series=None, ivs=None, **kwargs):
+    """Calculates the Summed Average Error of tree outputs. Adds `sae`, 
+    requires `tree`
+    """
     return (target - tree(**ivs)).abs().mean()
 
 @scoreboard_pipeline_element(arg_keys="mse", out_key="rmse", vec=True)
 def rmse(mse: float, **kwargs):
+    """Root Mean Squared Error: adds 'rmse', requires 'mse'"""
     return mse**0.5
 
 def rename(old_name: str, new_name: str):
+    """Creates a ScoreboardPipelineElement which renames a column. Put a 
+    call to this in the pipeline list, with params `old_name` and 
+    `new_name` for the old and new names.
+    """
     return ScoreboardPipelineElement(arg_keys=old_name, out_key=new_name)
 
 @scoreboard_pipeline_element(arg_keys="raw_fitness", out_key="fitness", vec=True)
 def heat(raw_fitness: float, temp_coeff: float, **kwargs):
+    """Calculates the temperateure of the GP system as the product of the average
+    fitness and `temp_coeff`, which is added to the raw fitness column. This boosts
+    the chances of lower-fitness trees to reproduce, maintaining a bit of diversity
+    in the treebank
+    """
     if temp_coeff:
         temp = raw_fitness.mean() * temp_coeff
     else:
+        # No need to compute the mean is temp_coeff is 0
         temp = 0.0
     return raw_fitness + temp
 
 def clear(*to_clear: str, except_for: str|list[str]=None):
+    """A function called to generate a ScoreboardPipelineElement which deletes 
+    columns from the scoreboard. 
+
+    Parameters
+    ==========
+        *to_clear (string): The names of all the columns to be removed. Clears all
+            if empty, unless a value is given for `except_for`.
+        `except_for` (string or list of strings): The names of all columns to be 
+            spared: all other columns will be deleted. Raises a ValueError if 
+            provided alongside positional arguments
+    """
     to_clear = list(to_clear)
     if except_for:
         if to_clear:
@@ -151,53 +403,111 @@ def clear(*to_clear: str, except_for: str|list[str]=None):
                 "passed, all columns are clear, except for those in `except_for`"
             )
         except_for = collect(except_for, list)
+    else:
+        except_for = []
     @scoreboard_pipeline_element(arg_keys=[], out_key="")
     def clr(sb: GPScoreboard, **kwargs):
         if not to_clear:
-            # new variable name with underscore, because if I assign to 
+            # If `to_clear_` not provided, use the complete list of columns.
+            # The new variable name gets an underscore, because if I assign to 
             # `to_clear` here, Python will think this is a new variable in
             # the inner function namespace, and then get confused by the
             # line *above*, thinking it's referring to the as-yet-non-value
             # -bearing local *below*, and not the variable in the outer 
             # function namespace. <facepalm/>
             _to_clear = list(sb.columns)
+            # Remove any exceptions listed in `except_for`
             for exn in except_for:
                 if exn in _to_clear:
                     _to_clear.remove(exn)
+        # Drop all columns named in `_to_clear` or `to_clear`
         sb.drop(columns=to_clear if to_clear else _to_clear, inplace=True)
         return sb
+    # Element cannot infer changes to scoreboard, so specify with `_reqs`, `_adds`
+    # and `_dels`. This adds no columns, removes the cols named in `to_clear` (if 
+    # given), and requires them. If `to_clear` is not given, specify '<ALL>' in 
+    # `_dels`, along with any exceptions, prepended with `-`2
     clr._set_validators(
         reqs=to_clear, adds=[], dels = to_clear if to_clear else ['<ALL>'] + [f"-{exn}" for exn in except_for])
     return clr
 
 class GPScoreboard(pd.DataFrame):
-    _metadata = ['obs', 'pipeline', 'kwargs', 'provide', 'require']
+    _metadata = [
+        'obs', 'pipeline', 'kwargs', 'provide', 'require', 'def_outputs'
+    ]
 
     def __init__(
             self,
             *pipeline: ScoreboardPipelineElement,
+            def_fitness: str=None,
+            dv: str=None,
             obs: Observatory = None, 
             temp_coeff: float = 0.0,
             provide: str|Collection[str]='tree', 
             require: str|Collection[str]='fitness',
+            def_outputs: str|Collection[str]= None,
             **kwargs
         ) -> None:
         super().__init__()
-        self.obs = obs
-        self.pipeline = pipeline
+        self.obs = None
+        dv = self.dv_obs_check(dv=dv, obs=obs)
+        if def_fitness:
+            if pipeline:
+                raise ValueError(
+                    "Don't pass a value to def_fitness if you are" +
+                    " also passing pipeline elements as positional" +
+                    " arguments"
+                )
+            if def_fitness.lower() not in ['isae', 'imse', 'irmse']:
+                raise ValueError(
+                    "def_fitness is used to chose between the three" +
+                    "standardly provided fitness functions:\n" +
+                    "    ISAE:   Inverse Sum of Average Errors\n" +
+                    "    IMSE:   Inverse Mean Squared Error\n" +
+                    "    IRMSE:  Inverse Root Mean Squared Error\n" +
+                    "If you wish to use something else, you can " +
+                    "create your own ScoreboardPipelineElement for" +
+                    " it."
+                )
+        def_fitness = def_fitness if def_fitness else 'irmse'
+        self.pipeline = pipeline if pipeline else ([
+            clear(except_for='tree'),
+            sae, mse, rmse, 
+            safe_inv('sae'), safe_inv('mse'), safe_inv('rmse')
+        ] + (
+            [rename(def_fitness, 'raw_fitness'), heat]
+            if temp_coeff else
+            [rename(def_fitness, 'fitness')]
+        ))
         self.provide = collect(provide, set)
         self.require = collect(require, set)
         self.kwargs = {"temp_coeff": temp_coeff, **kwargs}
-        valid, error = self._validate_pipeline()
-        if not valid:
-            raise ValueError(error)
+        final_cols, error = self._validate_pipeline()
+        if error:
+            raise ValueError(error + ((
+                ". Also, _validate_pipeline returned both success and error " +
+                "values, which makes no sense. the success value was " +
+                f"'{final_cols}'"
+            ) if final_cols else ""))
+        elif def_outputs:
+            def_outputs = collect(def_outputs, list)
+            for d_o in def_outputs:
+                if d_o not in final_cols:
+                    raise ValueError(
+                        "A value listed as a default scoreboard output, " +
+                        f"{d_o}, is not in the final outputs of the tree" +
+                        "scoring pipeline"
+                    )
+            self.def_outputs = def_outputs
+        else:
+            self.def_outputs = final_cols
 
     def _validate_pipeline(self) -> tuple[bool, str]:
         def format_error(p, i, e):
             err = "Pipeline failed"
             if i != -1:
                 err += f" at element {i}, {p.__name__}"
-            err += f": {e}"
+            err += f": {e[0]}"
             return err
         cols = deepcopy(self.provide)
         for i, p in enumerate(self.pipeline):
@@ -205,14 +515,20 @@ class GPScoreboard(pd.DataFrame):
             adns = p.adds
             dlns = p.deletes
             if "<UNK>" in reqs:
-                return False, format_error(p, i, "Unknown requirements")
+                return None, [format_error(
+                    p, i, "Unknown requirements"
+                )]
             for req in reqs:
                 if req not in cols:
-                    return False, format_error(p, i, f"Required input '{req}' not found")
+                    return None, [format_error(
+                        p, i, f"Required input '{req}' not found"
+                    )]
             if "<UNK>" in dlns:
-                return False, format_error(p, i, 
-                    "Scoreboard in unknown state, specify deletions for this element"
-                )
+                return None, [format_error(
+                    p, i, 
+                    "Scoreboard in unknown state, specify " +
+                    "deletions for this element"
+                )]
             if "<ALL>" in dlns:
                 new_cols = set()
                 if len(dlns) > 1:
@@ -221,33 +537,65 @@ class GPScoreboard(pd.DataFrame):
                             if dln[1:] in cols:
                                 new_cols.add(dln[1:])
                         elif dln != '<ALL>':
-                            return False, format_error(p, i, 
-                                f"Element clears all columns, but has other deletions ({dln}) listed"
-                            )
+                            return None, [format_error(
+                                p, i, 
+                                "Element clears all columns," +
+                                "but has other deletions " +
+                                f"({dln}) listed"
+                            )]
                 cols = new_cols
             else:
                 for dln in dlns:
                     if dln not in reqs:
-                        return False, format_error(p, i, 
-                            f"Element deletes column '{dln}', but does not specify '{dln}' as a requirement"
-                        )
+                        return None, [format_error(
+                            p, i, 
+                            f"Element deletes column '{dln}'," +
+                            f" but does not specify '{dln}' " +
+                            "as a requirement"
+                        )]
                     if dln in adns:
-                        return False, format_error(p, i, 
-                            f"Scoreboard in unknown state, element specifies '{dln}' as both an addition and deletion"
-                        )
+                        return None, [format_error(
+                            p, i, 
+                            "Scoreboard in unknown state, " +
+                            f"element specifies '{dln}' as " +
+                            "both an addition and deletion"
+                        )]
                     cols.remove(dln)
             if "<UNK>" in adns:
-                return False, format_error(p, i, 
-                    "Scoreboard in unknown state, specify additions for this element"
-                )
+                return None, [format_error(p, i, 
+                    "Scoreboard in unknown state, specify " +
+                    "additions for this element"
+                )]
             for adn in adns:
                 cols.add(adn)
         for rqmt in self.require:
             if rqmt not in cols:
-                return False, format_error(p, -1, 
-                    f"Pipeline completes, but required column {rqmt} is not in scoreboard"
+                return None, [format_error(
+                    p, -1, 
+                    "Pipeline completes, but required " +
+                    f"column {rqmt} is not in scoreboard"
+                )]
+        return list(cols), None
+    
+    def dv_obs_check(self, dv: str=None, obs: Observatory=None):
+        self.obs = self.obs if obs is None else obs
+        if not self.obs:
+            if dv:
+                raise ValueError(
+                    "Don't set `dv` if you haven't set `obs`: `dv`" +
+                    " is only used if obs is set and has multiple DVs"
                 )
-        return True, None
+        elif len(self.obs.dvs)>1:
+            if not (dv and dv in obs.dvs):
+                raise ValueError(
+                    f"DV {dv} not found in Observatory dvs"
+                    if dv else
+                    f"Observatory obs has multiple DVs, but no kwarg `dv` is given to specify which one"
+                )
+            return dv
+        else:
+            return self.obs.dvs[0]
+
 
     def __call__(
             self, 
@@ -260,16 +608,7 @@ class GPScoreboard(pd.DataFrame):
         self['tree'] = pd.Series(trees)
         if temp_coeff is not None:
             self.kwargs["temp_coeff"] = temp_coeff 
-        self.obs = self.obs if obs is None else obs
-        if len(self.obs.dvs)>1:
-            if not (dv and dv in obs.dvs):
-                raise ValueError(
-                    f"DV {dv} not found in Observatory dvs"
-                    if dv else
-                    f"Observatory obs has multiple DVs, but no kwarg `dv` is given to specify which one"
-                )
-        else:
-            dv = self.obs.dvs[0]
+        dv = self.dv_obs_check(dv=dv, obs=obs)
         kwargs['ivs'] = next(self.obs)
         kwargs['target'] = self.obs.target[dv]
         for pipe_ele in self.pipeline:
@@ -297,7 +636,7 @@ class GPScoreboard(pd.DataFrame):
         >>> import operators as ops
         >>> from gp import *
         >>> op = [ops.SUM, ops.PROD]
-        >>> gp = GP(operators = op)
+        >>> gp = GPTreebank(operators = op)
         >>> t = [
         ...     gp.tree("([float]<SUM>([int]0)([int]1))"),
         ...     gp.tree("([float]<SUM>([int]2)([int]3))"),
@@ -347,7 +686,7 @@ class GPScoreboard(pd.DataFrame):
             best.apply(lambda t: t.metadata.__setitem__('to_delete', False))
         return list(best)
 
-    def winner(self, *cols, except_for: str|list[str]=None):
+    def winner(self, *cols, except_for: str|list[str]=None, **kwargs):
         """
         This retrieves a dictionary of selected row elements from the row
         containing the fittest tree. If the column for the tree itself is 
@@ -370,10 +709,10 @@ class GPScoreboard(pd.DataFrame):
                 record of the best (fittest) tree
 
         >>> import operators as ops
-        >>> from gp import GP
+        >>> from gp import GPTreebank
         >>> from observatories import StaticObservatory
         >>> op = [ops.PROD]
-        >>> gp = GP(operators = op, temperature_coeff=0.5)
+        >>> gp = GPTreebank(operators = op, temperature_coeff=0.5)
         >>> iv = [0., 2., 4., 6., 8.,]
         >>> dv0 = [0., 0., 0., 0., 0.]
         >>> dv1 = [0., 10., 20., 30., 40.]
@@ -448,13 +787,14 @@ class GPScoreboard(pd.DataFrame):
                         "Invalid argument for GPScoreboard.winner: " +
                         f"'{col}' not in scoreboard."
                     )
-        else:
+        elif except_for:
             cols = list(self.columns)
-            if except_for:
-                ef = collect(except_for, list)
-                for exn in ef:
-                    if exn in cols:
-                        cols.remove(exn)
+            ef = collect(except_for, list)
+            for exn in ef:
+                if exn in cols:
+                    cols.remove(exn)
+        else:
+            cols = deepcopy(self.def_outputs)
         best = self.nlargest(1, 'fitness')[list(cols)]
         best_dic = {}
         for col in cols:
@@ -464,6 +804,15 @@ class GPScoreboard(pd.DataFrame):
                 best_dic[col] = best[col].item()
         return best_dic
     
+    def score_trees(
+            self,
+            trees: Iterable[GPNonTerminal],  
+            *cols: str,
+            **kwargs
+        ):
+        return self(trees, **kwargs).winner(*cols, **kwargs)
+
+
 
 def main():
     import doctest
@@ -585,7 +934,7 @@ pop at least 500, some ppl use much more
 
 #     Parameters
 #     ==========
-#         trees (Collection[GPNonTerminal]): The root treenodes of a GP treebank
+#         trees (Collection[GPNonTerminal]): The root treenodes of a GPTreebank treebank
 #         obs (Observatory): An Observatory object that supplies values for the
 #             IVs, and the target value of the DV.
 #         temp_coeff (float): A coefficient which determines the 'temperature' of

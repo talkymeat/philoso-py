@@ -672,7 +672,7 @@ class VectorWorld(World):
 
         >>> from scipy import stats
         >>> import numpy as np
-        >>> def test_jitter(mu, sd):
+        >>> def test_jitter(mu, sd, alpha=0.01):
         ...     world = VectorWorld(
         ...         length=10000,
         ...         initial_conditions = [0.0],
@@ -684,15 +684,15 @@ class VectorWorld(World):
         ...     sample = [mu]*1000000
         ...     s = np.array(world._apply_jitter(sample))
         ...     k2, p = stats.normaltest(s)
-        ...     if p < 0.01 or abs((sum(s)/len(s))-mu)>=0.02 or abs(np.std(s)-sd)>=0.02:
+        ...     if p < alpha or abs((sum(s)/len(s))-mu)>=0.02 or abs(np.std(s)-sd)>=0.02:
         ...         print(
-        ...             f"mu={mu}, sd={sd}, p={p}{' X' if p < 0.05 else ''}, " +
+        ...             f"mu={mu}, sd={sd}, alpha={alpha}, p={p}{' X' if p < 0.05 else ''}, " +
         ...             f"mu'={sum(s)/len(s)}" +
         ...             f"{' X' if abs((sum(s)/len(s))-mu)>=0.02 else ''}, " +
         ...             f"sd'={np.std(s)}" +
         ...             f"{' X' if abs(np.std(s)-sd)>=0.02 else ''}"
         ...         )
-        ...     return p >= 0.05 and abs((sum(s)/len(s))-mu)<0.02 and abs(np.std(s)-sd)<0.02
+        ...     return p >= alpha and abs((sum(s)/len(s))-mu)<0.02 and abs(np.std(s)-sd)<0.02
         ...
         >>> failures = 0
         >>> for mu in (-10.0, -1.0, 0.0, 1.0, 10.0):

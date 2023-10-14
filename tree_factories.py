@@ -319,8 +319,8 @@ class RandomPolynomialFactory:
                 `self.const_max`. If no value is passed, all coefficients will
                 be randomly generated.
 
-        >>> from gp import GP
-        >>> gp = GP()
+        >>> from gp import GPTreebank
+        >>> gp = GPTreebank()
         >>> rpf = RandomPolynomialFactory(treebank=gp, order=3, const_min=-10.0, const_max=10.0)
         >>> p1 = rpf('x', coefficients={((), ()): 1, (('x',), (1,)): 1, (('x',), (2,)): 1, (('x',), (3,)): 1})
         >>> list(p1(**pd.DataFrame({'x': [1, 2, 3, 4]})))

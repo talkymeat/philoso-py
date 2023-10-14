@@ -525,10 +525,10 @@ def tree(treestr: str, treebank = None, **kwargs):
 def main():
     #import doctest
     #doctest.testmod()
-    from gp import GP
+    from gp import GPTreebank
     import operators as ops
     op = [ops.SUM, ops.PROD, ops.SQ, ops.CUBE, ops.POW]
-    gp = GP(operators=op)
+    gp = GPTreebank(operators=op)
     mewtwo = gp.tree("([float]<SUM>([float]<SQ>([int]$mu))([float]<SUM>([float]<PROD>([int]3)([int]$mu))([int]2)))")
 
 

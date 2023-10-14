@@ -17,7 +17,7 @@ for making labelled trees
 
 Created on Thu Nov 30 16:59:45 2017
 
-@author: Dave Cochran
+@author: Xandra Dave Cochran
 """
 
 from copy import copy
@@ -101,6 +101,11 @@ class Tree(ABC):
                 f"You can set a label to be a {Label}, or None, but not " +
                 f"{type(label)}."
             )
+
+    @property
+    def root(self):
+        """The root of the whole tree"""
+        return self.parent.root if self.parent else self
 
     @abstractmethod
     def __len__(self) -> int:

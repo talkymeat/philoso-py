@@ -1,4 +1,5 @@
 import math
+from typing import Collection
 
 def list_transpose(ls, i, j):
     """Transposes the items in list `ls` at index `i` and `j`"""
@@ -45,6 +46,19 @@ def linear_interpolated_slice(ls, s, e):
 
 def nice_list(li: list[str]):
     return ', '.join(li[:-2] + [f'{"," if len(li) > 2 else ""} and '.join(li[-2:])])
+
+
+def collect(a, t: type[Collection], empty_if_none=False):
+    if a:
+        return (
+            a if isinstance(a, t) 
+            else t(a) 
+            if isinstance(a, Collection) and not isinstance(a, str) 
+            else t([a])
+        )
+    elif empty_if_none:
+        return t()
+
 
 def main():
     import doctest

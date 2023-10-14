@@ -4,6 +4,11 @@ import pandas as pd
 from copy import copy
 from treebanks import TypeLabelledTreebank
 from tree_errors import OperatorError
+from typing import TypeAlias
+
+DEBUG = True
+
+Fail: TypeAlias = None
 
 class GPNonTerminal(NonTerminal):
     """GPNonTerminals carry operators, and take valid return types of their operators
@@ -13,10 +18,10 @@ class GPNonTerminal(NonTerminal):
     to a key of `kwargs`, the corresponding value/`Series` will be passed back up the
     tree and operated on
 
-    >>> from gp import GP
+    >>> from gp import GPTreebank
     >>> import operators as ops
     >>> op = [ops.SUM, ops.PROD, ops.SQ, ops.CUBE, ops.POW]
-    >>> gp = GP(operators=op)
+    >>> gp = GPTreebank(operators=op)
     >>> mewtwo = gp.tree("([float]<SUM>([float]<SQ>([int]$mu))([float]<SUM>([float]<PROD>([int]3)([int]$mu))([int]2)))")
     >>> mewtwo(mu=-2)
     0.0
@@ -87,6 +92,38 @@ class GPNonTerminal(NonTerminal):
             ) for c in self],
             operator = self._operator
         )
+    
+    def __call__(self, **kwargs):
+        try:
+            return super().__call__(**kwargs)
+        # What if we get a numerical exception?
+        except OverflowError:
+            if DEBUG:
+                print('Numerical Overflow')
+                print(self)
+                child_outputs = pd.DataFrame()
+                for i, child in enumerate(self):
+                    child_outputs[f'C_{i}'] = child(**kwargs)
+                for j, row in child_outputs.iterrows():
+                    tmp = (j, row)
+                    try:
+                        self._operator([val for val in row])
+                    except:
+                        print(f'GUILTY: {self._operator} on {row} at {j}')
+            self.root.metadata['penalty'] = self.root.metadata.get('penalty', 1.0) * 2.0
+            return None
+        except TypeError as e:
+            if "'NoneType'" in str(e) and 'unsupported operand type' in str(e):
+                return None
+            raise e
+        except ZeroDivisionError:
+            if DEBUG:
+                print('Zero Division')
+                print(self)
+            self.root.metadata['penalty'] = self.root.metadata.get('penalty', 1.0) * 2.0**0.1
+            return None
+            
+        
 
 class GPTerminal(Terminal):
     def __new__(cls, treebank, label, leaf, operator=None, metadata=None):
@@ -170,6 +207,38 @@ class Variable(GPTerminal):
     def is_valid(self):
         return True
 
+    def copy_out(self, treebank = None, **kwargs):
+        """Generates a deep copy of a Terminal: same Labels, and same content:
+        but a distinct object in memory from the original. If `treebank` is a
+        Treebank, The new Terminal will be copied into `treebank`. If `treebank`
+        is `None`, a dummy treebank will be created, and the Terminal will be
+        copied into that.
+
+        Parameters
+        ----------
+            treebank:
+                TypeLabelledTreebank: The target treebank the tree is being
+                    copied into
+            kwargs:
+                Not used, but needed for compatibility with subclasses
+
+        Returns
+        -------
+            Constant: copy of original tree
+        """
+        # If `treebank` is not provided...
+        if not treebank:
+            # ...make a dummy treebank for the copied Terminal to live in
+            treebank = self.treebank.__class__()
+            # XXX How to make sure TB has right OPS?
+        # return the copy Terminal, with `treebank=treebank`
+        return Variable(
+            treebank,
+            self.label if treebank == self.treebank else treebank.get_label(self.label.class_id),  ##-OK both, raw val
+            '$' + copy(self.leaf),
+            operator = self._operator
+        )
+
 class Constant(GPTerminal):
     """A Terminal in which the leaf is always a pd.Series of length 1, with a
     GP operator which mutates the value of the constant.
@@ -189,6 +258,8 @@ class Constant(GPTerminal):
         leaf_type = None
         if not isinstance(leaf, pd.Series):
             leaf_type = type(leaf)
+            if leaf_type == str:
+                print("WUT", leaf)
             # leaf = pd.Series([leaf]) # XXX CHG
         self.gp_operator = MutatorFactory(
             leaf_type if leaf_type else treebank.tn.type_ify(leaf),
@@ -197,14 +268,17 @@ class Constant(GPTerminal):
         )
         super().__init__(treebank, label, leaf, operator=operator, metadata=metadata)
 
-    # def _leaf_str(self):
-    #     leaf_len = len(self.leaf)
-    #     return ("" if not leaf_len else
-    #         self.leaf[0] if leaf_len == 1 else
-    #         str(list(self.leaf)) if leaf_len < 7 else
-    #         f"[{self.leaf[0]}, {self.leaf[1]}, {self.leaf[2]} ... " +
-    #         f"{self.leaf[leaf_len-3]}, {self.leaf[leaf_len-2]}, {self.leaf[leaf_len-1]}]"
-    #     )
+    def _leaf_str(self):
+        try:
+            leaf_len = len(self.leaf)
+        except TypeError:
+            return str(self.leaf)
+        return ("" if not leaf_len else
+            self.leaf[0] if leaf_len == 1 else
+            str(list(self.leaf)) if leaf_len < 7 else
+            f"[{self.leaf[0]}, {self.leaf[1]}, {self.leaf[2]} ... " +
+            f"{self.leaf[leaf_len-3]}, {self.leaf[leaf_len-2]}, {self.leaf[leaf_len-1]}]"
+        )
 
     def __str__(self):
         """Readable string representation of a Terminal. This consists of a pair
@@ -213,8 +287,8 @@ class Constant(GPTerminal):
 
         ([float]x).
         """
-        return f"({self.label if self.label else ''}{self.leaf})" # XXX CHG `...{self._leaf_str()})"`
-
+        return f"({self.label if self.label else ''}{self._leaf_str()})" 
+    
     def __eq__(self, other):
         """Magic method to operator-overload `==` and `!=`
 
@@ -222,7 +296,7 @@ class Constant(GPTerminal):
         -------
             bool: True if class, label and leaf are the same, else False.
         """
-        return self.__class__ == other.__class__ and self.leaf.name == other.leaf.name and self.label == other.label
+        return self.__class__ == other.__class__ and self.leaf == other.leaf and self.label == other.label
 
     def to_LaTeX(self, top = True):
         """Converts trees to LaTeX expressions using the `qtree` package.
@@ -279,12 +353,12 @@ class Constant(GPTerminal):
         if not treebank:
             # ...make a dummy treebank for the copied Terminal to live in
             treebank = TypeLabelledTreebank()
-            # XXX SHould that have been GP()?
+            # XXX SHould that have been `treebank = self.treebank.__class__()`?
         # return the copy Terminal, with `treebank=treebank`
         return Constant(
             treebank,
             self.label if treebank == self.treebank else treebank.get_label(self.label.class_id),  ##-OK both, raw val
-            copy(self.leaf).apply(self.gp_operator) if gp_copy else copy(self.leaf),
+            self.gp_operator(copy(self.leaf)) if gp_copy else copy(self.leaf),
             operator = self._operator
         )
 
