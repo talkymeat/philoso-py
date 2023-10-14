@@ -323,10 +323,24 @@ class MutatorFactory:
 class CrossoverMutator(Mutator):
     def __call__(self, val):
         if random() <= self.mutation_rate:
+            complement = _complement(val.label.nodes, val)
             try:
-                return choice(_complement(val.label.nodes, val))
+                return choice(complement)
             except IndexError:
-                print(_complement(val.label.nodes, val))
+                print('This node:')
+                print(val)
+                print("in this tree:")
+                print(val.root)
+                print("has this Label:")
+                print(val.label)
+                print(
+                    "and there's something weird going on with it." +
+                    " It contains the following nodes:"
+                )
+                for node in val.label.nodes:
+                    print(node)
+                if len(complement)==0:
+                    return val
                 raise IndexError
         else:
             return val
