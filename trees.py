@@ -157,6 +157,27 @@ class Tree(ABC):
         """Number of nodes in tree overall"""
         pass
 
+    def at_depth(self) -> int:
+        """How far is `self` from the root of the tree?
+
+        >>> b = "([S]'blah')"
+        >>> for i in range(8):
+        ...     b = b.replace("'blah'", b)
+        ... 
+        >>> blah = tbs.tree(b)
+        >>> print(blah.depth())
+        256
+        >>> x = 1
+        >>> while not hasattr(blah, 'leaf'):
+        ...     blah = blah[0]
+        ...     if blah.at_depth() != x:
+        ...         print('ooops, I forgorrr')
+        ...     x += 1
+        """
+        if self.parent:
+            return 1 + self.parent.at_depth()
+        return 0
+
     @abstractmethod
     def to_LaTeX(self) -> str:
         """Outputs LaTeX representation of tree. Handy for putting in papers"""

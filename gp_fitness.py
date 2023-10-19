@@ -1,5 +1,6 @@
 import pandas as pd
-from typing import Collection, Protocol, Iterable, Callable, Generic
+import numpy as np
+from typing import Collection, Iterable, Callable
 from gp_trees import GPNonTerminal
 from observatories import Observatory
 from dataclasses import dataclass
@@ -392,7 +393,22 @@ def penalty(tree: GPNonTerminal, **kwargs):
     """
     return tree.metadata.get('penalty', 1.0)
 
-# @flexi_pipeline_element(out_key_maker=lambda args: "fitness")
+@flexi_pipeline_element()
+def divide(num: float, denom: float, **kwarg):
+    """Divides one column by another, and replaces any `inf` values (from dividing 
+    by zero) with NaNs
+    
+    I wrote this one to apply penalties to trees, but do whatever with it.
+    """
+    return (num/denom).replace([np.inf, -np.inf], np.nan)
+
+@scoreboard_pipeline_element(out_key='size')
+def size(tree: GPNonTerminal, **kwargs):
+    return tree.size()
+
+@scoreboard_pipeline_element(out_key='depth')
+def depth(tree: GPNonTerminal, **kwargs):
+    return tree.depth()
 
 def clear(*to_clear: str, except_for: str|list[str]=None):
     """A function called to generate a ScoreboardPipelineElement which deletes 
@@ -484,18 +500,32 @@ class GPScoreboard(pd.DataFrame):
                     " it."
                 )
         def_fitness = def_fitness if def_fitness else 'irmse'
-        self.pipeline = pipeline if pipeline else ([
+        self.provide = collect(provide, set)
+        self.require = collect(require, set)
+        self.kwargs = {"temp_coeff": temp_coeff, **kwargs}
+        self.def_outputs = collect(def_outputs, set)
+        self.pipeline = pipeline if pipeline else tuple([
             clear(except_for='tree'),
             sae, mse, rmse, 
             safe_inv('sae'), safe_inv('mse'), safe_inv('rmse')
         ] + (
-            [rename(def_fitness, 'raw_fitness'), heat]
+            [rename(def_fitness, 'raw_fitness'), heat, rename("fitness", 'pre_fitness')]
             if temp_coeff else
-            [rename(def_fitness, 'fitness')]
+            [rename(def_fitness, 'pre_fitness')]
+        ) + (
+            [penalty, divide('pre_fitness', 'penalty', out_key='fitness')]
         ))
-        self.provide = collect(provide, set)
-        self.require = collect(require, set)
-        self.kwargs = {"temp_coeff": temp_coeff, **kwargs}
+
+    @property
+    def pipeline(self):
+        return self._pipeline
+    
+    @pipeline.setter
+    def pipeline(self, pipeline: tuple[ScoreboardPipelineElement]):
+        self._pipeline = pipeline
+        self._post_process_pipeline()
+
+    def _post_process_pipeline(self):
         final_cols, error = self._validate_pipeline()
         if error:
             raise ValueError(error + ((
@@ -503,16 +533,14 @@ class GPScoreboard(pd.DataFrame):
                 "values, which makes no sense. the success value was " +
                 f"'{final_cols}'"
             ) if final_cols else ""))
-        elif def_outputs:
-            def_outputs = collect(def_outputs, list)
-            for d_o in def_outputs:
+        elif self.def_outputs:
+            for d_o in self.def_outputs:
                 if d_o not in final_cols:
                     raise ValueError(
                         "A value listed as a default scoreboard output, " +
                         f"{d_o}, is not in the final outputs of the tree" +
                         "scoring pipeline"
                     )
-            self.def_outputs = def_outputs
         else:
             self.def_outputs = final_cols
 
@@ -790,6 +818,7 @@ class GPScoreboard(pd.DataFrame):
         3   8.0   96.0   9.797959  0.010309     0.092610  0.313787
         4  16.0  384.0  19.595918  0.002597     0.048553  0.269730
         5  17.6  456.0  21.354157  0.002188     0.044734  0.265911
+        >>> gps1.pipeline = 
         """
         if cols:
             if except_for:
@@ -901,113 +930,3 @@ composite ff's
 pop at least 500, some ppl use much more
     some ppl use smaller, with more point mutation than crossover
 """
-
-
-#deleteme_1 XXX = {"""# if the variables are df columns of length > 1, estimates will also be
-# a df column--so using df.apply to generate a column in which each cell
-# contains a df of shape (len(target), 1) doesn't work: pandas assumes
-# you're doing something weird with multiple columns and
-# exception-shames you for it. So, instead make an empty columns and
-# fill it using a for loop"""}
-    
-#XXX = {"""# for i, t in enumerate(scoreboard['tree']):
-#     results['estimates'][i] = (((t(**ivs) - obs.target)**2).mean())**0.5
-# Calculate MSE: this takes slightly different code for the case where
-# there is no variable anywhere in the tree, so the output is a df
-# containing a single number: if I subtract the target from a 1x1 df,
-# the result will be a df with on numerical value and a load of nulls:
-# if I subtract the target from a raw number `x`, the result will be a
-# df containing `x-target[i]` for all values of `i`
-# scoreboard["mses"] = results['estimates'].apply(
-#     lambda estimate:
-#         np.square(estimate - target).mean() # MSE
-#         if len(estimate) > 1               # In case a tree has no vars,
-#         else np.square(estimate[0] - target).mean() #  in which case the
-# )                                          # output will be one number
-# use the temp over temp+MSE as fitness."""}
-    
-
-# best = {} # ... so will `best`
-# best["best_mse"] = min(scoreboard["mses"]) # ... with the best MSE (lowest)
-# if rmses: # optional return values: Root Mean Squard Error
-#     scoreboard['rmses'] = [mse**.5 for mse in scoreboard["mses"]]
-# ## Find the best tree
-# best_tr = self.k_best(1, scoreboard, mark_4_del=False)
-# if best_tree: # optionally, include the string representation of the
-#     best["best_tree"] = str(best_tr[0]) # best tree in best
-# if best_rmse: # and, optionally, the best RMSE
-#     best["best_rmse"] = best["best_mse"]**.5
-# return scoreboard, best
-
-
-# def imse_fitness(
-#         trees: Collection[GPNonTerminal], 
-#         obs: Observatory, 
-#         temp_coeff: float = 0.0,
-#         dv: str=None, 
-#         rmse: bool=False,
-#         use_rmse: bool=False,
-#         **kwargs
-#     ) -> pd.DataFrame:
-#     """Fitness function based on the inverse of either Mean Squared Error or
-#     Root Mean Squared Error. This assumes only a single DV, but one or more IVs.
-
-#     Parameters
-#     ==========
-#         trees (Collection[GPNonTerminal]): The root treenodes of a GPTreebank treebank
-#         obs (Observatory): An Observatory object that supplies values for the
-#             IVs, and the target value of the DV.
-#         temp_coeff (float): A coefficient which determines the 'temperature' of
-#             the system. The `temp` of the system is equal to the mean of the 
-#             error measure that determines fitness (MSE or RMSE) times the 
-#             `temp_coeff`. Therefore, if `temp_coeff` is 0.0, `temp` is 0.0 too.
-#             The idea here is that the inverse of error is a tree's 'raw 
-#             fitness', but its 'effective fitness' is 'raw fitness' + temp. 
-#             This is equivalent to dividing each round of selection into a part
-#             where probability of selection is proportionate to raw fitness, and
-#             a part where the probability of selection is equal for all trees,
-#             where the relative sizes of the two parts is determined by `temp`.
-#         dv (str): If obs returns multiple dvs, this fitness function can only 
-#             attend to one, and `dv` specifies which. If `obs` only gives one
-#             dv, this arg is not needed, and can be left as its default value,
-#             `None`. 
-#         rmse (bool): If `True`, calculate RMSE (default False). If 
-#             `use_rmse` is `True`, RSME must be calculated, so `rmse` is 
-#             redundant
-#         use_rmse (bool): If `True`, use RMSE as the error measure from which
-#             fitness is calculated. If `False` (default), use MSE.
-
-#     >>> from test_trees import test_gp_trees
-#     >>> from observatories import StaticObservatory
-#     >>> tgpt = test_gp_trees()
-#     >>> sources = pd.DataFrame({'x': [1.0, 2.0, 3.0, 4.0, 5.0], 'y': [9.0, 18.0, 31.0, 48.0, 69.0]})
-#     >>> obs = StaticObservatory('x', 'y', sources=sources, obs_len=5)
-#     >>> imse_fitness(tgpt, obs)
-#     """
-#     # Using a dataframe to store error measures and scores - C under the
-#     # hood and SIMD funtimes
-#     # Retrieve the current population
-#     scoreboard = pd.DataFrame({'tree': trees})
-#     dv = obs.dvs[0]
-#     if len(obs.dvs)>1:
-#         if not (dv and dv in obs.dvs):
-#             raise ValueError(
-#                 f"DV {dv} not found in Observatory dvs"
-#                 if dv else
-#                 f"Observatory obs has multiple DVs, but no kwarg `dv` is given to specify which one"
-#             )
-#     ivs = next(obs)
-#     scoreboard['mse'] = scoreboard['tree'].map(
-#         lambda t: ((obs.target[dv] - t(**ivs))**2).mean()
-#     )
-#     use_rmse = kwargs.get('use_rmse', False)
-#     err_measure = 'rmse' if use_rmse else 'mse'
-#     if kwargs.get('rmse', False) or use_rmse:
-#         scoreboard['rmse'] = scoreboard.mse**0.5
-#     scoreboard["raw_fitness" if temp_coeff else "fitness"] = (
-#         1.0/(1.0+scoreboard[err_measure])
-#     ) # fitness value, if temp coeff is 0
-#     if temp_coeff:
-#         temp = scoreboard["raw_fitness"].mean() * temp_coeff
-#         scoreboard['fitness'] = scoreboard['fitness'] + temp
-#     return scoreboard

@@ -24,6 +24,8 @@ class GPTreebank(TypeLabelledTreebank):
             mutation_rate: float = 0.0,
             mutation_sd: float = 0.0,
             temp_coeff: float = 1.0,
+            max_depth: int = 0,
+            max_size: int = 0,
             seed_pop_node_max: int = None,
             seed_pop_tree_max: int = None,
             default_op = None,
@@ -34,62 +36,11 @@ class GPTreebank(TypeLabelledTreebank):
         self.seed_pop_tree_max = seed_pop_tree_max
         self.mutation_rate = mutation_rate
         self.mutation_sd = mutation_sd
+        self.max_depth = max_depth
+        self.max_size = max_size
         self.temp_coeff = temp_coeff
         self.T = GPTerminal
         self.N = GPNonTerminal
-
-
-    # # XXX score_trees has been changed - new name & new sig XXX
-    # def gp_update(
-    #             self, 
-    #             observatory: Observatory,
-    #             pop=None, 
-    #             fitness: GPScoreboard=None,  
-    #             elitism=0, 
-    #             best_tree: bool=True, 
-    #             rmses: bool=True,
-    #             best_rmse: bool=True,
-    #             **kwargs
-    #         ):
-    #     """Once fitness scores are calculated, this generates the next
-    #     generation of trees. If `elitism` > 0, the value of the `elitism` param
-    #     gives the number of trees that will be spared without chance of mutation
-    #     or crossover into the next generation. The rest of the next generation
-    #     is produced by replicating trees from the previous, with a probability
-    #     related to fitness, subject to mutation and crossover.
-
-    #     >>> #Note that the doctest for this method has been placed in a function
-    #     >>> #and SKIPped. The SKIP tag should be removed if the method is
-    #     >>> #changed and needs to be re-tested
-    #     >>> def test():
-    #     ...     import operators as ops
-    #     ...     op = [ops.PROD]
-    #     ...     totals = np.array([0,0,0,0,0])
-    #     ...     w = np.array([.5, .3, .1, .07, .03])
-    #     ...     n = 20000
-    #     ...     targ_totals = n * (np.array([1., 1., 0., 0., 0.]) + (3 * w))
-    #     ...     for _ in range(n):
-    #     ...         gp = GPTreebank(operators = op)
-    #     ...         t = [
-    #     ...             gp.tree("([float]<PROD>([float]1.)([float]0.))"),
-    #     ...             gp.tree("([float]<PROD>([float]1.)([float]1.))"),
-    #     ...             gp.tree("([float]<PROD>([float]1.)([float]2.))"),
-    #     ...             gp.tree("([float]<PROD>([float]1.)([float]3.))"),
-    #     ...             gp.tree("([float]<PROD>([float]1.)([float]4.))")
-    #     ...         ]
-    #     ...         scores = pd.Series(w)
-    #     ...         gp.gp_update(scores=scores, elitism=2)
-    #     ...         for t in gp.get_all_root_nodes()[float]:
-    #     ...             totals[int(t()[0])] +=1
-    #     ...     d = (totals-targ_totals)/totals
-    #     ...     if not (d < 0.05).all():
-    #     ...         print("alas:", arr)
-    #     ...     return d
-    #     >>> test() # doctest: +SKIP
-    #     array([ True,  True,  True,  True,  True])
-    #     """
-    #     pass
-        
 
     def generate_starting_sample(self, pop, genfunc=None, vars_=None, **kwargs):
         self.clear()
@@ -120,7 +71,11 @@ class GPTreebank(TypeLabelledTreebank):
                 "obs": observatory,
             }
             def_outputs = collect(best_outvals, list) if best_outvals else None
-            for arg in ['def_outputs', 'dv', 'def_fitness']:
+            for arg, val in (
+                ('def_outputs', def_outputs), 
+                ('dv', dv), 
+                ('def_fitness', def_fitness)
+            ):
                 val = eval(arg)
                 if val:
                     sb_kwargs[arg] = val 
@@ -174,3 +129,58 @@ def main():
 if __name__ == '__main__':
     main()
 
+
+
+
+
+    # # XXX score_trees has been changed - new name & new sig XXX
+    # def gp_update(
+    #             self, 
+    #             observatory: Observatory,
+    #             pop=None, 
+    #             fitness: GPScoreboard=None,  
+    #             elitism=0, 
+    #             best_tree: bool=True, 
+    #             rmses: bool=True,
+    #             best_rmse: bool=True,
+    #             **kwargs
+    #         ):
+    #     """Once fitness scores are calculated, this generates the next
+    #     generation of trees. If `elitism` > 0, the value of the `elitism` param
+    #     gives the number of trees that will be spared without chance of mutation
+    #     or crossover into the next generation. The rest of the next generation
+    #     is produced by replicating trees from the previous, with a probability
+    #     related to fitness, subject to mutation and crossover.
+
+    #     >>> #Note that the doctest for this method has been placed in a function
+    #     >>> #and SKIPped. The SKIP tag should be removed if the method is
+    #     >>> #changed and needs to be re-tested
+    #     >>> def test():
+    #     ...     import operators as ops
+    #     ...     op = [ops.PROD]
+    #     ...     totals = np.array([0,0,0,0,0])
+    #     ...     w = np.array([.5, .3, .1, .07, .03])
+    #     ...     n = 20000
+    #     ...     targ_totals = n * (np.array([1., 1., 0., 0., 0.]) + (3 * w))
+    #     ...     for _ in range(n):
+    #     ...         gp = GPTreebank(operators = op)
+    #     ...         t = [
+    #     ...             gp.tree("([float]<PROD>([float]1.)([float]0.))"),
+    #     ...             gp.tree("([float]<PROD>([float]1.)([float]1.))"),
+    #     ...             gp.tree("([float]<PROD>([float]1.)([float]2.))"),
+    #     ...             gp.tree("([float]<PROD>([float]1.)([float]3.))"),
+    #     ...             gp.tree("([float]<PROD>([float]1.)([float]4.))")
+    #     ...         ]
+    #     ...         scores = pd.Series(w)
+    #     ...         gp.gp_update(scores=scores, elitism=2)
+    #     ...         for t in gp.get_all_root_nodes()[float]:
+    #     ...             totals[int(t()[0])] +=1
+    #     ...     d = (totals-targ_totals)/totals
+    #     ...     if not (d < 0.05).all():
+    #     ...         print("alas:", arr)
+    #     ...     return d
+    #     >>> test() # doctest: +SKIP
+    #     array([ True,  True,  True,  True,  True])
+    #     """
+    #     pass
+        

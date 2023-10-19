@@ -2,6 +2,12 @@ from abc import ABC, abstractmethod
 from math import log, floor, pi, cos, sin
 from random import choice, random, uniform, gauss
 
+from icecream import ic
+import numpy as np
+
+from logtools import MiniLog
+from size_depth import SizeDepth 
+
 def _complement(ls, x):
     if x in ls:
         i = ls.index(x)
@@ -231,7 +237,6 @@ class BoolMutator(Mutator):
         """
         return val != (random() <= self.mutation_rate)
 
-
 class MutatorFactory:
     """Factory class for mutation operators for constants in Genetic
     Programming. Mutation works a bit differently depending on the type of the
@@ -260,11 +265,12 @@ class MutatorFactory:
     requires graphing distributions and kinda eyeballing them.
     """
 
+    
     types = {
-        int: IntMutator,
-        float: FloatMutator,
-        complex: ComplexMutator,
-        bool: BoolMutator
+        np.int64: IntMutator,
+        np.float64: FloatMutator,
+        np.complex128: ComplexMutator,
+        np.bool_: BoolMutator
     }
 
     def __new__(cls, const_type, mutation_rate, mutation_sd=None, **kwargs):
@@ -292,13 +298,13 @@ class MutatorFactory:
             AttributeError:
                 If no Mutator subclass is defined for the provided `const_type`.
 
-        >>> print(type(MutatorFactory(int, 0.25)).__name__)
+        >>> print(type(MutatorFactory(np.int64, 0.25)).__name__)
         IntMutator
-        >>> print(type(MutatorFactory(float, 0.25, 1.25)).__name__)
+        >>> print(type(MutatorFactory(np.float64, 0.25, 1.25)).__name__)
         FloatMutator
-        >>> print(type(MutatorFactory(bool, 0.25)).__name__)
+        >>> print(type(MutatorFactory(np.bool_, 0.25)).__name__)
         BoolMutator
-        >>> print(type(MutatorFactory(complex, 0.25, 1.25)).__name__)
+        >>> print(type(MutatorFactory(np.complex128, 0.25, 1.25)).__name__)
         ComplexMutator
         >>> print(type(MutatorFactory(str, 0.25)).__name__)
         Traceback (most recent call last):
@@ -321,29 +327,136 @@ class MutatorFactory:
             )
 
 class CrossoverMutator(Mutator):
-    def __call__(self, val):
+
+
+    def __init__(self, mutation_rate: float=0.0, max_depth: int=0, max_size: int=0, **kwargs):
+        """Initialises mutation rate, and the maximum size and depth of mutated z
+        trees. Details of how these are used in __call__.
+
+        Parameters
+        ----------
+            mutation_rate : float
+                The frequency with which non-zero mutation occurs. A probability
+                in the closed interval [0.0, 1.0]. An impossibility by default.
+            max_depth: int
+                The maximum depth of the tree resulting from a mutation
+            max_size: int
+                The maximum size of the tree resulting from a mutation
+        """
+        self.max_depth = max_depth
+        self.max_size = max_size
+        super().__init__(mutation_rate)
+
+    def __call__(self, val, sd: SizeDepth, ml: MiniLog=None):
+        """Randomly decides whether or not to cross over, and if so looks for a 
+        subtree that can be crossed in - one which has the same label, and and 
+        won't make the resulting tree too big or too deep
+
+        >>> from tree_factories import RandomPolynomialFactory
+        >>> from gp import GPTreebank
+        >>> import pandas as pd
+        >>> import operators as ops
+        >>> ms, md = 300, 70
+        >>> gp = GPTreebank(
+        ...     mutation_rate = 0.2, 
+        ...     mutation_sd=0.02, 
+        ...     crossover_rate=0.5, 
+        ...     max_depth=md,
+        ...     max_size=ms, 
+        ...     operators=[ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE]
+        ... )
+        >>> rpf = RandomPolynomialFactory(gp, 5, -10.0, 10.0)
+        >>> trees = [rpf('x', 'y') for _ in range(5)]
+        >>> df = pd.DataFrame({'x': [1.0, 1.0], 'y': [1.0, 1.0]})
+        >>> bigtrees, deeptrees = 0, 0
+        >>> bigness = []
+        >>> deepness = []
+        >>> for _ in range(200):
+        ...     tmax = None
+        ...     valmax = -np.inf
+        ...     for t in trees:
+        ...         val = t(**df)
+        ...         if isinstance(val, pd.Series):
+        ...             val = val.sum()
+        ...         if val is None:
+        ...             print(val)
+        ...             print(t)
+        ...         elif valmax < val:
+        ...             tmax = t
+        ...             valmax = val
+        ...     if tmax is None:
+        ...         print('tmax is None')
+        ...     newtrees = [tmax.copy(gp_copy=True) for _ in range(5)]
+        ...     for tt in trees:
+        ...         tt.delete()
+        ...     trees = newtrees
+        ...     beeeg = bool([tr for tr in trees if tr.size() > ms])
+        ...     if beeeg:
+        ...         bigness.append([(tr.size(), '>', ms) for tr in trees if tr.size() > ms])
+        ...     bigtrees += beeeg
+        ...     deeep = bool([tr for tr in trees if tr.depth() > md])
+        ...     if deeep:
+        ...         deepness.append([(tr.depth(), '>', md) for tr in trees if tr.depth() > md])
+        ...     deeptrees += deeep
+        >>> bd = bigtrees*deeptrees
+        >>> print(f"({bigtrees}){'n' if bd else 'u'}({deeptrees}){'' if bd else '=d'}") # SMILE! (0)u(0)=d
+        (0)u(0)=d
+        """
+        # Randomly decide whether or not to cross over
         if random() <= self.mutation_rate:
+            size = val.size()
+            pruned_depth = val.at_depth()
+            # To keep the resulting tree below the maximum size and depth, work out:
+            # 1) How far from root the substitution site is from root. If the tree 
+            #    as a whole is less than max depth, then keeping it below max depth 
+            #    means ensuring the new subtree of depth not greater than 
+            #    `self.max_depth`, minus the distance from val to root: and...
+            # 2) The size of the whole tree, minus the subtree at val which is being
+            #    crossed over. The new subtree cannot add more nodes than 
+            #    `self.max_size`, minus the nodes of the original tree that are *not* 
+            #    being substituted out. Note these are only computed if the maximums
+            #    are set - no need to do unnecessary computation
+            pruned_size = sd.size - size
+            # Make a collection of all same-label nodes in the treebank EXCEPT the 
+            # substitution site, val
             complement = _complement(val.label.nodes, val)
-            try:
-                return choice(complement)
-            except IndexError:
-                print('This node:')
-                print(val)
-                print("in this tree:")
-                print(val.root)
-                print("has this Label:")
-                print(val.label)
-                print(
-                    "and there's something weird going on with it." +
-                    " It contains the following nodes:"
-                )
-                for node in val.label.nodes:
-                    print(node)
-                if len(complement)==0:
+            # pick a random subtree from that collection
+            if not complement:
+                return val
+            subtree =  choice(complement)
+            sts, std = subtree.size(), subtree.depth()
+            # Now, it must be checked that it's within size and/or depth bounds.
+            # SizeDepth is set up to be Callable, such that calling `sd` with
+            # values for the new output tree size and depth results in the size and
+            # depth values of sd being updated *if* they are within size & depth 
+            # limits, and returns boolean, True if the update is successful, False
+            # otherwise. Therefore, if the update succeeds, the loop condition is
+            # broken
+            while not sd(pruned_size+sts, max(sd.depth, pruned_depth+std)):
+                # If we have to try again, remove the no-good subtree from the pool
+                complement = _complement(complement, subtree)
+                # If we drain the pool entirely, then the substitution is impossible,
+                # and the original subtree will be returned
+                if not complement:
                     return val
-                raise IndexError
-        else:
-            return val
+                subtree = choice(complement)
+                sts, std = subtree.size(), subtree.depth()
+            if len(subtree)==0:
+                print('wut?')
+            return subtree
+        if len(val)==0:
+            print('huh?')
+        return val
+    
+    def get_subtree(self, complement, old_st):
+        complement = _complement(complement, old_st)
+        # If we drain the pool entirely, then the substitution is impossible,
+        # and the original subtree will be returned
+        if not complement:
+            return old_st
+        subtree =  choice(complement)
+        sts, std = subtree.size(), subtree.depth()
+        return subtree, complement, sts, std
 
 def main():
     import doctest

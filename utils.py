@@ -45,6 +45,17 @@ def linear_interpolated_slice(ls, s, e):
     return slice
 
 def nice_list(li: list[str]):
+    """Takes a list of strings and formats it nicely as a string (with an
+    Oxford Comma because I make the rules around here)
+    
+    >>> assortment = ['a large bear', 'the nuns', 'Brian Blessed', 'Liz Truss']
+    >>> for i in range(4):
+    ...     print(nice_list(assortment[3-i:4]))
+    Liz Truss
+    Brian Blessed and Liz Truss
+    the nuns, Brian Blessed, and Liz Truss
+    a large bear, the nuns, Brian Blessed, and Liz Truss
+    """
     return ', '.join(li[:-2] + [f'{"," if len(li) > 2 else ""} and '.join(li[-2:])])
 
 
@@ -56,7 +67,7 @@ def collect(a, t: type[Collection], empty_if_none=False):
             if isinstance(a, Collection) and not isinstance(a, str) 
             else t([a])
         )
-    elif empty_if_none:
+    elif empty_if_none or a is not None:
         return t()
 
 

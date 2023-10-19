@@ -1,14 +1,34 @@
 from trees import Terminal, NonTerminal
 from mutators import MutatorFactory, CrossoverMutator
 import pandas as pd
+import numpy as np
 from copy import copy
 from treebanks import TypeLabelledTreebank
 from tree_errors import OperatorError
 from typing import TypeAlias
+from size_depth import SizeDepth
+from logtools import MiniLog
+from icecream import ic
+import warnings
+
 
 DEBUG = True
 
-Fail: TypeAlias = None
+class D:
+    TYPES = {
+        int: np.int64,
+        float: np.float64,
+        complex: np.complex128,
+        str: np.string_
+    }
+
+
+    def f(self, *arg):
+        return False
+
+    def __new__(cls, val):
+        return D.TYPES.get(type(val), cls.f)(val) or val
+
 
 class GPNonTerminal(NonTerminal):
     """GPNonTerminals carry operators, and take valid return types of their operators
@@ -32,7 +52,7 @@ class GPNonTerminal(NonTerminal):
     """
     def __init__(self, treebank, label, *children, operator=None, metadata=None):
         super().__init__(treebank, label, *children, operator=operator, metadata=metadata)
-        self.gp_operator = CrossoverMutator(treebank.crossover_rate)
+        self.gp_operator = CrossoverMutator(treebank.crossover_rate, treebank.max_depth, treebank.max_size)
 
     @property
     def is_valid(self):
@@ -49,7 +69,7 @@ class GPNonTerminal(NonTerminal):
             )
         return True
 
-    def copy_out(self, treebank = None, gp_copy=False, **kwargs):
+    def copy_out(self, treebank = None, gp_copy=False, _sd: SizeDepth=None, **kwargs):
         """Generates a deep copy of a tree: the same structure, same Labels, and
         for the Terminals, same content: but each node a distinct object in
         memory from the corresponding node in the original. If a Treebank is
@@ -66,6 +86,11 @@ class GPNonTerminal(NonTerminal):
         ----------
             treebank:
                 The target treebank the tree is being copied into
+            gp_copy (bool):
+                If true, GP mutation and corssover operators will be applied
+            sd (SizeDepth):
+                A simple tracker which ensures GP crossover operators don't 
+                make the output tree too big or too deep
             kwargs:
                 Not used, but needed for compatibility with subclasses
 
@@ -77,30 +102,37 @@ class GPNonTerminal(NonTerminal):
         if not treebank:
             # create a dummy treebank, and then it won't be None. 
             treebank = TypeLabelledTreebank()
-        #### ALSO this needs to be able to handle operators
-        # Then create the copied NonTerminal, and recursively copy its children,
-        # also to `treebank`: this means, if the function is called with
-        # `treebank == None`, the whole tree-fragment will be copied to the same
-        # dummy treebank.
+        sd = _sd if _sd and gp_copy else SizeDepth(
+            size=self.size(),
+            depth=self.depth(),
+            max_size=treebank.max_size,
+            max_depth=treebank.max_depth
+        )
         return treebank.N(
             treebank,
             self.label if treebank == self.treebank else treebank.get_label(self.label.class_id),
             *[(
-                self.gp_operator(c).copy_out(treebank, gp_copy=gp_copy, **kwargs)
+                self.gp_operator(
+                    c, sd=sd
+                ).copy_out(
+                    treebank, gp_copy=gp_copy, _sd=sd, **kwargs
+                )
                 if gp_copy
                 else c.copy_out(treebank, gp_copy=gp_copy, **kwargs)
             ) for c in self],
             operator = self._operator
-        )
+        ) 
     
     def __call__(self, **kwargs):
         try:
-            return super().__call__(**kwargs)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="overflow encountered in scalar power")
+                return super().__call__(**kwargs)
         # What if we get a numerical exception?
         except OverflowError:
             if DEBUG:
-                print('Numerical Overflow')
-                print(self)
+                ic('Numerical Overflow')
+                ic(self)
                 child_outputs = pd.DataFrame()
                 for i, child in enumerate(self):
                     child_outputs[f'C_{i}'] = child(**kwargs)
@@ -109,22 +141,31 @@ class GPNonTerminal(NonTerminal):
                     try:
                         self._operator([val for val in row])
                     except:
-                        print(f'GUILTY: {self._operator} on {row} at {j}')
+                        ic(f'GUILTY: {self._operator} on {row} at {j}')
             self.root.metadata['penalty'] = self.root.metadata.get('penalty', 1.0) * 2.0
             return None
         except TypeError as e:
             if "'NoneType'" in str(e) and 'unsupported operand type' in str(e):
+                ic('aw fuck, NoneType')
                 return None
             raise e
+        except AttributeError as e:
+            if DEBUG:
+                ic('Attribute Error')
+                ic('This subtree:')
+                ic(self)
+                ic('in this tree:')
+                ic(self.root)
+                ic('did a fuckus wuckus')
+                ic(e)
         except ZeroDivisionError:
             if DEBUG:
-                print('Zero Division')
-                print(self)
+                ic('Zero Division')
+                ic(self)
             self.root.metadata['penalty'] = self.root.metadata.get('penalty', 1.0) * 2.0**0.1
             return None
             
         
-
 class GPTerminal(Terminal):
     def __new__(cls, treebank, label, leaf, operator=None, metadata=None):
         if isinstance(leaf, str):
@@ -176,7 +217,7 @@ class Variable(GPTerminal):
         """When a GP Tree is called, it is given kwargs corresponding to the 
         variables of the expression"""
         #if self.label
-        return kwargs[self.leaf]
+        return D(kwargs[self.leaf])
 
     def to_LaTeX(self, top = True):
         """Converts trees to LaTeX expressions using the `qtree` package.
@@ -250,6 +291,7 @@ class Constant(GPTerminal):
         return Terminal.__new__(cls)
 
     def __init__(self, treebank, label, leaf, operator=None, metadata=None):
+        leaf = D(leaf)
         if isinstance(leaf, str):
             try:
                 leaf = eval(leaf)
@@ -259,7 +301,7 @@ class Constant(GPTerminal):
         if not isinstance(leaf, pd.Series):
             leaf_type = type(leaf)
             if leaf_type == str:
-                print("WUT", leaf)
+                ic("WUT", leaf)
             # leaf = pd.Series([leaf]) # XXX CHG
         self.gp_operator = MutatorFactory(
             leaf_type if leaf_type else treebank.tn.type_ify(leaf),

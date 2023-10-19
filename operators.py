@@ -372,7 +372,7 @@ class Operator:
                 )
             else:
                 raise AttributeError(
-                    "Incorrect arguments"
+                    f"Incorrect arguments for {self}: {args}"
                 )
 
     @classmethod
