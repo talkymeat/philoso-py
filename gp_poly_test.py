@@ -77,11 +77,12 @@ def make_var_name():
 def gp_rand_poly_test(
         n, generations=100, pop=100, iv_min=-5*np.pi, iv_max=5*np.pi, coeff_min=-0.1,
         coeff_max=0.1, mutation_rate = 0.2, mutation_sd=0.02, crossover_rate=0.2,
-        elitism=5, order=6, def_fitness=None, temp_coeff=1.0):
+        elitism=5, order=6, def_fitness=None, temp_coeff=1.0, max_size=300, 
+        max_depth=70):
     opset = [ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE]
     gp = GPTreebank(
         mutation_rate = mutation_rate, mutation_sd=mutation_sd,
-        crossover_rate=crossover_rate,
+        crossover_rate=crossover_rate, max_size=max_size, max_depth=max_depth,
         operators=opset
     )
     target_poly = RandomPolynomialFactory(

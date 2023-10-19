@@ -92,7 +92,7 @@ class GPTreebank(TypeLabelledTreebank):
             best = scoreboard.score_trees(old_gen, except_for=expt_outvals)
             scoreboard.k_best(elitism)
             if n == steps-1:
-                final_best = scoreboard.k_best(-1, mark_4_del=False)[0]
+                final_best = scoreboard.k_best(1, mark_4_del=False)[0]
             for t in choices(old_gen, scoreboard['fitness'], k=pop-elitism):
                 t.copy(gp_copy=True) # WUT XXX
             deathlist = filter(

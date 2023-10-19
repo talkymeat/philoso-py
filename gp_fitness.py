@@ -463,7 +463,7 @@ def clear(*to_clear: str, except_for: str|list[str]=None):
 
 class GPScoreboard(pd.DataFrame):
     _metadata = [
-        'obs', 'pipeline', 'kwargs', 'provide', 'require', 'def_outputs'
+        'obs', '_pipeline', 'pipeline', 'kwargs', 'provide', 'require', 'def_outputs'
     ]
 
     def __init__(
