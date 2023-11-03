@@ -9,7 +9,7 @@ import seaborn as sns
 from gp_trees import GPTerminal, GPNonTerminal
 from tree_factories import RandomPolynomialFactory
 from typing import Union
-from observatories import FunctionObservatory
+from observatories import FunctionObservatory, StaticObservatory, Observatory
 
 
 def make_var_name():
@@ -74,29 +74,50 @@ def make_var_name():
 
 #     return res
 
+# def target_tree_func(target_tree: GPNonTerminal, ivs: pd.Series) -> pd.Series:
+#     def 
+#         target_tree(**ivs)
+OPSET = [ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE]
+  
+def uniform_iv_func(iv_min: float, iv_max: float):
+    def uniform_iv(obs_len: int, **kwargs):
+        return pd.Series([uniform(iv_min, iv_max) for i in range(obs_len)])
+    return uniform_iv
+
+def target_poly_func(var: str, *vars: str, order: int, const_min: float, const_max: float):
+    return RandomPolynomialFactory(
+        GPTreebank(operators=OPSET), order=order, 
+        const_min=const_min, const_max=const_max
+    )(*(var,)+vars)
+
+def poly_obs_factory(
+        n: int, var: str, *vars: str, order: int, 
+        const_min: float, const_max: float, 
+        iv_min: float, iv_max: float
+    ) -> Observatory:
+    return FunctionObservatory(
+        'x', 'y', 
+        {
+            'x': uniform_iv_func((iv_min, iv_max)), 
+            'y': target_poly_func(var, *vars, order, const_min, const_max)
+        }, 
+        n
+    )
+
+EXAMPLE_POLY_OBS_FAC = poly_obs_factory(100, 'x', 6)
+
 def gp_rand_poly_test(
         n, generations=100, pop=100, iv_min=-5*np.pi, iv_max=5*np.pi, coeff_min=-0.1,
         coeff_max=0.1, mutation_rate = 0.2, mutation_sd=0.02, crossover_rate=0.2,
         elitism=5, order=6, def_fitness=None, temp_coeff=1.0, max_size=300, 
         max_depth=70):
-    opset = [ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE]
+    
     gp = GPTreebank(
         mutation_rate = mutation_rate, mutation_sd=mutation_sd,
         crossover_rate=crossover_rate, max_size=max_size, max_depth=max_depth,
-        operators=opset
+        operators=OPSET
     )
-    target_poly = RandomPolynomialFactory(
-        GPTreebank(operators=opset), order=order, 
-        const_min=coeff_min, const_max=coeff_max
-    )('x')
-    def target(ivs: pd.Series) -> pd.Series:
-        return target_poly(**ivs)
-    def uniform_iv(obs_len: int, **kwargs):
-        return pd.Series([uniform(iv_min, iv_max) for i in range(obs_len)])
-    obs = FunctionObservatory(
-        'x', 'y', {'x': uniform_iv, 'y': target}, n
-    )
-    res, final_tree = gp.run_gp(
+    res, final_tree = gp.run(
         RandomPolynomialFactory(
             gp, order=order, const_min=coeff_min, const_max=coeff_max
         ),
@@ -106,19 +127,22 @@ def gp_rand_poly_test(
         temp_coeff=temp_coeff
     )
     print("Best trees by generation:")
-    for i in range(0, len(res['tree']), 10):
+    for i in range(10):
+        print(f"Gen {i}: {res['tree'][i],}")
+        print(f"RMSE = {res['rmse'][i]}")
+    for i in range(10, len(res['tree']), 10):
         print(f"Gen {i}: {res['tree'][i],}")
         print(f"RMSE = {res['rmse'][i]}")
     print("="*30)
     print("Best tree:")
     print(final_tree)
-    showtree(final_tree)
+    # showtree(final_tree)
     print(f"RMSE = {res['rmse'][-1]}")
     show_data = pd.DataFrame({
         'x': uniform_iv(obs_len=n*10)
     })
     show_data['est_y'] = final_tree(x=show_data['x'])
-    show_data['y'] = target(show_data['x'])
+    show_data['y'] = target(show_data)
     fig, axs = plt.subplots(3, 2)
     fig.set_size_inches(18.5, 27, forward=True)
     axs[0, 0].plot(res['mse'])
@@ -129,8 +153,8 @@ def gp_rand_poly_test(
     axs[1, 0].set_title("MSE Heatmap")
     sns.heatmap(pd.DataFrame(res['rmse']).transpose(), ax=axs[1, 1])
     axs[1, 1].set_title("RMSE Heatmap")
-    axs[2, 0].scatter(show_data['x'], show_data['est_y'], c='b', label='target')
-    axs[2, 0].scatter(show_data['x'], show_data['y'], c='r', label = 'est')
+    axs[2, 0].scatter(show_data['x'], show_data['est_y'], c='b', label='estimate')
+    axs[2, 0].scatter(show_data['x'], show_data['y'], c='r', label = 'target')
     return res, final_tree
 
 # def gp_poly_test(order, num_vars, n, generations=100, pop=100, iv_min=-100,

@@ -4,6 +4,8 @@ deactivate/
 .fig_tmp/
 svg_test/
 toyxmpl/
+scratch*.ipynb
+Untitled*.ipynb
 
 .DS_Store
 

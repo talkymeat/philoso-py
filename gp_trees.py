@@ -87,7 +87,7 @@ class GPNonTerminal(NonTerminal):
             treebank:
                 The target treebank the tree is being copied into
             gp_copy (bool):
-                If true, GP mutation and corssover operators will be applied
+                If true, GP mutation and crossover operators will be applied
             sd (SizeDepth):
                 A simple tracker which ensures GP crossover operators don't 
                 make the output tree too big or too deep

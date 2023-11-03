@@ -1,5 +1,6 @@
 import math
 from typing import Collection
+from icecream import ic
 
 def list_transpose(ls, i, j):
     """Transposes the items in list `ls` at index `i` and `j`"""
@@ -60,11 +61,11 @@ def nice_list(li: list[str]):
 
 
 def collect(a, t: type[Collection], empty_if_none=False):
-    if a:
+    if a is not None:
         return (
-            a if isinstance(a, t) 
+            a if isinstance(a, t)
             else t(a) 
-            if isinstance(a, Collection) and not isinstance(a, str) 
+            if isinstance(a, Collection) and not isinstance(a, str)
             else t([a])
         )
     elif empty_if_none or a is not None:

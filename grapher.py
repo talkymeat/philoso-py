@@ -34,7 +34,6 @@ class Grapher:
         self.fig, self.axs = plt.subplots(
             v, h, figsize=(subplot_size*h, subplot_size*v)
         )
-        ic(self.fig)
         if h!=1 and v!=1:
             for ih, name_col in enumerate(names):
                 for jv, name in enumerate(name_col):
@@ -105,22 +104,13 @@ def grapher_example(ms = 300, md = 70, lims= True):
     for _ in range(200):
         tmax = None
         valmax = -np.inf
-        log = [f'Start gen {_}']
         for t in trees:
             val = t(**df)
             if isinstance(val, pd.Series):
                 val = val.sum()
-            if val is None:
-                ic(val)
-                ic(t)
-                log.append(('NOE', val, t))
             elif valmax < val:
                 tmax = t
                 valmax = val
-        if tmax is None:
-            for line in log:
-                print(line)
-            print("-"*50)
         newtrees = [tmax.copy(gp_copy=True) for _ in range(5)]
         for tt in trees:
             tt.delete()

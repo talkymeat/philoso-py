@@ -734,7 +734,7 @@ class GPScoreboard(pd.DataFrame):
             best.apply(lambda t: t.metadata.__setitem__('to_delete', False))
         return list(best)
 
-    def winner(self, *cols, except_for: str|list[str]=None, **kwargs):
+    def winner(self, *cols, except_for: str|list[str]=None, **kwargs)-> dict: 
         """
         This retrieves a dictionary of selected row elements from the row
         containing the fittest tree. If the column for the tree itself is 
@@ -858,7 +858,7 @@ class GPScoreboard(pd.DataFrame):
             trees: Iterable[GPNonTerminal],  
             *cols: str,
             **kwargs
-        ):
+        )-> dict:
         return self(trees, **kwargs).winner(*cols, **kwargs)
 
 

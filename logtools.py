@@ -1,30 +1,13 @@
 import re
-from icecream import ic
+# from icecream import ic
 from typing import TypeAlias, Hashable
 from utils import collect
 from datetime import datetime as dt
+from m import MTuple, MCounter
 
 Response: TypeAlias = tuple[str|int|None, int|None]
-CTDict: TypeAlias = dict[Hashable, int]
 
-class SuperTuple(tuple):
-    def __new__(self, *args):
-        return tuple.__new__(SuperTuple, args)
 
-    def __getitem__(self, *idcs):
-        out = type(self)()
-        idcs = idcs[0] if isinstance(idcs[0], tuple) else idcs
-        for i in idcs:
-            if isinstance(i, int):
-                if len(idcs)==1:
-                    return super(SuperTuple, self).__getitem__(i)
-                i = slice(i, i+1)
-            out += super(SuperTuple, self).__getitem__(i)
-        return out
-
-class Counter(CTDict):
-    def __getitem__(self, __key: Hashable) -> int:
-        return super().__getitem__(__key) if __key in self else 0
 
 class MiniLog(list):
     class PassThrough:
@@ -33,11 +16,11 @@ class MiniLog(list):
 
         def __call__(self, *args):
             self.minilog(*args)
-            return SuperTuple(*args) if len(args)!=1 else args[0]
+            return MTuple(*args) if len(args)!=1 else args[0]
 
     def __init__(self, *firstline):
         super().__init__(firstline)
-        self.counter = Counter()
+        self.counter = MCounter()
         self.meta = {}
 
     def __call__(self, *content):
@@ -164,11 +147,8 @@ class MLDialogue:
             if i0 is None:
                 continyoo = False
             elif i0 == 'y':
-                ic(self.log)
+                print(self.log)
             elif i1 is None:
-                ic(self.log[i0])
+                print(self.log[i0])
             else:
-                ic(self.log[i0:i1])
-            
-        
-            
+                print(self.log[i0:i1])

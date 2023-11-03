@@ -1,11 +1,81 @@
 import pandas as pd
-from typing import Protocol, runtime_checkable
-from collections.abc import Callable, Mapping, Iterable
+import numpy as np
+from typing import Protocol, runtime_checkable, TypeAlias
+from collections.abc import Callable, Mapping, Iterable, Hashable
+from typing import Any
 # import pandera as pa
 # from pandera import Column, DataFrameSchema, Check, Index
-from utils import nice_list
+from utils import nice_list, collect
 from functools import reduce
 import random
+from dataclasses import dataclass, field, astuple
+from icecream import ic
+
+@dataclass
+class ArgsNKwargs:
+    args: tuple = ()
+    kwargs: dict = field(default_factory=dict)
+
+    def apply(self, func: Callable) -> Any:
+        return func(*self.args, **self.kwargs)
+    
+    @property
+    def tuple(self):
+        return astuple(self)
+
+    def __eq__(self, obj: 'ArgsNKwargs') -> bool:
+        """Two ArgsNKwargs objects are equal if they have the same args, 
+        the exact same keys in kwargs, all mapping to the same values.
+
+        >>> from logtools import Suple
+        >>> eg_templates = Suple('a', 'z', None) * ('b', None) * (({'c': 3},), ({'c': 32},), ({'x': 33},), None) * (({'d': 4},), None)
+        >>> eg_templates = [[tuple(filter(lambda x: p - isinstance(x, dict), eg)) for p in (1, 0)] for eg in eg_templates]
+        >>> egs = Suple(*[ArgsNKwargs(eg[0], reduce(lambda a, b: {**a, **b}, eg[1], {})) for eg in eg_templates])
+        >>> sum([(eg[0]==eg[1]) == bool(i%(len(egs)+1)) for i, eg in enumerate(egs**2)])
+        0
+        """
+        args, kwargs = obj if isinstance(obj, tuple) else obj.tuple
+        return self.args==args and self.kwargs==kwargs    
+
+class TattleDict(dict):
+    def __setitem__(self, __key: Any, __value: Any) -> None:
+        """If the __value passed is equal to the value already mapped by __key,
+        the dict is not changed and False is returned. Otherwise, makes the 
+        change and returns False
+        """
+        self._changed = __key not in self or self[__key] != __value
+        if self._changed:
+            super().__setitem__(__key, __value)
+        return self._changed
+    
+    def __delitem__(self, __key: Any) -> None:
+        self._changed = True
+        return super().__delitem__(__key)
+    
+    def __setitem__(self, __key: Any, __value: Any) -> None:
+        """If the __value passed is equal to the value already mapped by __key,
+        the dict is not changed and False is returned. Otherwise, makes the 
+        change and returns False
+        """
+        self._changed = __key not in self or self[__key] != __value
+        if self._changed:
+            super().__setitem__(__key, __value)
+        return self._changed
+    
+    def pop(self, _TattleDict__key: Hashable, *args, **kwargs) -> Any:
+        self._changed = True
+        return super().pop(_TattleDict__key, *args, **kwargs)
+    
+    @property
+    def changed(self):
+        """Returns True if the dict has changed since last time `changed` was called,
+        and sets `_changed` to False: this will be set to True if a value is changed, 
+        added, or removed"""
+        ch = hasattr(self, '_changed') and self._changed
+        self._changed = False
+        return ch
+
+AKs: TypeAlias = ArgsNKwargs|tuple[tuple, dict[str, Any]]
 
 class Observatory(Protocol):
     def __init__(self, ivs: Iterable[str] | str, dvs: Iterable[str] | str, sources: Mapping, *args, **kwargs):
@@ -28,7 +98,7 @@ class TargetFunc(Protocol):
 
 @runtime_checkable
 class GenFunc(Protocol):
-    def __call__(self, obs_len: int, **kwargs) -> pd.Series:
+    def __call__(self, obs_len: int, *args, **kwargs) -> pd.Series:
         ...
 
 
@@ -149,10 +219,11 @@ class FunctionObservatory:
             obs_len: int,
             **kwargs):
         self.obs_len = obs_len
-        if isinstance(ivs, str):
-            ivs=[ivs]
-        if isinstance(dvs, str):
-            dvs=[dvs]
+        ivs=collect(ivs)
+        dvs=collect(dvs)
+        if '' in sources:
+            for iv in ivs:
+                sources[iv] = sources.get(iv, sources[''])
         if pd.Series([var in sources for var in (ivs+dvs)]).all():
             self.sources = sources
             self.ivs = ivs
@@ -206,6 +277,7 @@ class FunctionObservatory:
         self._iv_data = pd.DataFrame({
             name: self.sources[name](self.obs_len) for name in self.ivs
         })
+        self._dv_ready = False
         return self._iv_data.copy()
 
     @property
@@ -217,16 +289,73 @@ class FunctionObservatory:
             self._dv_data = pd.DataFrame(dvdic)
             self._dv_ready = True
         return self._dv_data.copy()
+    
+
+class StaticFunctionObservatory(FunctionObservatory):
+    def __init__(
+            self, 
+            ivs: list[str] | str, 
+            dvs: list[str] | str, 
+            sources: Mapping[str, GenFunc|TargetFunc],
+            obs_len: int,
+            iv_params: Mapping[str, ArgsNKwargs|tuple[tuple, dict]],
+            **kwargs
+        ):
+        super().__init__(
+            ivs=ivs, 
+            dvs=dvs, 
+            sources=sources,
+            obs_len=obs_len,
+            **kwargs
+        )
+        self.iv_params = TattleDict(iv_params)
+        self.last_varkeys = {}
+        self._dv_data = pd.DataFrame
+
+    def set_obs_ranges(self, **iv_params: tuple[tuple, dict]|ArgsNKwargs):
+        for k, v in iv_params.items():
+
+            if k in self.iv_params:
+                self.iv_params[k] = v
+            else:
+                raise ValueError(f'Variable {k} not in StaticFunctionObservatory')
+            
+    
+    def __next__(self) -> pd.DataFrame:
+        self.last_varkeys = {}
+        iv_out = pd.DataFrame()
+        for iv in self.ivs:
+            # `nsel` = 'start, end, & length'
+            param_tuple = (iv, self.arg_len, self.iv_params[iv]) 
+            if param_tuple not in self._iv_data:
+                self._dv_ready = False
+                self.last_varkeys[iv] = param_tuple
+                self._iv_data[param_tuple] = self.iv_params[iv].apply(self.sources[iv])
+            iv_out[iv] = self._iv_data[param_tuple].copy()
+        return iv_out
+
+    @property
+    def target(self) -> pd.DataFrame:
+        if not self._dv_ready:
+            ivdic = {
+                iv: self._iv_data[self.last_varkeys[iv]] for iv in self.ivs
+            }
+            self._dv_data = pd.DataFrame({
+                name: self.sources[name](**ivdic) for name in self.dvs
+            })
+            self._dv_ready = True
+        return self._dv_data.copy()
+        
 
 
 class WorldObservatory:
     def __init__(self, ivs: list[str], dvs: list[str], **kwargs):
         pass
 
-    def __next__(self) -> (bool, pd.DataFrame):
+    def __next__(self) -> pd.DataFrame:
         pass
 
-    def target(self) -> (bool, pd.DataFrame):
+    def target(self) -> pd.DataFrame:
         pass
 
 

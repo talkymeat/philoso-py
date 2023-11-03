@@ -3,6 +3,7 @@ from gp_trees import GPTerminal, GPNonTerminal
 from gp_fitness import *
 import pandas as pd
 import numpy as np
+from icecream import ic
 from copy import copy
 from typing import Union, List, Callable, Mapping
 from random import choices, choice
@@ -48,7 +49,7 @@ class GPTreebank(TypeLabelledTreebank):
             genfunc(*vars_, **kwargs)
 
 
-    def run_gp(
+    def run(
             self,
             tree_factory: TreeFactory,
             observatory: Observatory,
@@ -107,8 +108,9 @@ class GPTreebank(TypeLabelledTreebank):
                     record[k] = [] + [None]*(n-1)
                 record[k].append(v)
             for _k, _v in record.items():
-                shortfall = n - len(_v)
+                shortfall = n + 1 - len(_v)
                 if shortfall:
+                    ic(shortfall)
                     if shortfall > 1:
                         raise ValueError(
                             "Value lists in `record`, should never be of" +
