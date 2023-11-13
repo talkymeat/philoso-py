@@ -216,7 +216,7 @@ class GPTreebank(TypeLabelledTreebank):
             col for col in scoreboard if col!='tree'
         ]].to_parquet(f'record_{fn}_{n}.parquet')
         jsonised = final_best.copy()
-        jsonised['tree'] = f'{jsonised['tree']}'
+        jsonised['tree'] = f'{jsonised["tree"]}'
         with open(f'final_{fn}.json', 'w') as file:
             json.dump(jsonised, file)
         return record, final_best
