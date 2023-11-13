@@ -4,10 +4,46 @@ from typing import TypeAlias, Hashable
 from utils import collect
 from datetime import datetime as dt
 from m import MTuple, MCounter
+from time import time
 
 Response: TypeAlias = tuple[str|int|None, int|None]
 
+class Stopwatch:
+    def __init__(self):
+        self.start = None
+        self.last = None
+        self.laps = []
 
+    def __call__(self, all=None):
+        t = time()
+        if self.start is None:
+            self.start = t
+            self.last = t
+            return 0
+        return self._update(t)
+    
+    def _update(self, t):
+        self.laps.append(t-self.last)
+        self.last = t
+        return self.laps[-1]
+    
+    def all(self):
+        t = time()
+        lap = self._update(t)
+        return {'laps': self.laps, 'total': t-self.start, 'lap': lap}
+
+class MicroLog:
+    def __init__(self, file: str):
+        self.file = file
+        with open(self.file, 'w') as f:
+            f.write('')
+
+    def __call__(self, input, **kwargs):
+        with open(self.file, 'a') as f:
+            f.write(f"{input}\n")
+            for k, v in kwargs.items():
+                f.write(f"{k}: {v}\n")
+        return input
 
 class MiniLog(list):
     class PassThrough:

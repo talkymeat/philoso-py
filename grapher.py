@@ -5,9 +5,9 @@ from icecream import ic
 from typing import Collection
 import operators as ops
 from trees import *
-from gp import GPTreebank
 from tree_factories import RandomPolynomialFactory
 import warnings
+from copy import deepcopy
 
 # XXX TODO Docs & comments
 class Grapher:
@@ -21,68 +21,92 @@ class Grapher:
         plt.ion()
         self.axnames = {}
         self.linenames = {}
+        namelist = deepcopy(names)
         h, v = 1, 1
-        if isinstance(names, Collection) and not isinstance(names, str):
-            h = len(names)
-            for i, n in enumerate(names):
+        if isinstance(namelist, Collection) and not isinstance(namelist, str):
+            h = len(namelist)
+            for i, n in enumerate(namelist):
                 if isinstance(n, Collection) and not isinstance(n, str):
                     v = max(len(n), v)
                 else:
-                    names[i] = [n]
+                    namelist[i] = [n]
         else:
-            names = [[names]]
+            namelist = [[namelist]]
         self.fig, self.axs = plt.subplots(
             v, h, figsize=(subplot_size*h, subplot_size*v)
         )
         if h!=1 and v!=1:
-            for ih, name_col in enumerate(names):
+            for ih, name_col in enumerate(namelist):
                 for jv, name in enumerate(name_col):
                     self.axs[jv, ih].set_title(name)
                     self.axnames[name] = self.axs[jv, ih]
                     self.d = 2
         elif h!=1:
-            for ih, name in enumerate(names):
+            for ih, name in enumerate(namelist):
                 self.axs[ih].set_title(name[0])
                 self.axnames[name[0]] = self.axs[ih]
                 self.d = 1
         elif v!=1:
-            for jv, name in enumerate(names[0]):
+            for jv, name in enumerate(namelist[0]):
                 self.axs[jv].set_title(name)
                 self.axnames[name] = self.axs[jv]
                 self.d = 1
         else:
-            self.axs.set_title(names[0][0])
-            self.axnames[names[0][0]] = self.axs
+            self.axs.set_title(namelist[0][0])
+            self.axnames[namelist[0][0]] = self.axs
             self.d = 0
 
     def __getitem__(self, key: str):
         return self.axnames[key]
     
-    
-    def plot_data(self, **data):
-        for k, v in data.items():
+    def plot_data(self, n: int=None, **data):
+        for k, y in data.items():
             if k in self.axnames:
-                line = self.axnames[k].plot(v)
+                _y = y[:n] if n else y
+                line = self.axnames[k].plot(
+                    np.nan_to_num(
+                        _y, 
+                        nan=0, 
+                        posinf=np.inf, 
+                        neginf=-np.inf
+                    )
+                )
                 self.linenames[k] = line
                 plt.draw()
                 plt.pause(0.01)
     
-    def set_data(self, **data):
-        for k, v in data.items():
+    def set_data(self, n: int=None, **data):
+        for k, y in data.items():
             if k in self.axnames:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    y = np.array(v)
-                    self.linenames[k][0].set_data(np.arange(len(v)), y)
-                    self.axnames[k].set_ylim(y.min(), y.max())
-                    self.axnames[k].set_xlim(0, len(y))
+                    _y = y[:n] if n else y
+                    # y = np.array(v)
+                    ymin = _y.min() if np.isfinite(_y.min()) else _y[np.isfinite(_y)].min()
+                    ymax = _y.max() if np.isfinite(_y.max()) else _y[np.isfinite(_y)].max()
+                    self.linenames[k][0].set_data(
+                        np.arange(len(_y)), 
+                        np.nan_to_num(
+                            _y, 
+                            nan=0, 
+                            posinf=np.inf, 
+                            neginf=-np.inf
+                        )
+                    )
+                    self.axnames[k].set_ylim(ymin, ymax)
+                    self.axnames[k].set_xlim(0, len(_y))
                     plt.draw()
                     plt.pause(0.01)
     
     def ioff(self):
         plt.ioff()
 
+    def save(self, fn, **kwargs):
+        plt.savefig(fn, **kwargs)
+
+
 def grapher_example(ms = 300, md = 70, lims= True):
+    from gp import GPTreebank
     gp = GPTreebank(
         mutation_rate = 0.2, 
         mutation_sd=0.02, 
@@ -111,7 +135,7 @@ def grapher_example(ms = 300, md = 70, lims= True):
             elif valmax < val:
                 tmax = t
                 valmax = val
-        newtrees = [tmax.copy(gp_copy=True) for _ in range(5)]
+        newtrees = [tmax.copy(gp_copy=True) for _i in range(5)]
         for tt in trees:
             tt.delete()
         trees = newtrees

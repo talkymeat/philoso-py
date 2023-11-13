@@ -8,6 +8,7 @@ from tree_errors import OperatorError
 from typing import TypeAlias
 from size_depth import SizeDepth
 from logtools import MiniLog
+from typing import Any
 from icecream import ic
 import warnings
 
@@ -22,12 +23,17 @@ class D:
         str: np.string_
     }
 
-
     def f(self, *arg):
-        return False
-
+        return None
+    
     def __new__(cls, val):
-        return D.TYPES.get(type(val), cls.f)(val) or val
+        if isinstance(val, str):
+            try:
+                val=eval(val)
+            except Exception:
+                pass
+        _val = D.TYPES.get(type(val), cls.f)(val)
+        return val if _val is None else _val
 
 
 class GPNonTerminal(NonTerminal):
@@ -56,16 +62,22 @@ class GPNonTerminal(NonTerminal):
 
     @property
     def is_valid(self):
-        if not issubclass(self.label.class_id, self._operator.return_type): ##-OK TL RAW
-            raise OperatorError(
-                f"{self} has a mismatch of label-type " +
-                f"({self.label.classname}) and operator " +  ##-OK TL NAME
-                f"return-type ({self._operator.return_type.__name__})"
-            )
-        if not self._operator._type_seq_legal(*[ch.label.class_id for ch in self]): ##-OK TL RAW
+        type_seq_match = self._operator._type_seq_legal(*[ch.label.class_id for ch in self])
+        if not type_seq_match:
             raise OperatorError(
                 f"the children of {self} are not a legal argument-sequence " +
                 f"for its operator {self._operator.name}"
+            )
+        dr_type = self._operator.dynamic_return_type(type_seq_match)
+        if not issubclass(
+            self.label.class_id, dr_type
+        ) and (
+            dr_type is not Any   
+        ): 
+            raise OperatorError(
+                f"{self} has a mismatch of label-type " +
+                f"({self.label.classname}) and operator " +  
+                f"return-type ({self._operator.return_type.__name__})"
             )
         return True
 
@@ -292,11 +304,11 @@ class Constant(GPTerminal):
 
     def __init__(self, treebank, label, leaf, operator=None, metadata=None):
         leaf = D(leaf)
-        if isinstance(leaf, str):
-            try:
-                leaf = eval(leaf)
-            except Exception:
-                pass
+        # if isinstance(leaf, str):
+        #     try:
+        #         leaf = eval(leaf)
+        #     except Exception:
+        #         pass
         leaf_type = None
         if not isinstance(leaf, pd.Series):
             leaf_type = type(leaf)

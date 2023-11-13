@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from copy import deepcopy
 from functools import wraps
 from utils import collect
+from grapher import Grapher
+from icecream import ic
 
 # use pydantic/pandera to specify Dataframe should have 'trees: Tree' (can I make a custon dtype?) and 'fitness: float' XXX This isn't needed
 # class FitnessFunction(Protocol):
@@ -35,7 +37,7 @@ class ScoreboardPipelineElement:
 
     Attributes
     ==========
-        arg_keys (string or list of strings): Keys which identify dataframe
+        arg_keys (string or tuple of strings): Keys which identify dataframe
             columns which be the input to the function, `fn`. If a `str` is
             passed, `__post_init__` will wrap the string in a singleton list.
             If no function is given, this and `out_key` will be used to rename
@@ -54,7 +56,7 @@ class ScoreboardPipelineElement:
             corresponding to `arg_keys`, and may have other kwargs to provide
             values that are stored in a parameter dictionary in GPScoreboard
     """
-    arg_keys: list[str]|str
+    arg_keys: tuple[str]|str
     out_key: str
     vec: bool = False
     fn: Callable = None
@@ -66,7 +68,7 @@ class ScoreboardPipelineElement:
         cannot vectorise), and raises errors for some non-permitted combinations
         of attributes
         """
-        self.arg_keys = collect(self.arg_keys, list, empty_if_none=True)
+        self.arg_keys = collect(self.arg_keys, tuple, empty_if_none=True)
         if 'tree' in self.arg_keys:
             self.vec = False
         if len(self.arg_keys) != 1 and self.fn is None:
@@ -121,7 +123,7 @@ class ScoreboardPipelineElement:
         # `vec` Should be set to true if `fn` uses vectorisation to operate
         # directly on whole columns 
         elif self.vec:
-            sb[self.out_key] = self.fn(**sb[self.arg_keys], **kwargs)
+            sb[self.out_key] = self.fn(**sb[list(self.arg_keys)], **kwargs)
         # If it can't, `vec` should be false, and `apply` will be used to go row
         # by row 
         else:
@@ -219,7 +221,7 @@ class ScoreboardPipelineElement:
             setattr(self, attrname, collect(arg, list, empty_if_none=True))
 
 
-def scoreboard_pipeline_element(arg_keys=['tree'], out_key='fitness', vec=False):
+def scoreboard_pipeline_element(arg_keys=('tree'), out_key='fitness', vec=False):
     """A double-decker decorator, which converts the decorated function to a
     ScoreboardPipelineElement, which is callable. The decorator must be provided
     with arguments, which are all the attributes of the 
@@ -334,6 +336,9 @@ def flexi_pipeline_element(vec=True, out_key_maker: Callable = None):
         return spe_maker
     return fpe_decorator
 
+# @flexi_pipeline_element()
+# def has_var(tree: GPNonTerminal, var='x'):
+
 
 @flexi_pipeline_element(out_key_maker=lambda args: f"i{args[0]}")
 def safe_inv(arg, **kwargs):
@@ -345,19 +350,31 @@ def safe_inv(arg, **kwargs):
     """
     return 1/(arg+1)
 
+def get_errs(tree: GPNonTerminal, target: pd.Series=None, ivs=None) -> pd.Series:
+    ests = tree(**ivs)
+    errs = target - ests
+    nans = np.isnan(ests).sum()
+    if nans:
+        tree.metadata['hasnans'] = True
+        if nans <= np.round(len(ests) * 0.04):
+            tree.metadata['penalty'] = tree.metadata.get('penalty', 1.0) * 2.0**nans
+        else:
+            tree.metadata['survive'] = False
+    return errs
+
 @scoreboard_pipeline_element(out_key='mse')
 def mse(tree: GPNonTerminal, target: pd.Series=None, ivs=None, **kwargs):
     """Calculates the Mean Squared Error of tree outputs. Adds `mse`, 
     requires `tree`
     """
-    return ((target - tree(**ivs))**2).mean()
+    return (get_errs(tree, target=target, ivs=ivs)**2).mean()
 
 @scoreboard_pipeline_element(out_key='sae')
 def sae(tree: GPNonTerminal, target: pd.Series=None, ivs=None, **kwargs):
     """Calculates the Summed Average Error of tree outputs. Adds `sae`, 
     requires `tree`
     """
-    return (target - tree(**ivs)).abs().mean()
+    return (get_errs(tree, target=target, ivs=ivs)).abs().mean()
 
 @scoreboard_pipeline_element(arg_keys="mse", out_key="rmse", vec=True)
 def rmse(mse: float, **kwargs):
@@ -385,22 +402,62 @@ def heat(raw_fitness: float, temp_coeff: float, **kwargs):
         temp = 0.0
     return raw_fitness + temp
 
-@scoreboard_pipeline_element(out_key='penalty')
-def penalty(tree: GPNonTerminal, **kwargs):
-    """Trees receive penalties during processing for things like OverflowErrors 
-    and ZeroDivisionErrors. Penalties are applied by dividing the tree's fitness,
-    so the default 'no penalty' value is zero
+def from_meta(varname: str, default=None):
+    """ Outputs metadata attached to trees into a scoreboard column. 
+    Common examples:
+
+    Examples
+    --------
+        Penalty: Trees receive penalties during processing for things like  
+            OverflowErrorsand ZeroDivisionErrors. Penalties are applied by 
+            dividing the tree's fitness, so the default 'no penalty' value 
+            is zero
+        Kill: A tree may also be flagged as generating problems, and to be
+            removed from the population. For example, this may be done if
+            the tree .generates excessive NaN outputs
+        Hasnans: Indicates that the tree generated NaNs
     """
-    return tree.metadata.get('penalty', 1.0)
+    @scoreboard_pipeline_element(out_key=varname)
+    def get_meta(tree: GPNonTerminal, **kwargs):
+        return tree.metadata.get(varname, default)
+    return get_meta
+
+penalty = from_meta('penalty', default=1)
+survive = from_meta('survive', default=True)
+hasnans = from_meta('hasnans', default=False)
+
+# @scoreboard_pipeline_element(out_key='penalty')
+# def penalty(tree: GPNonTerminal, **kwargs):
+#     """Trees receive penalties during processing for things like OverflowErrors 
+#     and ZeroDivisionErrors. Penalties are applied by dividing the tree's fitness,
+#     so the default 'no penalty' value is zero
+#     """
+#     return tree.metadata.get('penalty', 1.0)
+
+# @scoreboard_pipeline_element(out_key='kill')
+# def kill(tree: GPNonTerminal, **kwargs):
+#     return tree.metadata.get('kill', False)
 
 @flexi_pipeline_element()
-def divide(num: float, denom: float, **kwarg):
+def divide(num: float, denom: float, **kwargs):
     """Divides one column by another, and replaces any `inf` values (from dividing 
     by zero) with NaNs
     
     I wrote this one to apply penalties to trees, but do whatever with it.
     """
     return (num/denom).replace([np.inf, -np.inf], np.nan)
+
+@flexi_pipeline_element()
+def multiply(a: float, b: float, **kwargs):
+    """multiplies one column by another.
+    
+    I wrote this one to apply penalties to trees, but do whatever with it.
+    """
+    return a*b
+
+@flexi_pipeline_element()
+def nan_zero(a: float, **kwargs):
+    return a.fillna(0)
 
 @scoreboard_pipeline_element(out_key='size')
 def size(tree: GPNonTerminal, **kwargs):
@@ -462,9 +519,14 @@ def clear(*to_clear: str, except_for: str|list[str]=None):
     return clr
 
 class GPScoreboard(pd.DataFrame):
+    """Extension to pandas.Dataframe to function as a scoreboard for GP,
+    with a pipeline for fitness and record-keeping calculations
+    """
+
     _metadata = [
         'obs', '_pipeline', 'pipeline', 'kwargs', 'provide', 'require', 'def_outputs'
-    ]
+    ] # Reserve these variable names so pandas doesn't think I'm trying to create
+    # a column
 
     def __init__(
             self,
@@ -475,7 +537,8 @@ class GPScoreboard(pd.DataFrame):
             temp_coeff: float = 0.0,
             provide: str|Collection[str]='tree', 
             require: str|Collection[str]='fitness',
-            def_outputs: str|Collection[str]= None,
+            def_outputs: str|Collection[str]=None,
+            to_graph: Collection[str] = None,
             **kwargs
         ) -> None:
         super().__init__()
@@ -504,17 +567,27 @@ class GPScoreboard(pd.DataFrame):
         self.require = collect(require, set)
         self.kwargs = {"temp_coeff": temp_coeff, **kwargs}
         self.def_outputs = collect(def_outputs, set)
+        # This runs the pipeline property setter, which validates the pipeline
+        # and updates the attribute `def_outputs` to to list the set of columns
+        # in the final dataframe
         self.pipeline = pipeline if pipeline else tuple([
             clear(except_for='tree'),
-            sae, mse, rmse, 
-            safe_inv('sae'), safe_inv('mse'), safe_inv('rmse')
+            mse, rmse, safe_inv('rmse'), size, depth, 
         ] + (
-            [rename(def_fitness, 'raw_fitness'), heat, rename("fitness", 'pre_fitness')]
+            [rename(def_fitness, 'raw_fitness'), heat, rename("fitness", 'pre_fitness_1')]
             if temp_coeff else
-            [rename(def_fitness, 'pre_fitness')]
+            [rename(def_fitness, 'pre_fitness_1')]
         ) + (
-            [penalty, divide('pre_fitness', 'penalty', out_key='fitness')]
+            [
+                hasnans,
+                penalty, divide('pre_fitness_1', 'penalty', out_key='pre_fitness_2'),
+                survive, multiply('pre_fitness_2', 'survive', out_key='pre_fitness_3'),
+                nan_zero('pre_fitness_3', out_key='fitness'),  
+            ]
         ))
+        # We can then use this to validate the list of variables to be graphed
+        # by Grapher
+
 
     @property
     def pipeline(self):
@@ -528,7 +601,7 @@ class GPScoreboard(pd.DataFrame):
     def _post_process_pipeline(self):
         final_cols, error = self._validate_pipeline()
         if error:
-            raise ValueError(error + ((
+            raise ValueError(str(error) + ((
                 ". Also, _validate_pipeline returned both success and error " +
                 "values, which makes no sense. the success value was " +
                 f"'{final_cols}'"
@@ -549,7 +622,7 @@ class GPScoreboard(pd.DataFrame):
             err = "Pipeline failed"
             if i != -1:
                 err += f" at element {i}, {p.__name__}"
-            err += f": {e[0]}"
+            err += f": {e}"
             return err
         cols = deepcopy(self.provide)
         for i, p in enumerate(self.pipeline):
@@ -759,12 +832,15 @@ class GPScoreboard(pd.DataFrame):
         >>> import operators as ops
         >>> from gp import GPTreebank
         >>> from observatories import StaticObservatory
-        >>> op = [ops.PROD]
-        >>> gp = GPTreebank(operators = op, temperature_coeff=0.5)
+        >>> op = [ops.PROD, ops.EQ, ops.TERN, ops.GT]
+        >>> gp = GPTreebank(operators = op, temp_coeff=0.5)
         >>> iv = [0., 2., 4., 6., 8.,]
         >>> dv0 = [0., 0., 0., 0., 0.]
         >>> dv1 = [0., 10., 20., 30., 40.]
+        >>> iv2 = np.linspace(0, 2, 129)
+        >>> dv2 =  np.linspace(0.015625, 2.015625, 129)
         >>> df = pd.DataFrame({'x': iv, 'y0': dv0, 'y1': dv1})
+        >>> df2 = pd.DataFrame({'x': iv2, 'y': dv2})
         >>> t = [
         ...     gp.tree("([float]<PROD>([float]$x)([int]1))"),
         ...     gp.tree("([float]<PROD>([float]$x)([int]3))"),
@@ -775,6 +851,7 @@ class GPScoreboard(pd.DataFrame):
         ... ]
         >>> obs0 = StaticObservatory('x', 'y0', sources=df, obs_len=5)
         >>> obs1 = StaticObservatory('x', 'y1', sources=df, obs_len=5)
+        >>> obs2 = StaticObservatory('x', 'y', sources=df2, obs_len=129)
         >>> gps0 = GPScoreboard(sae, mse, rmse, safe_inv('mse'), safe_inv('rmse'), rename('irmse', 'raw_fitness'), heat, obs=obs0, temp_coeff=1.0)
         >>> gps0(t)[list(gps0.columns)[1:]]
             sae     mse       rmse      imse  raw_fitness   fitness
@@ -818,7 +895,50 @@ class GPScoreboard(pd.DataFrame):
         3   8.0   96.0   9.797959  0.010309     0.092610  0.313787
         4  16.0  384.0  19.595918  0.002597     0.048553  0.269730
         5  17.6  456.0  21.354157  0.002188     0.044734  0.265911
-        >>> gps1.pipeline = 
+        >>> gps2 = GPScoreboard(obs=obs2, temp_coeff=0.015624999999999944) # temp_coeff picked so pre_fitness_1 would be 1.0
+        >>> for t_ in t:
+        ...     t_.delete()
+        >>> wrong = [
+        ...     gp.tree("([float]<PROD>([float]$x)([float]np.nan))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<EQ>([float]$x)([float]1.))([float]1.0)([float]np.nan)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<EQ>([float]$x)([float]1.))([float]np.nan)([float]1.0)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<GT>([float]$x)([float]1.92))([float]np.nan)([float]1.0)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<GT>([float]$x)([float]1.93))([float]np.nan)([float]1.0)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<GT>([float]$x)([float]1.95))([float]np.nan)([float]1.0)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<GT>([float]$x)([float]1.96))([float]np.nan)([float]1.0)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<GT>([float]$x)([float]1.98))([float]np.nan)([float]1.0)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<GT>([float]$x)([float]1.99))([float]np.nan)([float]1.0)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]1.0))")
+        ... ]
+        >>> cols = list(gps2(wrong).columns)
+        >>> cols[:7]
+        ['tree', 'mse', 'rmse', 'raw_fitness', 'size', 'depth', 'pre_fitness_1']
+        >>> cols[7:]
+        ['hasnans', 'penalty', 'pre_fitness_2', 'survive', 'pre_fitness_3', 'fitness']
+        >>> gps2[cols[1:7]]
+                mse      rmse  raw_fitness  size  depth  pre_fitness_1
+        0       NaN       NaN          NaN     3      2            NaN
+        1  0.000244  0.015625     0.984615     8      4            1.0
+        2  0.000244  0.015625     0.984615     8      4            1.0
+        3  0.000244  0.015625     0.984615     8      4            1.0
+        4  0.000244  0.015625     0.984615     8      4            1.0
+        5  0.000244  0.015625     0.984615     8      4            1.0
+        6  0.000244  0.015625     0.984615     8      4            1.0
+        7  0.000244  0.015625     0.984615     8      4            1.0
+        8  0.000244  0.015625     0.984615     8      4            1.0
+        9  0.000244  0.015625     0.984615     3      2            1.0
+        >>> gps2[cols[7:]] 
+           hasnans  penalty  pre_fitness_2  survive  pre_fitness_3  fitness
+        0     True      1.0            NaN    False            NaN  0.00000
+        1     True      1.0        1.00000    False        0.00000  0.00000
+        2     True      2.0        0.50000     True        0.50000  0.50000
+        3     True      1.0        1.00000    False        0.00000  0.00000
+        4     True     32.0        0.03125     True        0.03125  0.03125
+        5     True     16.0        0.06250     True        0.06250  0.06250
+        6     True      8.0        0.12500     True        0.12500  0.12500
+        7     True      4.0        0.25000     True        0.25000  0.25000
+        8     True      2.0        0.50000     True        0.50000  0.50000
+        9    False      1.0        1.00000     True        1.00000  1.00000
         """
         if cols:
             if except_for:

@@ -2,15 +2,15 @@ from gp import GPTreebank
 import pandas as pd
 import numpy as np
 import operators as ops
-from random import choices, uniform, randint
+import random as rnd
 from matplotlib import pyplot as plt
-from figtree import showtree
+# from figtree import showtree
 import seaborn as sns
 from gp_trees import GPTerminal, GPNonTerminal
 from tree_factories import RandomPolynomialFactory
-from typing import Union
+from typing import Callable
 from observatories import FunctionObservatory, StaticObservatory, Observatory
-
+from icecream import ic
 
 def make_var_name():
     alphabet = 'abcdefghijklmnopqrstuvwyz'
@@ -40,7 +40,7 @@ def make_var_name():
 #         crossover_rate=crossover_rate,
 #         operators=[ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE]
 #     )
-#     iv_dict = {'x': [uniform(iv_min, iv_max) for j in range(n)]}
+#     iv_dict = {'x': [rnd.uniform (iv_min, iv_max) for j in range(n)]}
 #     iv_data = pd.DataFrame(iv_dict)
 #     target = np.sin(iv_data['x'])
 #     res = gp.run_gp(iv_data, target, generations, pop,
@@ -81,7 +81,7 @@ OPSET = [ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE]
   
 def uniform_iv_func(iv_min: float, iv_max: float):
     def uniform_iv(obs_len: int, **kwargs):
-        return pd.Series([uniform(iv_min, iv_max) for i in range(obs_len)])
+        return pd.Series([rnd.uniform (iv_min, iv_max) for i in range(obs_len)])
     return uniform_iv
 
 def target_poly_func(var: str, *vars: str, order: int, const_min: float, const_max: float):
@@ -90,28 +90,126 @@ def target_poly_func(var: str, *vars: str, order: int, const_min: float, const_m
         const_min=const_min, const_max=const_max
     )(*(var,)+vars)
 
+def sin(x=None):
+    return np.sin(x)
+
 def poly_obs_factory(
-        n: int, var: str, *vars: str, order: int, 
+        n: int, order: int, 
         const_min: float, const_max: float, 
         iv_min: float, iv_max: float
-    ) -> Observatory:
+    ) -> FunctionObservatory:
     return FunctionObservatory(
         'x', 'y', 
         {
-            'x': uniform_iv_func((iv_min, iv_max)), 
-            'y': target_poly_func(var, *vars, order, const_min, const_max)
+            'x': uniform_iv_func(iv_min, iv_max), 
+            'y': target_poly_func(
+                'x', 
+                order=order, 
+                const_min=const_min, 
+                const_max=const_max
+            )
         }, 
         n
     )
 
-EXAMPLE_POLY_OBS_FAC = poly_obs_factory(100, 'x', 6)
+def func_obs_factory(
+        n: int, f: Callable, iv_min: float, iv_max: float
+    ) -> FunctionObservatory:
+    return FunctionObservatory(
+        'x', 'y', 
+        {
+            'x': uniform_iv_func(iv_min, iv_max), 
+            'y': f
+        }, 
+        n
+    )
+
+EXAMPLE_POLY_OBS_FAC = poly_obs_factory(
+    100, 
+    order=6, 
+    const_min=-0.1, 
+    const_max=0.1, 
+    iv_min=-5*np.pi, 
+    iv_max=5*np.pi
+)
 
 def gp_rand_poly_test(
         n, generations=100, pop=100, iv_min=-5*np.pi, iv_max=5*np.pi, coeff_min=-0.1,
         coeff_max=0.1, mutation_rate = 0.2, mutation_sd=0.02, crossover_rate=0.2,
         elitism=5, order=6, def_fitness=None, temp_coeff=1.0, max_size=300, 
-        max_depth=70):
-    
+        max_depth=70, to_graph=[
+            ['penalty', 'hasnans', 'survive'], 
+            ["mse", "rmse", 'raw_fitness'], 
+            ["size", "depth", 'time']
+    ]):
+    obs = poly_obs_factory(
+        n, 
+        order=order, 
+        const_min=coeff_min, const_max=coeff_max, 
+        iv_min=iv_min, iv_max=iv_max
+    )
+    return gp_func_test(
+        obs, 
+        generations=generations, 
+        pop=pop, 
+        iv_min=iv_min, 
+        iv_max=iv_max, 
+        coeff_min=coeff_min,
+        coeff_max=coeff_max, 
+        mutation_rate=mutation_rate, 
+        mutation_sd=mutation_sd, 
+        crossover_rate=crossover_rate,
+        elitism=elitism, 
+        order=order, 
+        def_fitness=def_fitness, 
+        temp_coeff=temp_coeff, 
+        max_size=max_size, 
+        max_depth=max_depth, 
+        to_graph=to_graph
+    )
+
+def gp_sin_test(
+        n, generations=100, pop=100, iv_min=-5*np.pi, iv_max=5*np.pi, coeff_min=-0.1,
+        coeff_max=0.1, mutation_rate = 0.2, mutation_sd=0.02, crossover_rate=0.2,
+        elitism=5, order=6, def_fitness=None, temp_coeff=1.0, max_size=300, 
+        max_depth=70, to_graph=[
+            ['penalty', 'hasnans', 'survive'], 
+            ["mse", "rmse", 'raw_fitness'], 
+            ["size", "depth", 'time']
+    ]):
+    obs = func_obs_factory(
+        n, f=sin,
+        iv_min=iv_min, iv_max=iv_max
+    )
+    return gp_func_test(
+        obs, 
+        generations=generations, 
+        pop=pop, 
+        iv_min=iv_min, 
+        iv_max=iv_max, 
+        coeff_min=coeff_min,
+        coeff_max=coeff_max, 
+        mutation_rate=mutation_rate, 
+        mutation_sd=mutation_sd, 
+        crossover_rate=crossover_rate,
+        elitism=elitism, 
+        order=order, 
+        def_fitness=def_fitness, 
+        temp_coeff=temp_coeff, 
+        max_size=max_size, 
+        max_depth=max_depth, 
+        to_graph=to_graph
+    )
+
+def gp_func_test(
+        obs, generations=100, pop=100, iv_min=-5*np.pi, iv_max=5*np.pi, coeff_min=-0.1,
+        coeff_max=0.1, mutation_rate = 0.2, mutation_sd=0.02, crossover_rate=0.2,
+        elitism=5, order=6, def_fitness=None, temp_coeff=1.0, max_size=300, 
+        max_depth=70, to_graph=[
+            ['penalty', 'hasnans', 'survive'], 
+            ["mse", "rmse", 'raw_fitness'], 
+            ["size", "depth", 'time']
+    ]):
     gp = GPTreebank(
         mutation_rate = mutation_rate, mutation_sd=mutation_sd,
         crossover_rate=crossover_rate, max_size=max_size, max_depth=max_depth,
@@ -121,10 +219,12 @@ def gp_rand_poly_test(
         RandomPolynomialFactory(
             gp, order=order, const_min=coeff_min, const_max=coeff_max
         ),
-        obs, generations, pop,
+        obs, 
+        generations, pop,
         def_fitness=def_fitness, 
         elitism=elitism,
-        temp_coeff=temp_coeff
+        temp_coeff=temp_coeff,
+        to_graph=to_graph
     )
     print("Best trees by generation:")
     for i in range(10):
@@ -138,11 +238,12 @@ def gp_rand_poly_test(
     print(final_tree)
     # showtree(final_tree)
     print(f"RMSE = {res['rmse'][-1]}")
-    show_data = pd.DataFrame({
-        'x': uniform_iv(obs_len=n*10)
-    })
+    obs.set_obs_len(10*5)
+    show_data = {}
+    show_data['x'] = np.linspace(iv_min, iv_max, 1000)
     show_data['est_y'] = final_tree(x=show_data['x'])
-    show_data['y'] = target(show_data)
+    obs.set_iv_data(show_data['x'])
+    show_data['y'] = obs.target
     fig, axs = plt.subplots(3, 2)
     fig.set_size_inches(18.5, 27, forward=True)
     axs[0, 0].plot(res['mse'])
@@ -153,8 +254,9 @@ def gp_rand_poly_test(
     axs[1, 0].set_title("MSE Heatmap")
     sns.heatmap(pd.DataFrame(res['rmse']).transpose(), ax=axs[1, 1])
     axs[1, 1].set_title("RMSE Heatmap")
-    axs[2, 0].scatter(show_data['x'], show_data['est_y'], c='b', label='estimate')
-    axs[2, 0].scatter(show_data['x'], show_data['y'], c='r', label = 'target')
+    axs[2, 0].plot(show_data['x'], show_data['est_y'], c='b', label='estimate')
+    axs[2, 0].plot(show_data['x'], show_data['y'], c='r', label = 'target')
+    plt.savefig(f'plots_2_{gp.make_filename()}.png')
     return res, final_tree
 
 # def gp_poly_test(order, num_vars, n, generations=100, pop=100, iv_min=-100,
@@ -167,7 +269,7 @@ def gp_rand_poly_test(
 #     var_name_maker = make_var_name()
 #     iv_dict = {}
 #     for i in range(num_vars):
-#         iv_dict[next(var_name_maker)] = [uniform(iv_min, iv_max) for j in range(n)]
+#         iv_dict[next(var_name_maker)] = [rnd.uniform (iv_min, iv_max) for j in range(n)]
 #     iv_data = pd.DataFrame(iv_dict)
 #     factory = RandomPolynomialFactory(
 #         gp, order=order, const_min=coeff_min, const_max=coeff_max)
@@ -225,12 +327,16 @@ def gp_rand_poly_test(
 #                 'Minimum coefficient should be less than or equal to maximum' +
 #                 ' coefficient'
 #             )
-#         deg = randint(min_deg, max_deg)
+#         deg = rnd.randint (min_deg, max_deg)
 #         exponents = list(range(deg+1))
-#         coeffs = [uniform(min_coeff/fac(p), max_coeff/fac(p)) for p in exponents]
+#         coeffs = [rnd.uniform (min_coeff/fac(p), max_coeff/fac(p)) for p in exponents]
 #     pairs = []
 #     component_funcs = list(map(lambda pair: lambda x: pair[0] * x**pair[1], zip(coeffs, exponents)))
 #     polynomial_func = lambda x: sum([f(x) for f in component_funcs])
 #     if decompose:
 #         return lambda x: [f(x) for f in ([polynomial_func] + component_funcs)]
 #     return lambda x: sum([b * x**p for b, p in zip(coeffs, exponents)])
+
+if __name__ == '__main__':
+    result = gp_rand_poly_test(500, generations=2000, mutation_sd=0.3)
+    # result = gp_sin_test(500, generations=2000, mutation_sd=0.3)

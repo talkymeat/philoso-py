@@ -1,4 +1,4 @@
-from typing import List, Dict, Type, Any
+from typing import List, Dict, Type, Any, Callable
 import pandas as pd
 import numpy as np
 from functools import reduce
@@ -131,7 +131,27 @@ class Operator:
         _DoesNothing: 'x'
     }
 
-    def __init__(self, func, name, return_type = Any, arg_regex = "", force_type = False, force_type_lossy = False, apply = False, return_dtype = None):
+    rev_type_dict = {v: k for k, v in type_dict.items()}
+
+    
+    def drt_simple(self, arg_match: re.Match) -> type:
+        if arg_match.groups():
+            typeset = {Operator.rev_type_dict[char] for char in ''.join(arg_match.groups())}
+            return list(typeset)[0] if len(typeset)==1 else Any
+        return self.return_type
+
+    def __init__(
+            self, 
+            func: Callable, 
+            name: str, 
+            return_type: type = Any, 
+            arg_regex: str = "", 
+            force_type: bool = False, 
+            force_type_lossy: bool = False, 
+            apply: bool = False, 
+            return_dtype = None,
+            drt_func: Callable[[re.Match], type] = None
+        ):
         self.func = func
         self.name = name
         self.return_type = return_type
@@ -139,6 +159,8 @@ class Operator:
         self.force_type_lossy = force_type_lossy
         self.apply = apply
         self.return_dtype = return_dtype
+        self.dynamic_return_type = drt_func if drt_func else self.drt_simple
+
         # Lambda to create a string of all the type-characters in the
         # type-dictionary, plus 'x' for 'other'. If a value is not provided for
         # `arg_regex`, this is used to the default `arg_regex`, which accepts
@@ -166,6 +188,8 @@ class Operator:
         indicators = [-1]*len(args)
         no_series = True
         for i, arg in enumerate(args):
+            if isinstance(arg, np.ndarray):
+                args[i] = pd.Series(arg)
             if isinstance(arg, pd.Series):
                 no_series = False
                 indicators[i] = len(arg)
@@ -206,14 +230,14 @@ class Operator:
         >>> op_CONCAT(2, 3)
         Traceback (most recent call last):
             ....
-        AttributeError: Incorrect arguments
+        AttributeError: Incorrect arguments for <CONCAT>: (2, 3)
         >>> op_CONCAT("regard", "that", "cat")
         'regard that cat'
         >>> op_A_PLUS_B_WRONG = Operator(a_plus_b, "A_PLUS_B_WRONG", int, r'[if][if]')
         >>> op_A_PLUS_B_WRONG("2", "3")
         Traceback (most recent call last):
             ....
-        AttributeError: Incorrect arguments
+        AttributeError: Incorrect arguments for <A_PLUS_B_WRONG>: ('2', '3')
         >>> op_A_PLUS_B_WRONG(2, 3)
         5
         >>> op_A_PLUS_B_WRONG(2.0, 3.0)
@@ -224,7 +248,7 @@ class Operator:
         >>> op_A_PLUS_B("2", "3")
         Traceback (most recent call last):
             ....
-        AttributeError: Incorrect arguments
+        AttributeError: Incorrect arguments for <A_PLUS_B>: ('2', '3')
         >>> op_A_PLUS_B(2, 3)
         5.0
         >>> op_A_PLUS_B(2.0, 3.0)
@@ -252,7 +276,7 @@ class Operator:
         >>> op_A_PLUS_B(2, 3, 5)
         Traceback (most recent call last):
             ....
-        AttributeError: Incorrect arguments
+        AttributeError: Incorrect arguments for <A_PLUS_B>: (2, 3, 5)
         """
         def custom_type_err(output):
             # Inner function to create an error message, in the case where the
@@ -406,6 +430,7 @@ class Operator:
         return Operator._type_list_str(*Operator._arg_type_tuple(*args))
         #return ''.join([self.type_dict.get(type(arg), 'x') for arg in args])
 
+    # Could these checks be memoised?
     def _arg_seq_legal(self, *args):
         """Checks that a sequence of arguments is legal, based on Operator's
         `arg_regex`: Iff the string representation of the sequence of types in
@@ -468,7 +493,7 @@ Returns:
     tuple
 """
 
-UNIT_ID = Operator(_unit_id, "UNIT_ID", arg_regex = r".")
+UNIT_ID = Operator(_unit_id, "UNIT_ID", arg_regex = r"(.)")
 """
 Only takes a single argument, which it returns unaltered. The default for
 Terminals. Even blander and more lacking in personality than ID. Occassionally
@@ -664,7 +689,7 @@ research and doesn't let the authorities and the *lame*stream media tell them
 what to think. Which is to say, they Google until they find a source that
 supports a position they like the sound of, then stop. Thinks of themself as
 a devil's advocate and champion of free and open discussion. Actually just an
-asshole.
+arsehole.
 
 Arguments:
     A `bool`, P.
@@ -698,7 +723,7 @@ Returns:
 """
 
 
-TERN = Operator(_tern, "TERN", Any, r"b..", apply=True)
+TERN = Operator(_tern, "TERN", Any, r"b(.)(.)", apply=True)
 """
 A ternary `if P then X else Y` operator. Humanities undergraduate. Perpetually
 in a state of agonising over which of two crushes to ask out. Invariably, by the

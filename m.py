@@ -94,6 +94,8 @@ class MSequence(Sequence, ABC):
         XXX and likewise with MLists etc
 
         >>> egs = [MTuple(1,2) + MTuple(3,4), (1,2) + MTuple(3,4), MTuple(1,2) + (3,4), (1,2) + (3,4)]
+        >>> egs
+        [(1, 2, 3, 4), (1, 2, 3, 4), (1, 2, 3, 4), (1, 2, 3, 4)]
         >>> [type(t) for t in egs]
         [<class '__main__.MTuple'>, <class '__main__.MTuple'>, <class '__main__.MTuple'>, <class 'tuple'>]
         >>> [len(t) for t in egs]
@@ -102,7 +104,7 @@ class MSequence(Sequence, ABC):
         return self.__class__(super().__add__(other))
     
     def __radd__(self, other: Iterable) -> 'MSequence':
-        return self.__class__(*super().__add__(other))
+        return self.__class__(other.__add__(self))
     
     def __pow__(self, exponent: int) -> 'MSequence':
         if isinstance(exponent, int):

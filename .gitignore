@@ -6,6 +6,10 @@ svg_test/
 toyxmpl/
 scratch*.ipynb
 Untitled*.ipynb
+*.parquet
+Outputs/
+outputs/
+
 
 .DS_Store
 
