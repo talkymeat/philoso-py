@@ -7,7 +7,6 @@ toyxmpl/
 scratch*.ipynb
 Untitled*.ipynb
 *.parquet
-Outputs/
 outputs/
 
 
