@@ -32,11 +32,11 @@ class PhilosoPyAgent(PyEnvironment):
         self.name = name
         self.action_spec = [
             world.observation_params().replace(name='observation'),
-            BoundedArraySpec(name='train_gp_static'),
-            BoundedArraySpec(name='train_gp_live'),
-            BoundedArraySpec(name='test_gp_predict'),
+            world.observation_params().replace(name='train_gp_static'),
+            world.observation_params().replace(name='train_gp_live'),
+            world.observation_params().replace(name='test_gp_predict'),
             BoundedArraySpec(name='publish_bet'), # don't implement until ready for multi-agent
-            BoundedArraySpec(name='take_bet'),
+            BoundedArraySpec(name='take_bet'), # don't implement until ready for multi-agent
             BoundedArraySpec(name='read_repo'), # don't implement until ready for multi-agent
             BoundedArraySpec(name='add_gp_result_to_knowledge'), # don't implement until ready for multi-agent
             BoundedArraySpec(name='add_repo_result_to_knowledge'), # don't implement until ready for multi-agent
