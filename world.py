@@ -17,7 +17,7 @@ class World(ABC):
     updated in time-steps according to deterministic or probabilistic rules and
     observed by agents.
     """
-    @abstractmethod # how do I make this a classmethod too?
+    @abstractmethod # Don't make this a classmethod - good if it can be modified by world attrs
     def observation_params(self):
         ...
 

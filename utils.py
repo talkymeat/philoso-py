@@ -70,6 +70,7 @@ def collect(a, t: type[Collection], empty_if_none=False):
         )
     elif empty_if_none or a is not None:
         return t()
+    
 
 
 def main():

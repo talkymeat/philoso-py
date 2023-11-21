@@ -40,7 +40,8 @@ class PhilosoPyAgent(PyEnvironment):
             BoundedArraySpec(name='read_repo'), # don't implement until ready for multi-agent
             BoundedArraySpec(name='add_gp_result_to_knowledge'), # don't implement until ready for multi-agent
             BoundedArraySpec(name='add_repo_result_to_knowledge'), # don't implement until ready for multi-agent
-            BoundedArraySpec(name='remove_knowledge')
+            BoundedArraySpec(name='prune_knowledge'),
+            BoundedArraySpec(name='prune_records')
         ] #: tf_agents.typing.types.NestedTensorSpec,
         self.knowledge = GPTreebank(operators=operators)
         # structure this - maybe make a dataclass?

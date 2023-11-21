@@ -31,6 +31,7 @@ def flatten(s: Sequence):
     return new_s
 
 class GPTreebank(TypeLabelledTreebank):
+    """This is the main class for running genetic programming"""
     def __init__(self,
             crossover_rate: float = 0.0,
             mutation_rate: float = 0.0,
@@ -56,6 +57,7 @@ class GPTreebank(TypeLabelledTreebank):
         self.sw = Stopwatch()
 
     def _generate_starting_sample(self, pop, genfunc=None, vars_=None, **kwargs):
+        """Creates the initial population for a GP run"""
         self.clear()
         for i in range(pop):
             genfunc(*vars_, **kwargs)
@@ -71,6 +73,7 @@ class GPTreebank(TypeLabelledTreebank):
             record: dict[str, np.ndarray],
             grapher: Grapher
         )-> tuple[pd.DataFrame, dict]:
+        """A single evolutionary step for GP"""
         # And allow for non-float roots
         old_gen = self.get_all_root_nodes()[float]
         record_means = ['penalty', 'hasnans', 'survive']
@@ -132,6 +135,11 @@ class GPTreebank(TypeLabelledTreebank):
             ping_freq: int = 25,
             to_graph: Collection[str] = None
         ) -> tuple[dict[str, list], GPNonTerminal]:
+        """Sets up a genetic programming run and runs it for a specified number 
+        of steps
+        
+        TODO: separate this into two steps - _setup and _run
+        """
         # make base filename for saving data. This means the filename will record
         # when the run started, not when the file was saved. It also means pickle
         # saves of the run data will overwrite previous pickles.
