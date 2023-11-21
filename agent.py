@@ -10,9 +10,7 @@ from gp import GPTreebank
 import operators as ops
 from dataclasses import dataclass
 
-@dataclass
-class ObservationMemory:
-    pass
+
 
 
 class PhilosoPyAgent(PyEnvironment):
@@ -21,6 +19,13 @@ class PhilosoPyAgent(PyEnvironment):
     in charge of higher-level decisions like when to make observations,
     run GP, publish results, etc.
     """
+
+    @dataclass
+    class GPMemory:
+        observation_params: dict
+        observations: list
+        treebank: GPTreebank
+
     def __init__(
             self, 
             world: World,
@@ -45,8 +50,7 @@ class PhilosoPyAgent(PyEnvironment):
         ] #: tf_agents.typing.types.NestedTensorSpec,
         self.knowledge = GPTreebank(operators=operators)
         # structure this - maybe make a dataclass?
-        self.observation_records = []
-        self.treebank_records = []
+        self.records: list[PhilosoPyAgent.GPMemory] = []
 
     def time_step_spec(self):
         """Return time_step_spec."""
