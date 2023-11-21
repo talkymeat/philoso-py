@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from collections import deque
 from typing import List, Callable, Union
+from tf_agents.specs import BoundedArraySpec
+import tensorflow as tf
 
 #import matplotlib.pyplot as plt
 #import numpy as np
@@ -15,6 +17,9 @@ class World(ABC):
     updated in time-steps according to deterministic or probabilistic rules and
     observed by agents.
     """
+    @abstractmethod # how do I make this a classmethod too?
+    def observation_params(self):
+        ...
 
     @abstractmethod
     def observe(self, **kwargs) -> Union[dict, tuple, str, int, float]:
@@ -165,6 +170,9 @@ class VectorWorld(World):
         self.max_observation_size = max_observation_size
         self.transposal_probability = transposal_probability
         self.jitter_stdev = jitter_stdev
+
+    def observation_params(self):
+        return BoundedArraySpec(2, tf.dtypes.int16, minimum=0, maximum=self.length)
 
     @property
     def fn_list(self):
