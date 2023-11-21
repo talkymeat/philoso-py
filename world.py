@@ -11,7 +11,7 @@ from utils import list_transpose, linear_interpolated_binned_means
 
 class World(ABC):
     """Abstract Base Class defining the 'world' that agents observe and reason
-    about. An epist.py `World` can be any collection of state which can be
+    about. An philoso.py `World` can be any collection of state which can be
     updated in time-steps according to deterministic or probabilistic rules and
     observed by agents.
     """
@@ -22,7 +22,7 @@ class World(ABC):
         may be a single simple function, or may route queries to multiple
         different observation functions with different logic. Note that
         observations need not be, and ideally (for most philosophical questions
-        you might want an epist.py model to address) should not be, direct
+        you might want an philoso.py model to address) should not be, direct
         access to the underlying state of the `World` which the update rules
         have access to.
 
