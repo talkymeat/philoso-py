@@ -43,7 +43,7 @@ class PhilosoPyAgent(PyEnvironment):
             BoundedArraySpec(name='publish_bet'), # don't implement until ready for multi-agent
             BoundedArraySpec(name='take_bet'), # don't implement until ready for multi-agent
             BoundedArraySpec(name='read_repo'), # don't implement until ready for multi-agent
-            BoundedArraySpec(name='add_gp_result_to_knowledge'), # don't implement until ready for multi-agent
+            BoundedArraySpec(name='add_gp_result_to_knowledge'), 
             BoundedArraySpec(name='add_repo_result_to_knowledge'), # don't implement until ready for multi-agent
             BoundedArraySpec(name='prune_knowledge'),
             BoundedArraySpec(name='prune_records')

@@ -313,7 +313,7 @@ class Constant(GPTerminal):
         #     except Exception:
         #         pass
         leaf_type = None
-        if not isinstance(leaf, pd.Series):
+        if not tf.is_tensor(leaf):
             leaf_type = type(leaf)
             if leaf_type == str:
                 ic("WUT", leaf)
