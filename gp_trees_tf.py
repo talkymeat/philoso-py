@@ -299,7 +299,7 @@ class Constant(GPTerminal):
     """A Terminal in which the leaf is always a pd.Series of length 1, with a
     GP operator which mutates the value of the constant.
 
-    >>>
+    >>> 99999
     >>>
     """
     def __new__(cls, treebank, label, leaf, operator=None, metadata=None):
