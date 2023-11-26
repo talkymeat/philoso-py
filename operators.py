@@ -1,6 +1,7 @@
 from typing import List, Dict, Type, Any, Callable
 import pandas as pd
 import numpy as np
+import tensorflow as tf
 from functools import reduce
 from type_ify import TypeNativiser, _DoesNothing
 
@@ -321,7 +322,7 @@ class Operator:
             if isinstance(output, pd.Series):
                 output.name = f"{self.name}({','.join([arg.name if hasattr(arg, 'name') and arg.name else str(arg[0]) if isinstance(arg, pd.Series) else str(arg) for arg in args])})"
             # ... and return the result if it's also legal.
-            if self.return_type is Any or issubclass(Operator.tn.type_ify(output), self.return_type):
+            if self.return_type is Any or issubclass(Operator.tn(output), self.return_type):
                 # print(output, 'xxds')
                 return output
             # ... there's a possible complication if the return_type is one that
@@ -401,7 +402,7 @@ class Operator:
 
     @classmethod
     def _arg_type_tuple(cls, *args):
-        return tuple(cls.tn.type_ify(arg) for arg in args)
+        return tuple(cls.tn(arg) for arg in args)
 
     @classmethod
     def _type_list_str(cls, *types):

@@ -1,39 +1,20 @@
 from trees import Terminal, NonTerminal
-from mutators import MutatorFactory, CrossoverMutator
+from mutators import MutatorFactory, CrossoverMutator, NonMutator
 import pandas as pd
 import numpy as np
+import tensorflow as tf
 from copy import copy
 from treebanks import TypeLabelledTreebank
 from tree_errors import OperatorError
-from typing import TypeAlias
 from size_depth import SizeDepth
 from logtools import MiniLog
 from typing import Any
 from icecream import ic
 import warnings
 
+# Going to try replacing np/pd with tf 
 
 DEBUG = True
-
-class D:
-    TYPES = {
-        int: np.int64,
-        float: np.float64,
-        complex: np.complex128,
-        str: np.string_
-    }
-
-    def f(self, *arg):
-        return None
-    
-    def __new__(cls, val):
-        if isinstance(val, str):
-            try:
-                val=eval(val)
-            except Exception:
-                pass
-        _val = D.TYPES.get(type(val), cls.f)(val)
-        return val if _val is None else _val
 
 
 class GPNonTerminal(NonTerminal):
@@ -187,7 +168,9 @@ class GPTerminal(Terminal):
                     operator=operator, metadata=metadata
                 )
             try:
-                leaf = eval(leaf) # the eval'd leaf doesn't get passed to Constant
+                # the eval'd leaf gets passed to Constant if leaf can be 
+                # eval'd, otherwise the raw value is passed
+                leaf = eval(leaf) 
             except Exception:
                 pass
         return cls.__new__(
@@ -197,7 +180,6 @@ class GPTerminal(Terminal):
             operator=operator,
             metadata=metadata
         )
-
 
 class Variable(GPTerminal):
     def __new__(cls, treebank, label, leaf, operator=None, metadata=None):
@@ -229,7 +211,7 @@ class Variable(GPTerminal):
         """When a GP Tree is called, it is given kwargs corresponding to the 
         variables of the expression"""
         #if self.label
-        return D(kwargs[self.leaf])
+        return self.label(tf.constant(kwargs[self.leaf]))
 
     def to_LaTeX(self, top = True):
         """Converts trees to LaTeX expressions using the `qtree` package.
@@ -296,30 +278,30 @@ class Constant(GPTerminal):
     """A Terminal in which the leaf is always a pd.Series of length 1, with a
     GP operator which mutates the value of the constant.
 
-    >>>
+    >>> 
     >>>
     """
     def __new__(cls, treebank, label, leaf, operator=None, metadata=None):
         return Terminal.__new__(cls)
 
     def __init__(self, treebank, label, leaf, operator=None, metadata=None):
-        leaf = D(leaf)
-        # if isinstance(leaf, str):
-        #     try:
-        #         leaf = eval(leaf)
-        #     except Exception:
-        #         pass
-        leaf_type = None
-        if not isinstance(leaf, pd.Series):
-            leaf_type = type(leaf)
-            if leaf_type == str:
-                ic("WUT", leaf)
-            # leaf = pd.Series([leaf]) # XXX CHG
-        self.gp_operator = MutatorFactory(
-            leaf_type if leaf_type else treebank.tn.type_ify(leaf),
-            treebank.mutation_rate,
-            treebank.mutation_sd
-        )
+        if isinstance(leaf, str):
+            try:
+                leaf = eval(leaf)
+            except Exception:
+                pass
+        if treebank.mutation_rate:
+            # Use tf.Variable if mutations can happen, tf.constant if 
+            # they can't
+            leaf = tf.Variable(leaf)
+            self.gp_operator = MutatorFactory(
+                leaf,
+                treebank.mutation_rate,
+                treebank.mutation_sd
+            )
+        else:
+            leaf = tf.constant(leaf)
+            self.gp_operator = NonMutator()
         super().__init__(treebank, label, leaf, operator=operator, metadata=metadata)
 
     def _leaf_str(self):

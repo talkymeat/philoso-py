@@ -23,13 +23,15 @@ Created on Thu Nov 30 16:59:45 2017
 from copy import copy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Dict, Tuple, Union
+from typing import List, Dict, Tuple, Union, TypeVar
 from tree_errors import TreeIndexError
 from tree_iter import TreeIter, DepthFirstBottomUp as DFBU
 import treebanks as tbs
 import operators as ops
-# TODO: don't leave the operator import here: do that in GP, and in tests
+import tensorflow as tf
 
+
+T = TypeVar('T')
 
 class Tree(ABC):
     """Abstract Base Class defining behaviour for all tree nodes.
@@ -1728,7 +1730,7 @@ class Terminal(Tree):
         >>> tbs.tree('([N]bridge)', tb) == tbs.tree('([N]man)', tb)
         False
         >>> tbs.tree('([N]bridge)') == tbs.tree('([N]bridge)')
-        False
+        True
         >>> tbs.tree('([N]bridge)') == tbs.tree('([V]bridge)')
         False
         >>> tbs.tree('([N]bridge)') == tbs.tree('([N]man)')
@@ -1929,13 +1931,13 @@ class Label:
             class_id.
     """
 
-    def __init__(self, treebank, class_id = None): ###OK
+    def __init__(self, treebank, class_id = None, is_default=False): ###OK
         # create a list to store all Trees with this Label
         self.nodes = []
-        self._class_id = class_id ###OK
+        self.class_id = class_id ###OK
         treebank.add_label(self)
         self.treebank = treebank
-        self.is_default = False
+        self.is_default = not bool(class_id) or is_default
 
     @property
     def class_id(self, **kwargs): ##-OK
@@ -1972,8 +1974,8 @@ class Label:
         Raises:
             TypeError: if `class_id` is not a `str`
         """
-        if name is None:
-            name = ""
+        if class_id is None:
+            class_id = ""
         if type(class_id) is not str: # Type check
             raise TypeError("Names of Labels can only be strings")
         # OK, fine I guess.
@@ -2207,14 +2209,60 @@ class Label:
         """
         return list(filter(lambda node: not bool(node.parent), self.nodes))
 
-        def __eq__(self, other):
-            return self.class_id == other.class_id  ##-OK
+    def __eq__(self, other):
+        return self.class_id == other.class_id  ##-OK
 
 
 class TypeLabel(Label):
     """An extension to `Label` that uses Python types as label names instead of
     strings
     """
+    type_map = {
+        "int": {
+            int, tf.int8, tf.int16, tf.int32, tf.int64
+        },
+        "uint": {
+            tf.uint8, tf.uint16, tf.uint32, tf.uint64
+        },
+        "float": {
+            float, tf.float16, tf.float32, tf.float64
+        },
+        "complex": {
+            complex, tf.complex64, tf.complex128
+        },
+        "bool": {
+            bool, tf.bool
+            },
+        "str": {
+            str, tf.string
+        }
+    }
+    inv_type_map = {t: k for k, v in type_map.items() for t in v}
+    type_map = {
+        **type_map,
+        "string": {
+            str, tf.string
+        },
+        "scalar": {
+            int, tf.int8, tf.int16, tf.int32, tf.int64,
+            tf.uint8, tf.uint16, tf.uint32, tf.uint64,
+            float, tf.float16, tf.float32, tf.float64
+        },
+        "num": {
+            int, tf.int8, tf.int16, tf.int32, tf.int64,
+            tf.uint8, tf.uint16, tf.uint32, tf.uint64,
+            float, tf.float16, tf.float32, tf.float64,
+            complex, tf.complex64, tf.complex128
+        },
+    }
+
+    def __init__(self, treebank, class_id): ###OK
+        """Uses a string for the label name, but validates 
+        operator typing using types or dtypes
+        """
+        # create a list to store all Trees with this Label
+        super().__init__(treebank, class_id=class_id)
+        self.is_default = False
 
     @property
     def class_id(self):  ##-OK
@@ -2250,16 +2298,19 @@ class TypeLabel(Label):
         if isinstance(class_id, str):
             try:
                 class_id = eval(class_id)
-            except Exception:
-                raise AttributeError("Invalid label")
-        #### XXX just commented out the lines below - looks like they should break stuff 
-        #### XXX but will this brak other stuff? Why was this even working at all?
-        #### XXX also, it had `name` instead of `class_id` in the method body, but 
-        #### XXX 'class_id` as the param. WTF?
-        # if isinstance(class_id, type): # Type check
-        #     class_id = type(class_id)
-        # OK, fine I guess.
-        self._class_id = class_id ##-OK
+            except:
+                pass
+        if isinstance(class_id, [type, tf.DType]):
+            self._class_id = self.__class__.inv_type_map.get(
+                class_id, class_id.name
+            )
+        elif class_id in self.__class__.type_map:
+            self._class_id = class_id
+        else:
+            raise TypeError(f"Invalid Label: {class_id}")
+        self.valid_classes = self.__class__.type_map.get(
+            self._class_id, {class_id}
+        )
 
     def __str__(self):
         """String representation of TypeLabel for use with __str__ methods in
@@ -2289,6 +2340,17 @@ class TypeLabel(Label):
         >>> # implicitly also test this
         """
         return ".{$" + op_name + (r'\rightarrow ' if op_name else '') + self.classname + "$}"  ##-OK
+
+    def __eq__(self, other):
+        return self.class_id == other.class_id and self.valid_classes == other.valid_classes
+    
+    def valid_output(self, tree_call_val: T) -> T:
+        t = tree_call_val.dtype if tf.is_tensor(tree_call_val) else type(tree_call_val)
+        if t not in self.valid_classes:
+            raise TypeError(
+                f"Trees with Label {self} cannot output values of type {t}"
+            )
+        return tree_call_val
 
 # TESTME
 @dataclass

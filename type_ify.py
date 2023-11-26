@@ -11,7 +11,7 @@ class TypeNativiser:
         self.type_list = [int, bool, float, complex] + list(types)
 
 
-    def type_ify(self, arg, default = 'raise'):
+    def __call__(self, arg, default = 'raise'):
         """Method to allow operators that take arguments of type `t` to also
         take `pandas.Series` of an equivalent dtype. If given an argument that
         is not a `pandas.Series`, it just returns the type of the argument. If
