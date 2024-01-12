@@ -6,6 +6,7 @@ from functools import reduce
 
 from icecream import ic
 import tensorflow as tf
+import numpy as np
 
 from logtools import MiniLog
 from size_depth import SizeDepth 
@@ -32,8 +33,8 @@ class Mutator(ABC):
     requires graphing distributions and kinda eyeballing them.
     """
 
-    # XXX TODO remove mutation_sd from this
-    def __init__(self, mutation_rate: float, mutation_sd=1.0, **kwargs):
+    # XXX TODO remove mutation_sd from this?
+    def __init__(self, mutation_rate: float, mutation_sd=1.0, n=10_000_000, **kwargs):
         """Partially implemented initialiser in the abstract base class: all
         Mutators have a `mutation_rate` which must be initialised as a
         probability
@@ -63,8 +64,42 @@ class Mutator(ABC):
                 "mutation_rate is a probability, and must not be less than " +
                 "0.0 or more than 1.0"
             )
+        self._noise_len = n
+        self._initialise_noise(n)
+
+    def _initialise_noise(self, n):
+        self.noise = self._make_some_noise(n)
+        self.cursor = 0
 
     @abstractmethod
+    def _make_some_noise(self, n=10_000_000) -> tf.Tensor:
+        pass
+
+    def _get_noise(self, n) -> tf.Tensor:
+        whats_left = np.size(self.noise) - self.cursor
+        first_part = min(whats_left, n)
+        second_part = n-first_part
+        new_cursor = self.cursor+first_part
+        d = self.noise[self.cursor:new_cursor]
+        self.cursor = new_cursor 
+        if new_cursor == len(self.noise):
+            self._initialise_noise(self._noise_len)
+        if not second_part:
+            return d
+        d2 = self._get_noise(second_part)
+        return tf.concat([d, d2], 0)
+
+    def _get_a_noise(self) -> tf.Tensor:
+        if self.cursor == tf.size(self.noise):
+            self._initialise_noise(self._noise_len)
+        d = self.noise[0, self.cursor]
+        self.cursor += 1
+        return d
+
+    @abstractmethod
+    def _apply_noise(self, val, noise):
+        pass
+
     def __call__(self, val: T) -> T:
         """Takes the original value of a constant and applies the mutation
         operator to it. A magic method that makes a mutator Callable. Abstract.
@@ -74,7 +109,10 @@ class Mutator(ABC):
             val:
                 The value of the constant to be mutated
         """
-        pass
+        size = tf.size(val)
+        noise = self._get_a_noise() if size==1 else tf.reshape(self._get_noise(size), val.shape)
+        return self._apply_noise(val, noise)
+        
 
 class NonMutator(Mutator):
     def __init__(self, **kwargs):
@@ -97,7 +135,15 @@ class IntMutator(Mutator):
             how this is used.
     """
 
-    def __call__(self, val: int) -> int:
+    def _make_some_noise(self, n=10_000_000):
+        print('? noisemaker', self.mutation_rate)
+        noise =  self.__make_some_noise(n=n).numpy()
+        print('noise made')
+        return noise
+
+
+    @tf.function
+    def __make_some_noise(self, n=10_000_000):
         """Mutates the constant. The constant is changed by at least 1 with a
         probability of `self.mutation_rate`, by at least 2 with a probability of
         `self.mutation_rate^2`, at least 3 with a probability of
@@ -119,12 +165,7 @@ class IntMutator(Mutator):
         # Note the default behaviour of tf.random.uniform is to use the interval
         # [0.0, 1.0) - thus the multiplication by -1 and addition of 1. 2float32 
         # randval = random()
-        randval = (tf.random.uniform(val.shape) * -1.0) + 1.0
-        # If randval is more than the mutation rate, just return val. The 'else'
-        # condition below also would return exactly `val` in this case, but this
-        # case is handled separately to save computation
-        if tf.math.reduce_all(randval > self.mutation_rate):
-            return val
+        randval = (tf.random.uniform([n]) * -1.0) + 1.0
         # If randval <= self.mutation_rate, the mutation is computed as follows:
         # The magnitude of the mutation is computed as the log of randval
         # (base = self.mutation_rate), rounded down with the floor function.
@@ -141,7 +182,7 @@ class IntMutator(Mutator):
         )
         # Since the floor function takes it to integer values only, it is now
         # safe to case randval to the same dtype as val
-        randval = tf.cast(randval, val.dtype)
+        randval = tf.cast(randval, tf.int32)
         # gets a tensor of randomly distributed 1's and -1's:
         # `categorical` gets a 2-d tensor of 0's and 1's. For some reason, it only
         #     outputs 2-d and demands logits
@@ -149,21 +190,18 @@ class IntMutator(Mutator):
         #     can be of shape (1, size). That ensures the correct number of 1|-1 
         #     values...
         # `reshape` then squishes the result into the same shape as val
-        rotations = tf.reshape(
-            (tf.random.categorical(
-                tf.math.log([[0.5, 0.5]]), 
-                tf.size(val),
-                dtype=val.dtype
-            ) * 2) - 1, 
-            val.shape
-        )
+        rotations = (tf.random.categorical(
+                tf.math.log([[0.5, 0.5]]), n, dtype=tf.int32
+            ) * 2) - 1
         # val, randval, and rotations are now all same shape and dtype
         # multiply randval by rotations to randomly flip the signs
         randval = randval * rotations
         # Then add to val to get the mutated values - mostly 0's if mutation_rate
         # is low
-        val += randval
-        return val
+        return randval
+
+    def _apply_noise(self, val, noise):
+        return val+noise
 
 class UintMutator(IntMutator):
     pass
