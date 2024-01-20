@@ -75,21 +75,34 @@ class GPTreebank(TypeLabelledTreebank):
         )-> tuple[pd.DataFrame, dict]:
         """A single evolutionary step for GP"""
         # And allow for non-float roots
+        for name in ['garn_', 'score_', 'kbest_', 'mut8_', 'kill_', 'record_', '']:
+            if f'{name}time' not in record:
+                record[f'{name}time'] = np.zeros(steps)
         old_gen = self.get_all_root_nodes()[float]
+        record.at[n,'garn_time'] = self.sw()
+        record.at[n,'time'] += record.at[n,'garn_time']
         record_means = ['penalty', 'hasnans', 'survive']
         best = scoreboard.score_trees(old_gen, except_for=expt_outvals)
+        record.at[n,'score_time'] = self.sw()
+        record.at[n,'time'] += record.at[n,'score_time']
         scoreboard.k_best(elitism)
+        record.at[n,'kbest_time'] = self.sw()
+        record.at[n,'time'] += record.at[n,'kbest_time']
         if n == steps-1:
             final_best = scoreboard.k_best(1, mark_4_del=False)[0]
         else:
             final_best = None
         for t in choices(old_gen, scoreboard['fitness'].fillna(0), k=pop-elitism):
             t.copy(gp_copy=True) # WUT XXX
+        record.at[n,'mut8_time'] = self.sw()
+        record.at[n,'time'] += record.at[n,'mut8_time']
         deathlist = filter(
             lambda t: t.metadata['to_delete'] == True, old_gen
         ) if elitism else old_gen
         for t in deathlist:
             t.delete()
+        record.at[n,'kill_time'] = self.sw()
+        record.at[n,'time'] += record.at[n,'kill_time']
         # TODO make functions for the following... (or even a class?)
         for k, v in best.items():
             if not k in record:
@@ -98,9 +111,8 @@ class GPTreebank(TypeLabelledTreebank):
                 record.at[n, k] = scoreboard[k].mean()
             else:
                 record.at[n, k] = v
-        if 'time' not in record:
-            record['time'] = np.zeros(steps)
-        record.at[n,'time'] = self.sw()
+        record.at[n,'record_time'] = self.sw()
+        record.at[n,'time'] += record.at[n,'record_time']
         if grapher and n>0:
             self.update_grapher(grapher, record, n)
             if final_best:
@@ -167,7 +179,7 @@ class GPTreebank(TypeLabelledTreebank):
             scoreboard = GPScoreboard(**sb_kwargs)
         if to_graph:
             for g in flatten(to_graph):
-                if g!='time' and g not in scoreboard.def_outputs:
+                if 'time' not in g and g not in scoreboard.def_outputs:
                     raise ValueError(
                         f"Grapher is instructed to graph {g}, which is not in the " +
                         "pipeline"

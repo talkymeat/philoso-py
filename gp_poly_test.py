@@ -140,6 +140,8 @@ def gp_rand_poly_test(
         max_depth=70, to_graph=[
             ['penalty', 'hasnans', 'survive'], 
             ["mse", "rmse", 'raw_fitness'], 
+            ['garn_time', 'score_time', 'kbest_time'], 
+            ['mut8_time', 'kill_time', 'record_time'],
             ["size", "depth", 'time']
     ]):
     obs = poly_obs_factory(
