@@ -71,7 +71,7 @@ class Tree(ABC):
             self.label = treebank.get_label(label)
         # Or if a Label is passed as label, that's fine too
         elif issubclass(type(label), Label):
-            self.label = label;
+            self.label = label
         # Otherwise it can suck it
         else:
             raise TypeError(f"Invalid label of type {type(label)}")
@@ -1936,6 +1936,7 @@ class Label:
         treebank.add_label(self)
         self.treebank = treebank
         self.is_default = False
+        self._roots = []
 
     @property
     def class_id(self, **kwargs): ##-OK
@@ -2207,8 +2208,8 @@ class Label:
         """
         return list(filter(lambda node: not bool(node.parent), self.nodes))
 
-        def __eq__(self, other):
-            return self.class_id == other.class_id  ##-OK
+    def __eq__(self, other):
+        return self.class_id == other.class_id  ##-OK
 
 
 class TypeLabel(Label):
