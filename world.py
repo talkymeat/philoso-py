@@ -1,28 +1,44 @@
 from abc import ABC, abstractmethod
 from collections import deque
+from collections.abc import Collection
 from typing import List, Callable, Union
-from tf_agents.specs import BoundedArraySpec
-import tensorflow as tf
+from gymnasium.spaces import Space, Box
+
+from observatories import SineWorldObservatory
 
 #import matplotlib.pyplot as plt
-#import numpy as np
-import random, itertools, math
+import numpy as np
+import pandas as pd
+import itertools, math
 
+from dataclasses import dataclass
 from utils import list_transpose, linear_interpolated_binned_means
+from rl_bases import Actionable
 
 
-class World(ABC):
+class World(Actionable):
     """Abstract Base Class defining the 'world' that agents observe and reason
     about. An philoso.py `World` can be any collection of state which can be
     updated in time-steps according to deterministic or probabilistic rules and
     observed by agents.
     """
-    @abstractmethod # Don't make this a classmethod - good if it can be modified by world attrs
-    def observation_params(self):
-        ...
+
+    def __init__(self, *args, seed: int|None=None, **kwargs):
+        self.np_random = np.random.Generator(np.random.PCG64(seed))
+
+    @property
+    def seed(self) -> int:
+        return self.np_random.bit_generator.seed_seq.entropy
+    
+    @seed.setter
+    def seed(self, seed: int|np.random.Generator|None):
+        if isinstance(seed, np.random.Generator):
+            self.np_random = seed
+        else:
+            self.np_random = np.random.Generator(np.random.PCG64(seed))
 
     @abstractmethod
-    def observe(self, **kwargs) -> Union[dict, tuple, str, int, float]:
+    def observe(self, params: dict|tuple|np.ndarray) -> dict|tuple|np.ndarray:
         """The function `Agent`s call to make observations of the `World`. This
         may be a single simple function, or may route queries to multiple
         different observation functions with different logic. Note that
@@ -31,12 +47,10 @@ class World(ABC):
         access to the underlying state of the `World` which the update rules
         have access to.
 
-        kwargs should be used to define the control agents have over the
-        fine/coarse grainedness of observations, but observations should be
-        limited in how many bytes a single observation can return.
+        `params` should be a valid sample from `self.action_param_space`.
 
-        Returned values should be in lists or tuples - A singleton tuple may be
-        returned, though.
+        Returned values should ndarrays, or tuples or dicts of ndarray - A 
+        singleton ndarray may be returned, though.
         """
         ...
 
@@ -57,8 +71,6 @@ class World(ABC):
     @max_observation_size.setter
     def max_observation_size(self, size: int):
         """Setter for max_observation_size."""
-        # if size%12 != 0:
-        #     raise ValueError()
         self._max_observation_size = size
 
 
@@ -74,6 +86,7 @@ class VectorWorld(World):
                 fn_list: List[Callable],
                 max_observation_size: int,
                 cell_type=float,
+                seed: int|None = None,
                 transposal_probability: float = 0.0,
                 jitter_stdev: float = 0.0
             ):
@@ -120,6 +133,7 @@ class VectorWorld(World):
             is not in the interval [0.0, 1.0) (must be a valid probability,
             cannot be 1.0 as this would result in infinite transposal distances)
         """
+        self.seed=seed
         self.length = length
         if len(initial_conditions) > length:
             raise ValueError(
@@ -170,9 +184,11 @@ class VectorWorld(World):
         self.max_observation_size = max_observation_size
         self.transposal_probability = transposal_probability
         self.jitter_stdev = jitter_stdev
+        self._obs_param_space = Box(low=0, high=len(self.world), dtype=np.uint)
 
-    def observation_params(self):
-        return BoundedArraySpec(2, tf.dtypes.int16, minimum=0, maximum=self.length)
+    @property
+    def action_param_space(self):
+        return self._obs_param_space
 
     @property
     def fn_list(self):
@@ -280,13 +296,13 @@ class VectorWorld(World):
             # transposal, |d|. If t is `self.transposal_probability` and r is a
             # random float sampled over the closed interval [0, 1], then:
             # |d| = argmax x: r < t^x
-            rnd = random.random()
+            rnd = self.np_random.uniform()
             while rnd < self.transposal_probability**(transpose_map[i]+1):
                 # x is initialised to 0, this loop check if t^(x+1) would be >r:
                 # if so, increment x: when the loop stops running, |d| = x
                 transpose_map[i] += 1
             # Flip a coin to see if the transposal is to the left or right
-            transpose_map[i] *= random.randint(0,1) * 2 - 1
+            transpose_map[i] *= self.np_random.integers(0,2) * 2 - 1
         return transpose_map
 
     def _shave_transpose_map(self, transpose_map: List[int], offset: int) -> None:
@@ -710,7 +726,7 @@ class VectorWorld(World):
         >>> print(failures)
         0
         """
-        return [random.gauss(samp, self.jitter_stdev) for samp in observation_sample]
+        return [self.np_random.normal(samp, self.jitter_stdev) for samp in observation_sample]
 
     def _reduce_sample(self, observation_sample):
         """Takes a sample generated from `_world` and, if it is longer than the
@@ -752,7 +768,7 @@ class VectorWorld(World):
         )
 
 
-    def observe(self, start: int, end: int):
+    def observe(self, params=np.ndarray):
         """Make an observation covering a certain range of the world-vector,
         subject to a certain probability of elements in the observation being
         transposed, and a certain amout of gaussian jitter on each value.
@@ -766,15 +782,20 @@ class VectorWorld(World):
         """
         # Check that `start` and `end` are in the right range, raise ValueErrors
         # otherwise
-        if start >= end:
-            raise ValueError("End must be greater than start")
-        if start < 0:
-            raise ValueError("Start cannot be negative")
-        if end > self.maxlen:
-            raise ValueError(
-                "Out of range: the maximum length of this world is" +
-                f" {self.maxlen}"
-            )
+        if params not in self.action_param_space:
+            raise ValueError(f"Invalid observatyion parameters: {params}")
+        start, end = tuple(np.sort(params))
+        ###################cut to use ai.gym action space###################
+        # if start >= end:
+        #     raise ValueError("End must be greater than start")
+        # if start < 0:
+        #     raise ValueError("Start cannot be negative")
+        # if end > self.maxlen:
+        #     raise ValueError(
+        #         "Out of range: the maximum length of this world is" +
+        #         f" {self.maxlen}"
+        #     )
+        ####################################################################
         # TODO: performance testing: is it better to copy out the initial_sample,
         # then transpose, or do both at once in a list comprehension?
         padding = []
@@ -838,6 +859,103 @@ class VectorWorld(World):
             jitter_stdev = 0.1
         )
         return world
+
+
+class SineWorld(World):
+    @dataclass
+    class SineWave:
+        wavelength: float = 1.0
+        amplitude: float = 1.0
+        phase: float = 0.0
+
+        def __call__(self, x):
+            return np.sin(
+                (
+                    x * (2*np.pi/self.wavelength)
+                )+(
+                    self.phase*(
+                        np.pi * 0.5
+                    )
+                )
+            ) * self.amplitude
+        
+        def step(self, incr: float):
+            self.phase += incr
+            self.phase %= (2 * np.pi)/self.wavelength
+        
+    def __init__(self, 
+            radius: float,
+            max_observation_size: int,
+            noise_sd: float,
+            *sine_wave_params: Collection[float],
+            seed: int|None = None,
+            speed: float = 0.0,
+            dtype: np.dtype = np.float32,
+            iv: str = 'x',
+            dv: str = 'y'
+        ):
+        self.seed=seed
+        self.range = (-radius, radius)
+        sine_wave_params = sine_wave_params if sine_wave_params else ((),)
+        self.max_observation_size = max_observation_size
+        self.noise_sd = noise_sd
+        self.speed = speed
+        self.dtype = dtype
+        self.iv = iv
+        self.dv = dv
+        self._act_param_names = ['start', 'stop', 'num'] # XXX add to other Actionables
+        self._act_param_space = Box(
+            low=np.array([self.range[0], self.range[0], 1]), 
+            high=np.array([self.range[1], self.range[1], self.max_observation_size]), 
+            dtype=self.dtype
+        )
+        self.sine_waves = [SineWorld.SineWave(*params) for params in sine_wave_params]
+
+    def act(self, params: np.ndarray):
+        super().act(params)
+        start, stop = tuple(np.sort(params[0:2]).astype(self.dtype))
+        num = int(params[2])
+        return SineWorldObservatory(self.iv, self.dv, world=self, start=start, stop=stop, num=num) 
+
+    def observe(self, start, stop, num) -> pd.DataFrame:
+        """The function `Agent`s call to make observations of the `World`. This
+        may be a single simple function, or may route queries to multiple
+        different observation functions with different logic. Note that
+        observations need not be, and ideally (for most philosophical questions
+        you might want an philoso.py model to address) should not be, direct
+        access to the underlying state of the `World` which the update rules
+        have access to.
+
+        kwargs should be used to define the control agents have over the
+        fine/coarse grainedness of observations, but observations should be
+        limited in how many bytes a single observation can return.
+
+        Returned values should ndarrays, or tuples or dicts of ndarray - A 
+        singleton ndarray may be returned, though.
+        """
+        # Check that params are in the right range, raise ValueErrors
+        # otherwise
+        data = pd.DataFrame({
+            self.iv: self.np_random.uniform(
+                low=start, high=stop, size=num
+            ).astype(self.dtype)
+        }) # XXX https://numpy.org/doc/stable/reference/random/index.html#random-quick-start
+        sample = np.zeros(shape=(num,), dtype=self.dtype)
+        for sin in self.sine_waves:
+            sample += sin(data[self.iv])
+        noise = self.np_random.normal(loc=0.0, scale=self.noise_sd, size=(num,))
+        data[self.dv] = sample+noise
+        return data
+
+
+    def increment_time(self):
+        """Calculates the state of the `World` at the next time-step and updates
+        accordingly.
+        """
+        if self.speed:
+            for sw in self.sine_waves:
+                sw.step(self.speed)
+
 
 def main():
     import doctest

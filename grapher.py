@@ -116,7 +116,10 @@ def grapher_example(ms = 300, md = 70, lims= True):
         operators=[ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE]
     )
     gr = None
-    rpf = RandomPolynomialFactory(gp, 5, -10.0, 10.0)
+    rpf = RandomPolynomialFactory(
+        params = np.array([5., -10.0, 10.0], dtype=np.float32),
+        treebank=gp
+    )
     trees = [rpf('x', 'y') for _ in range(5)]
     df = pd.DataFrame({'x': [1.0, 1.0], 'y': [1.0, 1.0]})
     bigtrees, deeptrees = 0, 0

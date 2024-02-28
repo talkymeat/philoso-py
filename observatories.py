@@ -736,15 +736,44 @@ class StaticFunctionObservatory(FunctionObservatory):
     # self._dv_data[[col for col in self._dv_data.columns if self.dv_key in col]].copy()
         
 
-class WorldObservatory:
-    def __init__(self, ivs: list[str], dvs: list[str], **kwargs):
-        pass
+class SineWorldObservatory:
+    def __init__(self, 
+            ivs: str|list[str], 
+            dvs: str|list[str], 
+            world: 'World', 
+            start: float, 
+            stop: float, 
+            num: int, **kwargs):
+        self.ivs = collect(ivs, list)
+        self.dvs = collect(dvs, list)
+        self.world = world
+        self.start = start
+        self.stop = stop
+        self.num = num
+        self.data = None
+
+    @property
+    def iv(self):
+        return self.ivs[0]
+
+    @property
+    def dv(self):
+        return self.dvs[0]
 
     def __next__(self) -> pd.DataFrame:
-        pass
+        self.data = self.world.observe(self.start, self.stop, self.num)
+        return self.data[[self.iv]]
 
+    @property
     def target(self) -> pd.DataFrame:
-        pass
+        if self.data is not None and self.dv in self.data:
+            return self.data[[self.dv]]
+        raise ValueError(
+            "SineWorldObservatory ('swo') must be accessed with `next(swo)` before" +
+            " `swo.target` can be accessed. `next` generates the IV and " +
+            "corresponding DV values, and returns the IV: `target` then returns " +
+            "the DV values that correspond to the last generated IV values."
+        )
 
 
 if __name__ == '__main__':

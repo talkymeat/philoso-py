@@ -28,6 +28,7 @@ from tree_errors import TreeIndexError
 from tree_iter import TreeIter, DepthFirstBottomUp as DFBU
 import treebanks as tbs
 import operators as ops
+from utils import IDSet
 # TODO: don't leave the operator import here: do that in GP, and in tests
 
 
@@ -63,7 +64,7 @@ class Tree(ABC):
     def __init__(self, treebank, label, *args, metadata=None, **kwargs):
         # Set parent to None: parent, if there is one, will set child's `parent`
         # param
-        self.parent = None
+        self._parent = None
         # If no metadata is provided, set an empty dict just in case
         self.metadata = metadata if metadata else {}
         # DOP uses strings as labels, GP uses types, so those are OK
@@ -79,6 +80,21 @@ class Tree(ABC):
     @property
     def treebank(self):
         return self.label.treebank
+    
+    @property
+    def parent(self):
+        return self._parent
+    
+    @parent.setter
+    def parent(self, parent):
+        if parent is None:
+            self.label._make_root(self)
+        elif isinstance(parent, self.label.treebank.N):
+            self.label._make_not_root(self)
+        else:
+            raise ValueError("parent nodes must be NonTerminals")
+        self._parent = parent
+
 
     @property
     def label(self):
@@ -1728,7 +1744,7 @@ class Terminal(Tree):
         >>> tbs.tree('([N]bridge)', tb) == tbs.tree('([N]man)', tb)
         False
         >>> tbs.tree('([N]bridge)') == tbs.tree('([N]bridge)')
-        False
+        True
         >>> tbs.tree('([N]bridge)') == tbs.tree('([V]bridge)')
         False
         >>> tbs.tree('([N]bridge)') == tbs.tree('([N]man)')
@@ -1931,12 +1947,12 @@ class Label:
 
     def __init__(self, treebank, class_id = None): ###OK
         # create a list to store all Trees with this Label
-        self.nodes = []
+        self.nodes = IDSet()
         self._class_id = class_id ###OK
         treebank.add_label(self)
         self.treebank = treebank
         self.is_default = False
-        self._roots = []
+        self._roots = IDSet()
 
     @property
     def class_id(self, **kwargs): ##-OK
@@ -2011,14 +2027,6 @@ class Label:
         >>> adv.print_terminal_subtrees()
         ([Adv]'alone')
         """
-        # Check the type first. The `if __name__ == '__main__'` is because,
-        # when the doctests run, `Tree` in the type-check below will otherwise
-        # be `__main__.Tree`, but the actual trees are created by `Treebank`,
-        # which imports `Tree` and its subclasses from `trees.py`, so the
-        # resulting trees are, e.g. `trees.NonTerminal`, subclass of
-        # `trees.Tree`, but *not* of `__main__.Tree`. Pain in the arse, but
-        # watchugonnado?
-        # if isinstance(node, Tree if __name__ != '__main__' else tbs.Tree):
         if isinstance(node, self.treebank.N) or isinstance(node, self.treebank.T):
             # If it already has `self` as its label, all that is needed is to
             # add it to self.nodes. This is the expected behaviour, as the
@@ -2033,7 +2041,8 @@ class Label:
                     # is removed from the other Label's node list
                     node.label.remove_node(node)
                 # So now we're sure we can set the label param on node
-                # TODO: There is no `self.nodes.append(node)` on this branch,
+                # XXX update docs to reflect use of IDSet
+                # TODO: There is no `self.nodes.add(node)` on this branch,
                 # because this is done in the label setter in Tree.
                 # I tried having the `self.nodes.append(node)` below under
                 # a separate conditional checking that `node` isn't already in
@@ -2044,7 +2053,10 @@ class Label:
             # And now we're sure it's OK to add the node to the node list,
             # unless node's label.setter already did this
             else:
-                self.nodes.append(node)
+                self.nodes.add(node)
+            # If `node` is a root node, add it to the roots collection
+            if not node.parent:
+                self._roots.add(node)
         else:
             # But if the type check fails...
             raise TypeError(
@@ -2080,11 +2092,21 @@ class Label:
         # overriden in Tree, and it is important that the node that is removed
         # is the exact node passed to the method, not just the first one to have
         # the same value.
-        for i, t in enumerate(self.nodes):
-            if t is node:
-                del self.nodes[i]
-                break
+        self.nodes.remove(node)
+        self._roots.discard(node)
         node.label = None
+
+    def _make_root(self, node):
+        if node in self:
+            self._roots.add(node)
+        else:
+            raise ValueError(f'{node} is not in Label {self}')
+
+    def _make_not_root(self, node):
+        if node in self:
+            self._roots.discard(node)
+        else:
+            raise ValueError(f'{node} is not in Label {self}')
 
     def __str__(self):
         """String representation of Label for use with __str__ methods in Tree
@@ -2101,7 +2123,7 @@ class Label:
         return "" if self.classname == "" or self.is_default else f"[{self.classname}]"  ##-OK - cn is correct here, see if I can just let TL inherit
 
     def __contains__(self, tree):
-        return bool(sum([id(tree)==id(t) for t in self.nodes]))
+        return tree in self.nodes
 
     def __repr__(self):
         return(f"Label('{self.classname}')")  ##-OK
@@ -2190,7 +2212,7 @@ class Label:
         >>> hippo = tbs.tree("([NP]([Det]'a')([AdjP]([Adj]'giant')([N]'hippopotamus')))", tb)
         >>> sad = tbs.tree("([Adv]'alone')", tb)
         >>> print(tb.labels['V'].roots)
-        []
+        IDSet([])
         >>> def print_roots(name):
         ...     for root in tb.labels[name].roots:
         ...         print(root)
@@ -2206,7 +2228,8 @@ class Label:
         >>> print_roots('NP')
         ([NP]([Det]'a')([AdjP]([Adj]'giant')([N]'hippopotamus')))
         """
-        return list(filter(lambda node: not bool(node.parent), self.nodes))
+        return self._roots
+        #return list(filter(lambda node: not bool(node.parent), self.nodes))
 
     def __eq__(self, other):
         return self.class_id == other.class_id  ##-OK

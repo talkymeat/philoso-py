@@ -1,27 +1,47 @@
-from typing import Protocol, Type, Union, Iterable, Mapping
+from typing import Type, Union, Iterable, Mapping
+from abc import ABC, abstractmethod, abstractproperty
 import operators as ops
 from trees import Terminal, NonTerminal, Tree
 from gp_trees import GPTerminal, GPNonTerminal
 import pandas as pd
+import numpy as np
 from itertools import chain, combinations
 from scipy.special import comb
-from random import uniform, choices
 from functools import reduce
 from dataclasses import dataclass
 # from type_ify import TypeNativiser
 # from observatories import GenFunc
 from treebanks import Treebank
+from rl_bases import Actionable
+from gymnasium.spaces import Box
 
-class TreeFactory(Protocol):
+class TreeFactory(ABC):
+    @abstractmethod
     def set_treebank(self, treebank: Treebank):
-        ...
+        pass
 
+    @abstractmethod
     def __call__(self, *vars: Iterable[str], treebank: Treebank=None) -> Tree:
-        ...
+        pass
+
+    @abstractproperty
+    def operators(self):
+        pass
+
+    @property
+    def seed(self) -> int:
+        return self.np_random.bit_generator.seed_seq.entropy
+    
+    @seed.setter
+    def seed(self, seed: int|np.random.Generator|None):
+        if isinstance(seed, np.random.Generator):
+            self.np_random = seed
+        else:
+            self.np_random = np.random.Generator(np.random.PCG64(seed))
 
 
-class TestTreeFactory:
-    def __init__(self, start_tree: Tree):
+class TestTreeFactory(TreeFactory):
+    def __init__(self, start_tree: Tree, **kwargs):
         self.start_tree = start_tree
         self.treebank = start_tree.treebank
 
@@ -31,16 +51,20 @@ class TestTreeFactory:
     def __call__(self, *vars: Iterable[str], treebank: Treebank=None) -> Tree:
         return self.start_tree.copy_out(treebank if treebank else self.treebank)
     
-class CompositeTreeFactory:
+class CompositeTreeFactory(TreeFactory):
     def __init__(self, 
             treebank: Treebank, 
             tree_factories: list[TreeFactory], 
             weights: Iterable[float|int], 
-            *args, **kwargs):
+            *args,
+            seed: int|np.random.Generator|None = None, 
+            **kwargs):
         if weights and len(weights) != len(tree_factories):
             raise ValueError(
                 "tree_factories and weights should be the same length"
             )
+        for tf in tree_factories:
+            tf.seed = seed
         self.tree_factories = tree_factories
         self.weights = weights
         self.set_treebank(treebank)
@@ -50,28 +74,68 @@ class CompositeTreeFactory:
             tf.treebank = treebank
 
     def __call__(self, *vars: Iterable[str], treebank: Treebank=None) -> Tree:
-        return choices(
-            self.tree_factories, self.weights)[0](vars, 
+        return self.np_random.choice(
+            self.tree_factories, 
+            p=self.weights
+        )[0](
+            vars, 
             treebank = treebank if treebank else self.treebank
         )
+    
+    @property
+    def seed(self):
+        return [tf.seed for tf in self.tree_factories]
+    
+    @seed.setter
+    def seed(self, seed: int|list[int]|None):
+        if isinstance(seed, list):
+            if len(seed) != len(self.tree_factories):
+                raise ValueError(
+                    "List of seeds should be the same length as " +
+                    "list of TreeFactories"
+                )
+            for tf, s in zip(self.tree_factories, seed):
+                tf.seed = s
+        else:
+            for tf in self.tree_factories:
+                tf.seed = seed    
+    
+    @property
+    def operators(self):
+        ops = set()
+        for tf in self.tree_factories:
+            ops |= set(tf.operators)
+        return ops
 
-class RandomPolynomialFactory:
+
+
+class RandomPolynomialFactory(TreeFactory):
     """A TreeFactory which makes random trees representing polynomials of a specified
     order (`order`) and set of variables (`vars`), with random coefficients uniformly 
     distributed in a specified range (`const_min` to `const_max`)
     """
+    _act_param_space = Box(
+        low=np.array([1.0, -np.inf, -np.inf]),
+        high=np.array([25., np.inf, np.inf]),
+        dtype=np.float32
+    )
+    _act_param_names = ['order', 'const_min', 'const_max']
 
     def __init__(
             self,
+            params: np.ndarray,
             treebank: Treebank = None,
-            order: int = None,
-            const_min: float = None,
-            const_max: float = None):
+            seed: int|list[int]|None = None
+        ):
+        self.seed = seed
+        self.order = int(params[0])
+        self.const_min = params[1]
+        self.const_max = params[2]
+        if self.const_min > self.const_max:
+            self.const_min, self.const_max = self.const_max, self.const_min
         if treebank:
             self.set_treebank(treebank)
-        self.const_min = const_min
-        self.const_max = const_max
-        self.operators = {
+        self._operators = {
             "SUM": ops.SUM,
             "PROD": ops.PROD,
             "SQ": ops.SQ,
@@ -80,9 +144,10 @@ class RandomPolynomialFactory:
         }
         if treebank:
             self.treebank.operators = self.operators
-        
-        self.order = order
-        
+
+    @property
+    def operators(self):
+        return self._operators
 
     def _poly_terms(self, vars_: Iterable[str], order: int) -> tuple[tuple[str|int]]:
         """Generates a tuple of tuples, in which each tuple represents a term of 
@@ -91,7 +156,7 @@ class RandomPolynomialFactory:
         representing the powers they are to be raised to
 
         >>> from treebanks import TypeLabelledTreebank
-        >>> rpf = RandomPolynomialFactory(TypeLabelledTreebank(), 3, -10.0, 10.0)
+        >>> rpf = RandomPolynomialFactory(params = np.array([3., -10.0, 10.0], dtype=np.float32), treebank=TypeLabelledTreebank())
         >>> rpf._poly_terms(['x', 'y'], 3)
         (((), ()), (('x',), (1,)), (('y',), (1,)), (('x',), (2,)), (('y',), (2,)), (('x', 'y'), (1, 1)), (('x',), (3,)), (('y',), (3,)), (('x', 'y'), (2, 1)), (('x', 'y'), (1, 2)))
         >>> rpf._poly_terms(['x'], 3)
@@ -143,7 +208,7 @@ class RandomPolynomialFactory:
             tuple[tuple]
 
         >>> from treebanks import TypeLabelledTreebank
-        >>> rpf = RandomPolynomialFactory(TypeLabelledTreebank(), 3, -10.0, 10.0)
+        >>> rpf = RandomPolynomialFactory(params = np.array([3., -10.0, 10.0], dtype=np.float32), treebank=TypeLabelledTreebank())
         >>> for k in range(1,6):
         ...     for tot in range(1,6):
         ...         print(rpf._all_sums(tot, k))
@@ -229,7 +294,7 @@ class RandomPolynomialFactory:
         >>> tlt = TypeLabelledTreebank(operators=[
         ...     ops.SUM, ops.PROD, ops.SQ, ops.CUBE, ops.POW
         ... ])
-        >>> rpf = RandomPolynomialFactory(tlt, 3, -10.0, 10.0)
+        >>> rpf = RandomPolynomialFactory(params = np.array([3., -10.0, 10.0], dtype=np.float32), treebank=tlt)
         >>> initial = tlt.tree('([float]0.0)')
         >>> tl = [tlt.tree('([float]1.0)'), tlt.tree('([float]2.0)'), tlt.tree('([float]3.0)'), tlt.tree('([float]4.0)')]
         >>> t0 = rpf._binarise_tree('SUM', tl)
@@ -321,7 +386,7 @@ class RandomPolynomialFactory:
 
         >>> from gp import GPTreebank
         >>> gp = GPTreebank()
-        >>> rpf = RandomPolynomialFactory(treebank=gp, order=3, const_min=-10.0, const_max=10.0)
+        >>> rpf = RandomPolynomialFactory(params = np.array([3., -10.0, 10.0], dtype=np.float32), treebank=gp)
         >>> p1 = rpf('x', coefficients={((), ()): 1, (('x',), (1,)): 1, (('x',), (2,)): 1, (('x',), (3,)): 1})
         >>> list(p1(**pd.DataFrame({'x': [1, 2, 3, 4]})))
         [4.0, 15.0, 40.0, 85.0]
@@ -345,7 +410,7 @@ class RandomPolynomialFactory:
             # `coefficients`, or, if the corresponding key is not found, a
             # uniformly distributed random value between `const_min` and 
             # `const_max` will be used 
-            coeff = coefficients.get(term, uniform(self.const_min, self.const_max))
+            coeff = coefficients.get(term, self.np_random.uniform(self.const_min, self.const_max))
             # the procedure for making the terms is to make subtrees for each 
             # variable, which are then combined using `_binarise_tree` and the 
             # 'PROD' operator. The factors can be ...
@@ -380,9 +445,21 @@ class RandomPolynomialFactory:
         # Finally, the terms are combined in a binary tree with 'SUM'
         return self._binarise_tree('SUM', term_subtrees, nt=treebank.N)
 
+class TreeFactoryFactory(Actionable):
+    """Don't look at me."""
+    def __init__(self, tf_type=type[TreeFactory], seed=int|None):
+        self.tf_type = tf_type
+        self.seed = seed
+        self._act_param_space = tf_type._act_param_space
+        self._act_param_names = tf_type._act_param_names
+
+    def act(self, params: np.ndarray|dict|list, *args, **kwargs):
+        super().act(params, *args, **kwargs)
+        return self.tf_type(params, seed=self.seed, treebank=kwargs['treebank'])
+
 # XXX consider `full` and `grow` (Poli et al. p.12) methods for tree seeding
 
-# class RandomTreeFactory:
+# class RandomTreeFactory(TreeFactory):
 #     tn = TypeNativiser()
 
 #     @dataclass
