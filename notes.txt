@@ -1,0 +1,24 @@
+OrderedDict([('actions', array([1, 1], dtype=int8)), ('gp_hyperparams', OrderedDict([('factory_params', (array([ 8.611187 , -0.6890971,  1.1706209], dtype=float32),)), ('fitness_weights', array([2.4976285 , 0.65698576, 0.68213004, 0.6203798 , 0.5296098 ,
+       0.47959253], dtype=float32)), ('ranged_hyperparams', array([8.1346190e-01, 7.4009818e-01, 2.5233879e+00, 8.1140790e+02,
+       1.2531107e+03, 5.3642142e-01], dtype=float32))])), ('observation_params', array([-4.913979 , -1.0384034, 65.16414  ], dtype=float32)), ('store_last', 31)])
+0 generations
+25 generations
+50 generations
+75 generations
+100 generations
+125 generations
+150 generations
+175 generations
+ic| best:          tree  size  depth        mse     imse     rmse     irmse       sae  \
+          3  [(x), (x)]     3      2  36.664478  0.02655  6.05512  0.141741  5.525156   
+          
+                 isae  n_minus_size  n_minus_depth  raw_fitness  pre_fitness_1  hasnans  \
+          3  0.153253    808.407898    1251.110718  1028.373306     3581.20638    False   
+          
+             penalty  pre_fitness_2  survive  pre_fitness_3     fitness  
+          3        1     3581.20638     True     3581.20638  3581.20638  
+-=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=--=-=-
+<class 'dict'>
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+3    [(x), (x)]
+Name: tree, dtype: object

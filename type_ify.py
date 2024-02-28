@@ -1,14 +1,24 @@
 import pandas as pd
+from pandas.api.types import is_bool_dtype, is_integer_dtype, is_float_dtype, is_complex_dtype, is_string_dtype
 import numpy as np
+from icecream import ic
+from typing import Callable, Sequence, Any
 
 class _DoesNothing:
     pass
 
 class TypeNativiser:
-    def __init__(self, *types, dic = None):
+    def __init__(self, *type_tests: Sequence[tuple[Callable[Any, bool], type]], dic = None):
         self.dtype_dict = dic if dic else {}
         self.dtype_dict[pd.core.arrays.string_.StringDtype] = str
-        self.type_list = [int, bool, float, complex] + list(types)
+        self.type_tests = [
+            (is_float_dtype,   float  ), 
+            (is_integer_dtype, int    ), 
+            (is_bool_dtype,    bool   ), 
+            (is_complex_dtype, complex),
+            (is_string_dtype,  str    )
+        ] + list(type_tests)
+        self.type_set = {tt[1] for tt in self.type_tests}
 
 
     def type_ify(self, arg, default = 'raise'):
@@ -73,7 +83,7 @@ class TypeNativiser:
         <class 'float'>
         <class 'complex'>
         <class 'bool'>
-        <class 'NoneType'>
+        <class '__main__._DoesNothing'>
         >>> for h in df:
         ...     print(tn.type_ify(df[h]))
         ...
@@ -91,9 +101,9 @@ class TypeNativiser:
         <class 'float'>
         <class 'complex'>
         <class 'int'>
-        <class 'numpy.longdouble'>
+        <class 'float'>
         <class 'int'>
-        <class 'numpy.clongdouble'>
+        <class 'complex'>
         <class 'bool'>
         <class 'int'>
         <class 'int'>
@@ -110,30 +120,45 @@ class TypeNativiser:
         <class 'int'>
         <class 'int'>
         <class 'complex'>
-        <class 'bytes'>
-        <class 'numpy.longdouble'>
-        <class 'numpy.clongdouble'>
-        <class 'numpy.clongdouble'>
+        <class 'str'>
+        <class 'float'>
+        <class 'complex'>
+        <class 'complex'>
         <class 'int'>
         """
-        if isinstance(arg, pd.Series) or isinstance(arg, np.generic):
-            dt = self.dtype_dict.get(
-                arg.dtype,
-                self.dtype_dict.get(type(arg.dtype), None)
-            )
-            if dt:
-                return dt
-            if isinstance(arg, pd.Series):
-                for k in self.type_list:
-                    if arg.dtype == k:
-                        self.dtype_dict[arg.dtype] = k
-                        return k
-                self.dtype_dict[arg.dtype] = _DoesNothing
-                return _DoesNothing
-            ty = type(arg.item())
-            self.dtype_dict[type(arg)] = ty
+        ty = type(arg)
+        if ty in self.type_set:
             return ty
-        return type(arg)
+        else:
+            for tt in self.type_tests:
+                if tt[0](arg):
+                    return tt[1]
+        return _DoesNothing
+        # if isinstance(arg, pd.Series) or isinstance(arg, np.generic):
+        #     dt = self.dtype_dict.get(
+        #         arg.dtype,
+        #         self.dtype_dict.get(type(arg.dtype), None)
+        #     )
+        #     if dt:
+        #         return dt
+        #     if isinstance(arg, pd.Series):
+        #         for k in self.type_list:
+        #             if arg.dtype == k:
+        #                 self.dtype_dict[arg.dtype] = k
+        #                 return k
+        #         ic('================='*100)
+        #         ic(arg)
+        #         ic('================='*100)
+        #         ic(type(arg))
+        #         ic(arg.dtype, arg.dtype==float)
+        #         ic(self.type_list)
+        #         ic('================='*100)
+        #         self.dtype_dict[arg.dtype] = _DoesNothing
+        #         return _DoesNothing
+        #     ty = type(arg.item())
+        #     self.dtype_dict[type(arg)] = ty
+        #     return ty
+        # return type(arg)
 
 def main():
     import doctest

@@ -34,6 +34,6 @@ echo type_ify.py
 python type_ify.py
 echo utils.py
 python utils.py
-echo world.py
-python world.py
+# echo world.py
+# python world.py
 

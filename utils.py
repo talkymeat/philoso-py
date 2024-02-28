@@ -1,6 +1,8 @@
 import math
 from typing import Collection
+from collections.abc import MutableSet
 from icecream import ic
+import numpy as np
 
 def list_transpose(ls, i, j):
     """Transposes the items in list `ls` at index `i` and `j`"""
@@ -70,7 +72,68 @@ def collect(a, t: type[Collection], empty_if_none=False):
         )
     elif empty_if_none or a is not None:
         return t()
+
+class IDSet(MutableSet):
+    def __init__(self, iterable=None):
+        self._dict = {}
+        if iterable:
+            for it in iterable:
+                self.add(it)
+
+    def __contains__(self, other):
+        return id(other) in self._dict
     
+    def __iter__(self):
+        return self._dict.values().__iter__()
+    
+    def __len__(self):
+        return len(self._dict)
+    
+    def add(self, elem):
+        self._dict[id(elem)] = elem
+    
+    def discard(self, other):
+        """Removes `other` from the `IDSet`
+        
+        >>> a = [9, 99]
+        >>> b = [9, 99]
+        >>> s_a = IDSet([a])
+        >>> print(s_a)
+        IDSet([[9, 99]])
+        >>> s_a.discard(b)
+        >>> print(s_a)
+        IDSet([[9, 99]])
+        >>> s_a.discard(a)
+        >>> print(s_a)
+        IDSet([])
+        """
+        if id(other) in self._dict:
+            del self._dict[id(other)]
+
+    def __repr__(self):
+        return f'IDSet({list(self._dict.values()) if self._dict else "[]"})'
+    
+    def array(self):
+        """Returns 1-d numpy ndarray of elements
+        
+        >>> a = [9, 99]
+        >>> b = [9, 99]
+        >>> c = [7, 77, 777, 0]
+        >>> d = [1, 2]
+        >>> s_abc = IDSet([a, b, c])
+        >>> s_abd = IDSet([a ,b, d])
+        >>> s_abc.array()
+        array([list([9, 99]), list([9, 99]), list([7, 77, 777, 0])], dtype=object)
+        >>> s_abd.array()
+        array([list([9, 99]), list([9, 99]), list([1, 2])], dtype=object)
+        """
+        t = tuple(self)
+        a = np.empty(len(t), dtype=object)
+        a[:] = t
+        return a
+
+
+
 
 
 def main():

@@ -18,7 +18,7 @@ class SizeDepth:
 
     @size.setter
     def size(self, size):
-        if size > self.max_size:
+        if size > self.max_size and self.max_size:
             return False
         self._size = size
         return True
@@ -29,7 +29,7 @@ class SizeDepth:
 
     @depth.setter
     def depth(self, depth):
-        if depth > self.max_depth:
+        if depth > self.max_depth and self.max_depth:
             return False
         self._depth = depth
         return True

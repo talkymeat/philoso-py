@@ -1,3 +1,15 @@
+import inspect
+
+def is_tree(obj):
+    for cls in inspect.getmro(type(obj)):
+        try:
+            if cls.__module__ == 'trees' and cls.__name__ == 'Tree':
+                return True
+        except:
+            print('!!!')
+            return False
+    return False
+
 class TreeIter:
     """Iterator that iterates over a Tree, yielding the immediate child-nodes
     only. This was needed because I wanted to include informative IndexError
@@ -104,7 +116,7 @@ class DepthFirstBottomUp(TreeIter):
     """
     def __init__(self, tree):
         super().__init__(tree)
-        if '__len__' in self._tree.__dir__() and len(self._tree):
+        if is_tree(self._tree) and len(self._tree):
             # DFBU works recursively: a DFBU iterator for a tree works by
             # creating DFBUs for each of its children
             self.it = DepthFirstBottomUp(self._tree[self._pos])

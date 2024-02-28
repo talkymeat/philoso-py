@@ -1,8 +1,10 @@
 import pandas as pd
 import numpy as np
 from typing import Collection, Iterable, Callable
+from gymnasium.spaces import Box
 from gp_trees import GPNonTerminal
 from observatories import Observatory
+from rl_bases import Actionable
 from dataclasses import dataclass
 from copy import deepcopy
 from functools import wraps
@@ -55,11 +57,14 @@ class ScoreboardPipelineElement:
             `pd.Series`, or a whole GPScoreboard. It takes positional arguments
             corresponding to `arg_keys`, and may have other kwargs to provide
             values that are stored in a parameter dictionary in GPScoreboard
+        spem_kwargs (dict[strings, Any]): a dict containing any values specified
+            at time of creation which need to be present for `fn` to be called
     """
     arg_keys: tuple[str]|str
     out_key: str
     vec: bool = False
     fn: Callable = None
+    spem_kwargs: dict = None
 
     def __post_init__(self):
         """A housekeeping method that tidies the data a bit after 
@@ -69,6 +74,7 @@ class ScoreboardPipelineElement:
         of attributes
         """
         self.arg_keys = collect(self.arg_keys, tuple, empty_if_none=True)
+        self.spem_kwargs = self.spem_kwargs if self.spem_kwargs else {}
         if 'tree' in self.arg_keys:
             self.vec = False
         if len(self.arg_keys) != 1 and self.fn is None:
@@ -112,7 +118,7 @@ class ScoreboardPipelineElement:
         #  The renaming conditions are those where we know `fn` exists...
         elif not (self.arg_keys or self.out_key):
             # If neither 'key' exists, it's the 'Other' case...
-            self.fn(sb)
+            self.fn(sb, **self.spem_kwargs)
         elif not (self.arg_keys or self.out_key):
             # If only one, it's invalid
             raise ValueError(
@@ -123,11 +129,11 @@ class ScoreboardPipelineElement:
         # `vec` Should be set to true if `fn` uses vectorisation to operate
         # directly on whole columns 
         elif self.vec:
-            sb[self.out_key] = self.fn(**sb[list(self.arg_keys)], **kwargs)
+            sb[self.out_key] = self.fn(**sb[list(self.arg_keys)], **kwargs, **self.spem_kwargs)
         # If it can't, `vec` should be false, and `apply` will be used to go row
         # by row 
         else:
-            sb[self.out_key] = sb.apply(lambda row: self.fn(**row, **kwargs), axis=1)
+            sb[self.out_key] = sb.apply(lambda row: self.fn(**row, **kwargs, **self.spem_kwargs), axis=1)
 
     def __str__(self):
         """Returns a string representation of the ScoreboardPipelineElement"""
@@ -247,7 +253,7 @@ def scoreboard_pipeline_element(arg_keys=('tree'), out_key='fitness', vec=False)
     # return the decorator that actually takes the function in as the input
     return spe_decorator
 
-def flexi_pipeline_element(vec=True, out_key_maker: Callable = None):
+def flexi_pipeline_element(vec=True, out_key_maker: Callable = None, **fpe_kwargs):
     """Kind of a triple-decker. That is, it's a double-decker decorator again,
     but with the output being a function which, given some more arguments,
     returns a ScoreboardPipelineElement, with the following values:
@@ -300,7 +306,7 @@ def flexi_pipeline_element(vec=True, out_key_maker: Callable = None):
         # has an attribute `__wrapper__` that refers to the function
         # the call to `flexi_pipeline_element` decorates 
         @wraps(fn)
-        def spe_maker(*arg_keys, out_key=None, **kwargs):
+        def spe_maker(*arg_keys, out_key=None, **spem_kwargs):
             # Sets the value for `out_key` - using the spe_maker override if
             # available, else a generated value from `out_key_maker`, else
             # a default made from the function and argument names
@@ -309,6 +315,11 @@ def flexi_pipeline_element(vec=True, out_key_maker: Callable = None):
             # the string representing the argumenrs of the function is 
             # generated here
             argstr = ', '.join(arg_keys)
+            # kwargstr = (
+            #     ', ' if spem_kwargs else ''
+            # ) + (
+            #     ', '.join([f'{k} = {k}' for k in spem_kwargs.keys()])
+            # )
             # The code for the wrapper function is generated using an f-string,
             # and run using exec. This adds a function to the local namespace,
             # with a name equal to the value of `out_key`
@@ -321,9 +332,21 @@ def flexi_pipeline_element(vec=True, out_key_maker: Callable = None):
             # `spe_maker` in the global namespace, the function created by the
             # `exec` call below can use `__wrapped__` to access the decorated
             # function, not `spe_maker`, which is the desired behaviour  
+            # if 'n_minus' in out_key:
+            #     with open('log.txt', 'a') as log:
+            #         log.write(
+            #             f"def {out_key}({argstr}, **kwargs):\n" +
+            #             # ''.join([f"\t{key} = {repr(arg)}\n" for key in spem_kwargs.keys()]) +
+            #             f"\treturn {fn.__name__}.__wrapped__({argstr}{kwargstr}, **kwargs)\n" +
+            #             str(locals()['spem_kwargs']) + '\n'
+            #         )
             exec(
+                # "with open('log2.txt', 'a') as log2:\n"+
+                # "\tlog2.write(str(locals()['spem_kwargs']) + '\\n')\n" +
                 f"def {out_key}({argstr}, **kwargs):\n" +
-                f"\treturn {fn.__name__}.__wrapped__({argstr}, **kwargs)\n"
+                # ''.join([f"\t{key} = {repr(arg)}\n" for key in spem_kwargs.keys()]) +
+                # f"\treturn {fn.__name__}.__wrapped__({argstr}{kwargstr}, **kwargs)\n",
+                f"\treturn {fn.__name__}.__wrapped__({argstr}, **kwargs)\n",
             )
             # Note `locals()` is the dict of all local variables, so
             # `locals()[out_key]` retrieves the function generated by `exec`
@@ -331,13 +354,25 @@ def flexi_pipeline_element(vec=True, out_key_maker: Callable = None):
                 arg_keys=arg_keys, 
                 out_key=out_key, 
                 fn=locals()[out_key],
-                vec=vec
+                vec=vec,
+                spem_kwargs=spem_kwargs
             )
         return spe_maker
     return fpe_decorator
 
 # @flexi_pipeline_element()
 # def has_var(tree: GPNonTerminal, var='x'):
+
+@flexi_pipeline_element(out_key_maker=lambda args: f"n_minus_{args[0]}") #, n=0)
+def n_minus(arg, **kwargs):
+    """Calling `n_minus(arg, n=k)` generates a ScoreboardPipelineElement which 
+    subtracts scoreboard column `arg` from `k`.
+    """
+    return kwargs['n']-arg
+
+@flexi_pipeline_element(out_key_maker=lambda args: 'ws_' + ('_'.join(args)))
+def weighted_sum(*args, **kwargs):
+    return sum([w * x for w, x in zip(kwargs['weights'], args)])
 
 
 @flexi_pipeline_element(out_key_maker=lambda args: f"i{args[0]}")
@@ -521,6 +556,25 @@ def clear(*to_clear: str, except_for: str|list[str]=None):
 class GPScoreboard(pd.DataFrame):
     """Extension to pandas.Dataframe to function as a scoreboard for GP,
     with a pipeline for fitness and record-keeping calculations
+
+    >>> df = pd.DataFrame({'x': [0,1,2,3,4,5,6,7,8,9,10]})
+    >>> n = n_minus('x', n=10)
+    >>> ws = weighted_sum('x', 'n_minus_x', weights=[1,2])
+    >>> n(df)
+    >>> ws(df)
+    >>> print(df)
+         x  n_minus_x  ws_x_n_minus_x
+    0    0         10              20
+    1    1          9              19
+    2    2          8              18
+    3    3          7              17
+    4    4          6              16
+    5    5          5              15
+    6    6          4              14
+    7    7          3              13
+    8    8          2              12
+    9    9          1              11
+    10  10          0              10
     """
 
     _metadata = [
@@ -736,7 +790,7 @@ class GPScoreboard(pd.DataFrame):
             pipe_ele(self, **{**self.kwargs, **kwargs})
         return self
     
-    def k_best(self, k, mark_4_del=True):
+    def k_best(self, k: int, mark_4_del: bool=True, tree_only: bool=True):
         """Selects the $k$ best trees in a collection based on a provided list
         of fitness scores. Optionally, marks the $|trees| - k$ non-best trees
         for deletion.
@@ -801,11 +855,15 @@ class GPScoreboard(pd.DataFrame):
         >>> print(best[0]()) 
         21.0
         """
-        best = self.nlargest(k, 'fitness')['tree']
+        best = self.nlargest(k, 'fitness')
+        if tree_only:
+            best = best['tree']
+        else:
+            ic(best)
         if mark_4_del:
             self['tree'].apply(lambda t: t.metadata.__setitem__('to_delete', True))
             best.apply(lambda t: t.metadata.__setitem__('to_delete', False))
-        return list(best)
+        return list(best) if tree_only else best.reset_index()
 
     def winner(self, *cols, except_for: str|list[str]=None, **kwargs)-> dict: 
         """
@@ -981,7 +1039,166 @@ class GPScoreboard(pd.DataFrame):
         )-> dict:
         return self(trees, **kwargs).winner(*cols, **kwargs)
 
+class SimpleScoreboardFactory(Actionable):
+    """Generates scoreboards for RL-generated GP runs
 
+    >>> import operators as ops
+    >>> from gp import GPTreebank
+    >>> from observatories import StaticObservatory
+    >>> op = [ops.PROD, ops.EQ, ops.TERN, ops.GT]
+    >>> gp = GPTreebank(operators = op, temp_coeff=0.5)
+    >>> iv = [0., 2., 4., 6., 8.,]
+    >>> dv0 = [0., 0., 0., 0., 0.]
+    >>> dv1 = [0., 10., 20., 30., 40.]
+    >>> df = pd.DataFrame({'x': iv, 'y0': dv0, 'y1': dv1})
+    >>> t = [
+    ...     gp.tree("([float]<PROD>([float]$x)([int]1))"),
+    ...     gp.tree("([float]<PROD>([float]$x)([int]3))"),
+    ...     gp.tree("([float]<PROD>([float]$x)([int]5))"),
+    ...     gp.tree("([float]<PROD>([float]$x)([int]7))"),
+    ...     gp.tree("([float]<PROD>([float]$x)([int]9))"),
+    ...     gp.tree("([float]<PROD>([float]6.)([int]6))")
+    ... ]
+    >>> obs0 = StaticObservatory('x', 'y0', sources=df, obs_len=5)
+    >>> obs1 = StaticObservatory('x', 'y1', sources=df, obs_len=5)
+    >>> ssf = SimpleScoreboardFactory()
+    >>> params = np.array([0.5, 1., 2., 3., 0.04, 0.05], dtype=np.float32) 
+    >>> sb0 = ssf.act(params, obs0, max_size=20, max_depth=8, best_outvals='fitness', dv='y')
+    >>> cols = list(sb0(t).columns) #[list(sb0.columns)[1:]]
+    >>> (cols[:7])
+    ['tree', 'size', 'depth', 'mse', 'imse', 'rmse', 'irmse']
+    >>> cols[7:13]
+    ['sae', 'isae', 'n_minus_size', 'n_minus_depth', 'raw_fitness', 'pre_fitness_1']
+    >>> cols[13:]
+    ['hasnans', 'penalty', 'pre_fitness_2', 'survive', 'pre_fitness_3', 'fitness']
+    >>> sb0[cols[1:7]]
+       size  depth     mse      imse       rmse     irmse
+    0     3      2    24.0  0.040000   4.898979  0.169521
+    1     3      2   216.0  0.004608  14.696938  0.063707
+    2     3      2   600.0  0.001664  24.494897  0.039224
+    3     3      2  1176.0  0.000850  34.292856  0.028334
+    4     3      2  1944.0  0.000514  44.090815  0.022177
+    5     3      2  1296.0  0.000771  36.000000  0.027027
+    >>> sb0[cols[7:13]]
+        sae      isae  n_minus_size  n_minus_depth  raw_fitness  pre_fitness_1
+    0   4.0  0.200000            17              6     1.959042       2.614677
+    1  12.0  0.076923            17              6     1.342791       1.998426
+    2  20.0  0.047619            17              6     1.202968       1.858603
+    3  28.0  0.034483            17              6     1.140967       1.796602
+    4  36.0  0.027027            17              6     1.105950       1.761585
+    5  36.0  0.027027            17              6     1.115906       1.771541
+    >>> sb0[cols[13:]]
+       hasnans  penalty  pre_fitness_2  survive  pre_fitness_3   fitness
+    0    False        1       2.614677     True       2.614677  2.614677
+    1    False        1       1.998426     True       1.998426  1.998426
+    2    False        1       1.858603     True       1.858603  1.858603
+    3    False        1       1.796602     True       1.796602  1.796602
+    4    False        1       1.761585     True       1.761585  1.761585
+    5    False        1       1.771541     True       1.771541  1.771541
+    """
+    def __init__(self, 
+            use_irmse: bool=False,
+            use_imse: bool=True,
+            use_isae: bool=True,
+            use_size: bool=True,
+            use_depth: bool=True,
+            # other_measures: dict[str, ScoreboardPipelineElement]=None, XXX later
+            # use_others: dict[str, bool]=None
+        ):
+        self.use_imse = use_imse
+        self.use_irmse = use_irmse
+        self.use_isae = use_isae
+        self.use_size = use_size
+        self.use_depth = use_depth
+        self.fitness_factors = []
+        num_measures = sum(
+            [
+                self.use_irmse, self.use_imse, self.use_isae, 
+                self.use_size, self.use_depth
+            ] # + list(use_others.values())
+        )
+        self.pipeline_setup = [clear(except_for='tree'), size, depth]
+        if self.use_imse or self.use_irmse:
+            self.pipeline_setup += [mse] 
+            if self.use_imse:
+                self.pipeline_setup += [safe_inv('mse')]
+                self.fitness_factors += ['imse']
+            if self.use_irmse:
+                self.pipeline_setup += [rmse, safe_inv('rmse')]
+                self.fitness_factors += ['irmse']
+        if self.use_isae:
+            self.pipeline_setup += [sae, safe_inv('sae')]
+            self.fitness_factors += ['isae']
+        self.pipeline_post = [
+            hasnans,
+            penalty, 
+            divide('pre_fitness_1', 'penalty', out_key='pre_fitness_2'),
+            survive, 
+            multiply('pre_fitness_2', 'survive', out_key='pre_fitness_3'),
+            nan_zero('pre_fitness_3', out_key='fitness'),  
+        ]
+        if num_measures == 0:
+            raise ValueError('Scoreboard uses no fitness measures at all!')
+        elif num_measures == 1:
+            num_measures = 0
+        self._act_param_space = Box(              # First term is temp_coeff, the rest are 
+            low=np.array([0.0]*(num_measures+1), dtype=np.float32),           # weights on fitness measures: however,
+            high=np.array([np.inf] + ([1.0]*num_measures), dtype=np.float32), # if only one measure is used no weights
+            dtype=np.float32)                     # are needed
+
+    def act(self, 
+            params: np.ndarray, 
+            observatory: Observatory, 
+            max_size: int=0, 
+            max_depth: int=0,
+            best_outvals: str|list[str]=None,
+            dv: str=None
+        ):
+        sb_kwargs = {
+            "temp_coeff": params[0],
+            "obs": observatory,
+        }
+        def_outputs = collect(best_outvals, list) if best_outvals else None
+        for arg, val in (
+            ('def_outputs', def_outputs), 
+            ('dv', dv), 
+        ):
+            val = eval(arg)
+            if val:
+                sb_kwargs[arg] = val 
+        fitness_factors = []
+        pipeline = []
+        if self.use_size:
+            if max_size:
+                pipeline += [n_minus('size', n=max_size)]
+                fitness_factors += ['n_minus_size']
+            else:
+                pipeline += [safe_inv('size')]
+                fitness_factors += ['isize']
+        if self.use_depth:
+            if max_depth:
+                pipeline += [n_minus('depth', n=max_depth)]
+                fitness_factors += ['n_minus_depth']
+            else:
+                pipeline += [safe_inv('depth')]
+                fitness_factors += ['idepth']
+        if len(fitness_factors) > 1:
+            pipeline += [weighted_sum(
+                *(self.fitness_factors+fitness_factors), 
+                weights=params[1:]
+            )]
+            def_fitness = 'ws_' + ('_'.join(self.fitness_factors + fitness_factors))
+        else:
+            def_fitness = fitness_factors[0]
+        pipeline += [
+            rename(def_fitness, 'raw_fitness'), 
+            heat, 
+            rename("fitness", 'pre_fitness_1')
+        ]
+        return GPScoreboard(
+            *self.pipeline_setup+pipeline+self.pipeline_post, **sb_kwargs
+        )
+    
 
 def main():
     import doctest

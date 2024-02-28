@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from math import log, floor, pi, cos, sin
-from random import choice, random, uniform, gauss
+# from random import choice, random, uniform, gauss
 
 from icecream import ic
 import numpy as np
@@ -27,8 +27,9 @@ class Mutator(ABC):
     The first round of testing will be done in a Jupyter Notebook, as it
     requires graphing distributions and kinda eyeballing them.
     """
+    rng = np.random.Generator(np.random.PCG64())
 
-    def __init__(self, mutation_rate, mutation_sd=1.0, **kwargs):
+    def __init__(self, mutation_rate, mutation_sd=1.0, rng: np.random.Generator|None=None, **kwargs):
         """Partially implemented initialiser in the abstract base class: all
         Mutators have a `mutation_rate` which must be initialised as a
         probability
@@ -51,6 +52,7 @@ class Mutator(ABC):
                 If mutation_rate is not a valid probability, in the closed
                 interval [0.0, 1.0]
         """
+        self.rng = rng if rng else self.__class__.rng
         if 0.0 <= mutation_rate <= 1.0:
             self.mutation_rate = mutation_rate
         else:
@@ -101,12 +103,12 @@ class IntMutator(Mutator):
                 `1-mutation_rate`)
         """
         # random value in the closed interval [0.0, 1.0]
-        randval = random()
+        randval = self.rng.random()
         # if randval is exactly 0.0 `log(randval, self.mutation_rate)` will be
         # infinite (or nan): very unlikely, but should be handled. If this
         # happens, just try again.
         while not randval:
-            randval = random()
+            randval = self.rng.random()
         # If randval is more than the mutation rate, just return val. The 'else'
         # condition belwo also would return exactly `val` in this case, but this
         # case is handled separately to save computation
@@ -122,7 +124,7 @@ class IntMutator(Mutator):
         # `choice((-1,1))` which determines the direction of the mutation,
         # increasing or decreasing with equal probability.
         else:
-            return val + (floor(log(randval, self.mutation_rate)) * choice((-1,1)))
+            return val + (floor(log(randval, self.mutation_rate)) * self.rng.choice((-1,1)))
 
 class FloatMutator(Mutator):
     def __init__(self, mutation_rate, mutation_sd=1.0, **kwargs):
@@ -160,8 +162,8 @@ class FloatMutator(Mutator):
                 The mutated value (may be unchanged, with probability of
                 `1.0-mutation_rate`)
         """
-        if int(self.mutation_rate) or random() <= self.mutation_rate:
-            return gauss(val, self.mutation_sd)
+        if int(self.mutation_rate) or self.rng.random() <= self.mutation_rate:
+            return self.rng.normal(val, self.mutation_sd)
         else:
             return val
 
@@ -202,9 +204,9 @@ class ComplexMutator(Mutator):
                 `1.0-mutation_rate`)
 
         """
-        if int(self.mutation_rate) or random() <= self.mutation_rate:
-            modulus_delta = gauss(0, self.mutation_sd)
-            argument_delta = uniform(0.0, pi)
+        if int(self.mutation_rate) or self.rng.random() <= self.mutation_rate:
+            modulus_delta = self.rng.normal(0, self.mutation_sd)
+            argument_delta = self.rng.uniform(0.0, pi)
             delta = modulus_delta * complex(cos(argument_delta), sin(argument_delta))
             return val+delta
         else:
@@ -235,7 +237,7 @@ class BoolMutator(Mutator):
                 The mutated value (may be unchanged, with probability of
                 `1.0-mutation_rate`)
         """
-        return val != (random() <= self.mutation_rate)
+        return val != (self.rng.random() <= self.mutation_rate)
 
 class MutatorFactory:
     """Factory class for mutation operators for constants in Genetic
@@ -273,7 +275,7 @@ class MutatorFactory:
         np.bool_: BoolMutator
     }
 
-    def __new__(cls, const_type, mutation_rate, mutation_sd=None, **kwargs):
+    def __new__(cls, const_type, mutation_rate, mutation_sd=None, rng: np.random.Generator|None=None, **kwargs):
         """Initialising a Mutator always results in on of the concrete
         subclasses. The argument `const_type` should be the type of the constant
         that needs mutating, and the Mutator returned will be the subclass
@@ -313,9 +315,9 @@ class MutatorFactory:
         """
         try:
             if mutation_sd == None:
-                return cls.types[const_type](mutation_rate, **kwargs)
+                return cls.types[const_type](mutation_rate, rng=rng, **kwargs)
             else:
-                return cls.types[const_type](mutation_rate, mutation_sd, **kwargs)
+                return cls.types[const_type](mutation_rate, mutation_sd, rng=rng, **kwargs)
         except KeyError:
             raise AttributeError(
                 "You do not have a Mutator defined for constants of type " +
@@ -329,7 +331,13 @@ class MutatorFactory:
 class CrossoverMutator(Mutator):
 
 
-    def __init__(self, mutation_rate: float=0.0, max_depth: int=0, max_size: int=0, **kwargs):
+    def __init__(self, 
+            mutation_rate: float=0.0, 
+            max_depth: int=0, 
+            max_size: int=0, 
+            rng: np.random.Generator|None=None, 
+            **kwargs
+        ):
         """Initialises mutation rate, and the maximum size and depth of mutated z
         trees. Details of how these are used in __call__.
 
@@ -365,7 +373,7 @@ class CrossoverMutator(Mutator):
         ...     max_size=ms, 
         ...     operators=[ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE]
         ... )
-        >>> rpf = RandomPolynomialFactory(gp, 5, -10.0, 10.0)
+        >>> rpf = RandomPolynomialFactory(params = np.array([5, -10.0, 10.0], dtype=np.float), treebank=gp)
         >>> trees = [rpf('x', 'y') for _ in range(5)]
         >>> df = pd.DataFrame({'x': [1.0, 1.0], 'y': [1.0, 1.0]})
         >>> bigtrees, deeptrees = 0, 0
@@ -403,7 +411,7 @@ class CrossoverMutator(Mutator):
         (0)u(0)=d
         """
         # Randomly decide whether or not to cross over
-        if random() <= self.mutation_rate:
+        if self.rng.random() <= self.mutation_rate:
             size = val.size()
             pruned_depth = val.at_depth()
             # To keep the resulting tree below the maximum size and depth, work out:
@@ -419,11 +427,11 @@ class CrossoverMutator(Mutator):
             pruned_size = sd.size - size
             # Make a collection of all same-label nodes in the treebank EXCEPT the 
             # substitution site, val
-            complement = _complement(val.label.nodes, val)
+            complement = val.label.nodes - val
             # pick a random subtree from that collection
             if not complement:
                 return val
-            subtree =  choice(complement)
+            subtree = self.rng.choice(complement.array())
             sts, std = subtree.size(), subtree.depth()
             # Now, it must be checked that it's within size and/or depth bounds.
             # SizeDepth is set up to be Callable, such that calling `sd` with
@@ -434,12 +442,12 @@ class CrossoverMutator(Mutator):
             # broken
             while not sd(pruned_size+sts, max(sd.depth, pruned_depth+std)):
                 # If we have to try again, remove the no-good subtree from the pool
-                complement = _complement(complement, subtree)
+                complement -= subtree
                 # If we drain the pool entirely, then the substitution is impossible,
                 # and the original subtree will be returned
                 if not complement:
                     return val
-                subtree = choice(complement)
+                subtree = self.rng.choice(complement.array())
                 sts, std = subtree.size(), subtree.depth()
             if len(subtree)==0:
                 print('wut?')
@@ -454,7 +462,7 @@ class CrossoverMutator(Mutator):
         # and the original subtree will be returned
         if not complement:
             return old_st
-        subtree =  choice(complement)
+        subtree =  self.rng.choice(complement)
         sts, std = subtree.size(), subtree.depth()
         return subtree, complement, sts, std
 

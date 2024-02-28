@@ -85,7 +85,7 @@ def test_gp_trees() -> list[GPNonTerminal]:
     7.0
     """
     gp = GPTreebank(operators=[ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE])
-    rpf = RandomPolynomialFactory(gp, 2, -10.0, 10.0)
+    rpf = RandomPolynomialFactory(params = np.array([2., -10.0, 10.0], dtype=np.float32), treebank=gp)
     return [
         rpf('x', treebank=gp, coefficients={(('x',), (2,)): 2.0, (('x',), (1,)): 3.0, ((), ()): 4.0}),
         rpf('x', treebank=gp, coefficients={(('x',), (2,)): 3.0, (('x',), (1,)): 5.0, ((), ()): 6.0}),

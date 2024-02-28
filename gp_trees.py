@@ -3,7 +3,8 @@ from mutators import MutatorFactory, CrossoverMutator
 import pandas as pd
 import numpy as np
 from copy import copy
-from treebanks import TypeLabelledTreebank
+# from treebanks import TypeLabelledTreebank
+# from gp import GPTreebank
 from tree_errors import OperatorError
 from typing import TypeAlias
 from size_depth import SizeDepth
@@ -58,7 +59,12 @@ class GPNonTerminal(NonTerminal):
     """
     def __init__(self, treebank, label, *children, operator=None, metadata=None):
         super().__init__(treebank, label, *children, operator=operator, metadata=metadata)
-        self.gp_operator = CrossoverMutator(treebank.crossover_rate, treebank.max_depth, treebank.max_size)
+        self.gp_operator = CrossoverMutator(
+            treebank.crossover_rate, 
+            treebank.max_depth, 
+            treebank.max_size,
+            rng = treebank.np_random
+        )
 
     @property
     def is_valid(self):
@@ -113,7 +119,7 @@ class GPNonTerminal(NonTerminal):
         # If `treebank` is None...
         if not treebank:
             # create a dummy treebank, and then it won't be None. 
-            treebank = TypeLabelledTreebank()
+            treebank = self.treebank.__class__()
         sd = _sd if _sd and gp_copy else SizeDepth(
             size=self.size(),
             depth=self.depth(),
@@ -170,6 +176,7 @@ class GPNonTerminal(NonTerminal):
                 ic(self.root)
                 ic('did a fuckus wuckus')
                 ic(e)
+                raise e
         except ZeroDivisionError:
             if DEBUG:
                 ic('Zero Division')
@@ -270,7 +277,7 @@ class Variable(GPTerminal):
         Parameters
         ----------
             treebank:
-                TypeLabelledTreebank: The target treebank the tree is being
+                Treebank: The target treebank the tree is being
                     copied into
             kwargs:
                 Not used, but needed for compatibility with subclasses
@@ -318,7 +325,8 @@ class Constant(GPTerminal):
         self.gp_operator = MutatorFactory(
             leaf_type if leaf_type else treebank.tn.type_ify(leaf),
             treebank.mutation_rate,
-            treebank.mutation_sd
+            treebank.mutation_sd,
+            rng = treebank.np_random
         )
         super().__init__(treebank, label, leaf, operator=operator, metadata=metadata)
 
@@ -392,7 +400,7 @@ class Constant(GPTerminal):
         Parameters
         ----------
             treebank:
-                TypeLabelledTreebank: The target treebank the tree is being
+                Treebank: The target treebank the tree is being
                     copied into
             gp_copy:
                 bool: Iff true, the constant's Mutator will be applied
@@ -406,7 +414,7 @@ class Constant(GPTerminal):
         # If `treebank` is not provided...
         if not treebank:
             # ...make a dummy treebank for the copied Terminal to live in
-            treebank = TypeLabelledTreebank()
+            treebank = self.treebank.__class__()
             # XXX SHould that have been `treebank = self.treebank.__class__()`?
         # return the copy Terminal, with `treebank=treebank`
         return Constant(

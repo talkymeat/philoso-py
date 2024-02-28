@@ -46,7 +46,9 @@ def make_var_name():
 #     res = gp.run_gp(iv_data, target, generations, pop,
 #                 elitism=elitism, best_tree=True, rmses=True, best_rmse=True,
 #                 tree_factories = RandomPolynomialFactory(
-#                     gp, order=order, const_min=coeff_min, const_max=coeff_max))
+#                     params = np.array([order, coeff_min, coeff_min], dtype=np.float32),
+#                     treebank = gp
+#                 ))
 #     print("Best trees by generation:")
 #     for i in range(0, len(res['best_tree']), 10):
 #         print(f"Gen {i}: {res['best_tree'][i],}")
@@ -86,8 +88,8 @@ def uniform_iv_func(iv_min: float, iv_max: float):
 
 def target_poly_func(var: str, *vars: str, order: int, const_min: float, const_max: float):
     return RandomPolynomialFactory(
-        GPTreebank(operators=OPSET), order=order, 
-        const_min=const_min, const_max=const_max
+        params = np.array([order, const_min, const_min], dtype=np.float32),
+        treebank = GPTreebank(operators=OPSET)
     )(*(var,)+vars)
 
 def sin(x=None):
@@ -217,9 +219,10 @@ def gp_func_test(
         crossover_rate=crossover_rate, max_size=max_size, max_depth=max_depth,
         operators=OPSET
     )
-    res, final_tree = gp.run(
+    res, data, final_tree = gp.run(
         RandomPolynomialFactory(
-            gp, order=order, const_min=coeff_min, const_max=coeff_max
+            params = np.array([order, coeff_min, coeff_max], dtype=np.float32),
+            treebank = gp
         ),
         obs, 
         generations, pop,
@@ -229,36 +232,39 @@ def gp_func_test(
         to_graph=to_graph
     )
     print("Best trees by generation:")
-    for i in range(10):
+    n = len(res['tree'])
+    for i in range(min(10, n)):
         print(f"Gen {i}: {res['tree'][i],}")
         print(f"RMSE = {res['rmse'][i]}")
-    for i in range(10, len(res['tree']), 10):
+    for i in range(min(10, n), n, 10):
         print(f"Gen {i}: {res['tree'][i],}")
         print(f"RMSE = {res['rmse'][i]}")
     print("="*30)
     print("Best tree:")
     print(final_tree)
     # showtree(final_tree)
-    print(f"RMSE = {res['rmse'][-1]}")
-    obs.set_obs_len(10*5)
-    show_data = {}
-    show_data['x'] = np.linspace(iv_min, iv_max, 1000)
-    show_data['est_y'] = final_tree(x=show_data['x'])
-    obs.set_iv_data(show_data['x'])
-    show_data['y'] = obs.target
-    fig, axs = plt.subplots(3, 2)
-    fig.set_size_inches(18.5, 27, forward=True)
-    axs[0, 0].plot(res['mse'])
-    axs[0, 0].set_title("Best MSE")
-    axs[0, 1].plot(res['rmse'])
-    axs[0, 1].set_title("Best RMSE")
-    sns.heatmap(pd.DataFrame(res['mse']).transpose(), ax=axs[1, 0])
-    axs[1, 0].set_title("MSE Heatmap")
-    sns.heatmap(pd.DataFrame(res['rmse']).transpose(), ax=axs[1, 1])
-    axs[1, 1].set_title("RMSE Heatmap")
-    axs[2, 0].plot(show_data['x'], show_data['est_y'], c='b', label='estimate')
-    axs[2, 0].plot(show_data['x'], show_data['y'], c='r', label = 'target')
-    plt.savefig(f'plots_2_{gp.make_filename()}.png')
+    print(res['rmse'])
+    print(f"RMSE = {res['rmse'][n-1]}")
+    # XXX FIXME XXX
+    # obs.set_obs_len(10*5)
+    # show_data = {}
+    # show_data['x'] = np.linspace(iv_min, iv_max, 1000)
+    # show_data['est_y'] = final_tree(x=show_data['x'])
+    # obs.set_iv_data(show_data['x'])
+    # show_data['y'] = obs.target
+    # fig, axs = plt.subplots(3, 2)
+    # fig.set_size_inches(18.5, 27, forward=True)
+    # axs[0, 0].plot(res['mse'])
+    # axs[0, 0].set_title("Best MSE")
+    # axs[0, 1].plot(res['rmse'])
+    # axs[0, 1].set_title("Best RMSE")
+    # sns.heatmap(pd.DataFrame(res['mse']).transpose(), ax=axs[1, 0])
+    # axs[1, 0].set_title("MSE Heatmap")
+    # sns.heatmap(pd.DataFrame(res['rmse']).transpose(), ax=axs[1, 1])
+    # axs[1, 1].set_title("RMSE Heatmap")
+    # axs[2, 0].plot(show_data['x'], show_data['est_y'], c='b', label='estimate')
+    # axs[2, 0].plot(show_data['x'], show_data['y'], c='r', label = 'target')
+    # plt.savefig(f'plots_2_{gp.make_filename()}.png')
     return res, final_tree
 
 # def gp_poly_test(order, num_vars, n, generations=100, pop=100, iv_min=-100,
@@ -274,7 +280,9 @@ def gp_func_test(
 #         iv_dict[next(var_name_maker)] = [rnd.uniform (iv_min, iv_max) for j in range(n)]
 #     iv_data = pd.DataFrame(iv_dict)
 #     factory = RandomPolynomialFactory(
-#         gp, order=order, const_min=coeff_min, const_max=coeff_max)
+#         params = np.array([order, coeff_min, coeff_min], dtype=np.float32),
+#         treebank = gp
+#     )
 #     target_poly = factory(iv_data)
 #     print('Target:')
 #     showtree(target_poly)
@@ -340,5 +348,6 @@ def gp_func_test(
 #     return lambda x: sum([b * x**p for b, p in zip(coeffs, exponents)])
 
 if __name__ == '__main__':
-    result = gp_rand_poly_test(500, generations=2000, mutation_sd=0.3)
+    result = gp_rand_poly_test(500, generations=5, mutation_sd=0.3)
+    print(result)
     # result = gp_sin_test(500, generations=2000, mutation_sd=0.3)
