@@ -3,6 +3,8 @@ from typing import Collection
 from collections.abc import MutableSet
 from icecream import ic
 import numpy as np
+from typing import Any, Callable
+from functools import reduce
 
 def list_transpose(ls, i, j):
     """Transposes the items in list `ls` at index `i` and `j`"""
@@ -131,6 +133,24 @@ class IDSet(MutableSet):
         a = np.empty(len(t), dtype=object)
         a[:] = t
         return a
+    
+def disjoin_tests(tests: Collection[Callable[[Any], bool]]):
+    def test_disjunction(*args, **kwargs):
+        return reduce(
+            lambda a, b: a(*args, **kwargs) or b(*args, **kwargs), 
+            tests, 
+            False
+        )
+    return test_disjunction
+
+def conjoin_tests(tests: Collection[Callable[[Any], bool]]):
+    def test_conjunction(*args, **kwargs):
+        return reduce(
+            lambda a, b: a(*args, **kwargs) and b(*args, **kwargs), 
+            tests, 
+            True
+        )
+    return test_conjunction
 
 
 

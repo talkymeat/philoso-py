@@ -231,6 +231,14 @@ class Tree(ABC):
         """Removes a tree and all its descendants from their treebank."""
         pass
 
+    @abstractmethod
+    def get_leftmost_substitution_site(self):
+        pass
+
+    @abstractmethod
+    def get_all_substitution_sites(self):
+        pass
+
     def __repr__(self) -> str:
         """Returns a string such that tree == eval(tree.__repr__())"""
         return f'tree("{str(self)}")'
@@ -280,6 +288,9 @@ class NonTerminal(Tree):
     """
 
     def __init__(self, treebank, label, *children, operator=None, metadata=None, **kwargs):
+        super().__init__(treebank, label)
+        if not children:
+            raise AttributeError('NonTerminals must have child nodes')
         self._children = []
         self._operator = None
         self.children = list(children)
@@ -292,7 +303,6 @@ class NonTerminal(Tree):
                 "NonTerminals must be supplied with an Operator if Treebank has"
                 + " no default Operator"
             )
-        super().__init__(treebank, label)
 
     @property
     def children(self):
@@ -316,20 +326,21 @@ class NonTerminal(Tree):
         TypeError
             If something other than a tree is passed as a child
         """
+        # Set his provisionally, then do type-checks: if they check out,
+        # then cool - otherwise undo this
+        self._children = children
         for i, c in enumerate(children): # Make sure all children are Trees
-            if isinstance(c, self.__class__) or isinstance(c, Terminal):
+            if isinstance(c, (self.__class__, Terminal, SubstitutionSite)):
                 c.parent = self # If the child is a tree, self can be its parent
             else:
                 # If not...
                 for orphan in children[:i]:
                     # This is the saddest line of code I have ever written
                     orphan.parent = None
+                self._children = None
                 raise TypeError(f"You tried to set a {type(c)!s}, {c!s} as " +
                                 f"a child of the Tree {self!s}. You should " +
                                 "have used a Tree")
-        # If all children typecheck OK, it's ok to go ahead and set them as
-        # the children of the current node
-        self._children = children
 
     def __len__(self) -> int:
         """All nodes have a length: Terminals have length 1, while NonTerminals
@@ -643,7 +654,7 @@ class NonTerminal(Tree):
             ....
         tree_errors.TreeIndexError: Invalid index. The Tree:
         ([S]([NP]([Det]'the')([N]'cat'))([VP]))
-        was indexed with (1, 0, 0), but has no subtree at (1, 0). NonTerminal leaf-nodes cannot be indexed
+        was indexed with (1, 0, 0), but has no subtree at (1, 0). SubstitutionSites cannot be indexed
         >>> print(tf[0][0, 1])
         ([N]'cat')
         >>> print(tf[1][1, 0])
@@ -670,7 +681,7 @@ class NonTerminal(Tree):
             ....
         tree_errors.TreeIndexError: Invalid index. The Tree:
         ([VP]([V]'ate')([NP]([Det]'a')([NN]([Adj])([N]'pie'))))
-        was indexed with (1, 1, 0, 0), but has no subtree at (1, 1, 0, 0). NonTerminal leaf-nodes cannot be indexed
+        was indexed with (1, 1, 0, 0), but has no subtree at (1, 1, 0, 0). SubstitutionSites cannot be indexed
         >>> print(t2[1][1,1,1,0,0,1,2,3])
         Traceback (most recent call last):
             ....
@@ -924,7 +935,7 @@ class NonTerminal(Tree):
             operator = self._operator
         )
 
-    def get_leftmost_substition_site(self):
+    def get_leftmost_substitution_site(self):
         """
         Returns a SubstitutionSite object pointing to the leftmost non-terminal
         leaf-node: a non-terminal leaf node being a node that is capable of
@@ -947,7 +958,7 @@ class NonTerminal(Tree):
         >>> t4 = tbs.tree("([S]([NP])([VP]))")
         >>> t5 = tbs.tree("([S]([NP]([Det]the)([N]sentence))([VP]([V]parses)([NP]([Det]the)([N]parser))))")
         >>> for t in (t0, t1, t2, t3, t4, t5):
-        ...     ss = t.get_leftmost_substition_site()
+        ...     ss = t.get_leftmost_substitution_site()
         ...     print(ss.site if ss else ss)
         ...
         ([Det])
@@ -956,35 +967,43 @@ class NonTerminal(Tree):
         ([Det])
         ([NP])
         None
-        """
+        """        
         # It is assumed that this is not called directly on zero-depth
         # NonTerminals, but more usually on the root node of a tree
-        for i, c in enumerate(self):
-            # Don't bother checking any child that is a Terminal, we are only
-            # interested in childless NonTerminals
-            if not hasattr(c, 'leaf'):
-                if not hasattr(c, 'children') or not len(c.children):
-                    # If the child is childless, it is a nonterminal leafnode,
-                    # which we return immediately as the first one we find is
-                    # the leftmost. The object returned, however, is not the
-                    # node itself, but a dataclass object containing `self` (the
-                    # parent of the substitution site), i, the index of the
-                    # substitution site in self, and the label at the
-                    # substitution site, as this determines what can be
-                    # substituted there. SubstitutionSite also has a method
-                    # which takes a subtree as an argument, and performs the
-                    # substitution if the label matches
-                    return SubstitutionSite(self, i, c.label)
-                # otherwise, recursively call this function
-                ss = c.get_leftmost_substition_site()
-                # If a ss is found, return it. This function doesn't reach a
-                # `return` line if no nonterminal leaf is found, so will return
-                # `None`, meaning lnl will be None if no ss is found my the
-                # recursive call, so the conditional won't be triggered
-                if ss:
-                    return ss
+        ss = None
+        for c in self:
+            ss = c.get_leftmost_substitution_site()
+            if ss is not None:
+                return ss
 
-    def get_all_substitition_sites(self):
+        # # It is assumed that this is not called directly on zero-depth
+        # # NonTerminals, but more usually on the root node of a tree
+        # for i, c in enumerate(self):
+        #     # Don't bother checking any child that is a Terminal, we are only
+        #     # interested in childless NonTerminals
+        #     if not hasattr(c, 'leaf'):
+        #         if not hasattr(c, 'children') or not len(c.children):
+        #             # If the child is childless, it is a nonterminal leafnode,
+        #             # which we return immediately as the first one we find is
+        #             # the leftmost. The object returned, however, is not the
+        #             # node itself, but a dataclass object containing `self` (the
+        #             # parent of the substitution site), i, the index of the
+        #             # substitution site in self, and the label at the
+        #             # substitution site, as this determines what can be
+        #             # substituted there. SubstitutionSite also has a method
+        #             # which takes a subtree as an argument, and performs the
+        #             # substitution if the label matches
+        #             return SubstitutionSite(self, i, c.label)
+        #         # otherwise, recursively call this function
+        #         ss = c.get_leftmost_substitution_site()
+        #         # If a ss is found, return it. This function doesn't reach a
+        #         # `return` line if no nonterminal leaf is found, so will return
+        #         # `None`, meaning lnl will be None if no ss is found my the
+        #         # recursive call, so the conditional won't be triggered
+        #         if ss:
+        #             return ss
+
+    def get_all_substitution_sites(self):
         """
         Returns the all non-terminal leaf-node: a non-terminal leaf node
         being a node that is capable of having children, but has none.
@@ -1005,7 +1024,7 @@ class NonTerminal(Tree):
         >>> t4 = tbs.tree("([S]([NP])([VP]))")
         >>> t5 = tbs.tree("([S]([NP]([Det]the)([N]sentence))([VP]([V]parses)([NP]([Det]the)([N]parser))))")
         >>> for t in (t0, t1, t2, t3, t4, t5):
-        ...     print([s.site for s in t.get_all_substitition_sites()])
+        ...     print([s.site for s in t.get_all_substitution_sites()])
         ...
         [tree("([Det])")]
         [tree("([Det])"), tree("([N])")]
@@ -1021,25 +1040,36 @@ class NonTerminal(Tree):
         # NonTerminals, but more usually on the root node of a tree.
         # Loop over the enumeration of self, as we will need the index of any
         # substitution site found
-        for i, c in enumerate(self):
+        for c in self:
             # Ignore Terminals
-            if not hasattr(c, 'leaf'):
-                # If a child is childess, it's a substitution site and can be
-                # added to the list
-                if not hasattr(c, 'children') or not len(c.children):
-                    # The object returned, however, is not the
-                    # node itself, but a dataclass object containing `self` (the
-                    # parent of the substitution site), i, the index of the
-                    # substitution site in self, and the label at the
-                    # substitution site, as this determines what can be
-                    # substituted there. SubstitutionSite also has a method
-                    # which takes a subtree as an argument, and performs the
-                    # substitution if the label matches
-                    sites += [SubstitutionSite(self, i, c.label)]
-                # Otherwise, recursively call on the child, and see if there are
-                # any substitution sites further down the tree
-                sites += c.get_all_substitition_sites()
+            sites += c.get_all_substitution_sites()
         return sites
+        # # Initialise an empty list: try to put substitution sites in it, if
+        # # there are any, if not return it empty
+        # sites = []
+        # # It is assumed that this is not called directly on zero-depth
+        # # NonTerminals, but more usually on the root node of a tree.
+        # # Loop over the enumeration of self, as we will need the index of any
+        # # substitution site found
+        # for i, c in enumerate(self):
+        #     # Ignore Terminals
+        #     if not hasattr(c, 'leaf'):
+        #         # If a child is childess, it's a substitution site and can be
+        #         # added to the list
+        #         if not hasattr(c, 'children') or not len(c.children):
+        #             # The object returned, however, is not the
+        #             # node itself, but a dataclass object containing `self` (the
+        #             # parent of the substitution site), i, the index of the
+        #             # substitution site in self, and the label at the
+        #             # substitution site, as this determines what can be
+        #             # substituted there. SubstitutionSite also has a method
+        #             # which takes a subtree as an argument, and performs the
+        #             # substitution if the label matches
+        #             sites += [SubstitutionSite(self, i, c.label)]
+        #         # Otherwise, recursively call on the child, and see if there are
+        #         # any substitution sites further down the tree
+        #         sites += c.get_all_substitution_sites()
+        # return sites
 
     def __iadd__(self, other):
         """Magic method used for operator overloading on `+=`. Either an alias
@@ -1228,13 +1258,13 @@ class NonTerminal(Tree):
         ValueError: Cannot add Trees t1 and t2; t1 has no non-terminal leaf-nodes
         """
         # get leftmost nonterminal leaf node, if it exists. Note, the object
-        # returned by get_leftmost_substition_site, however, is not the node
+        # returned by get_leftmost_substitution_site, however, is not the node
         # itself, but a dataclass object containing `self` (the parent of the
         # substitution site), i, the index of the substitution site in self, and
         # the label at the substitution site, as this determines what can be
         # substituted there.
-        ss = self.get_leftmost_substition_site()
-        if ss:
+        ss = self.get_leftmost_substitution_site()
+        if ss is not None:
             # call method at SubstitutionSite which takes a subtree as an
             # argument, and performs the substitution if the label matches, or
             # raises an exception if it doesn't
@@ -1312,12 +1342,12 @@ class NonTerminal(Tree):
         >>> tbs.Treebank.STRICT_ADDITION = True # Put these back where I found them, or other tests get broken
         """
         # Get list of all substitution sites. Note, the objects
-        # returned by get_all_substitition_sites, however, are not the nodes
+        # returned by get_all_substitution_sites, however, are not the nodes
         # themselve, but dataclass objects containing the parent of the
         # substitution site, i, the index of the substitution site in the
         # parent, and the label at the substitution site, as this determines
         # what can be substituted there.
-        subsites = self.get_all_substitition_sites()
+        subsites = self.get_all_substitution_sites()
         # Search the list for the first site matching the label of the subtree
         for ss in subsites:
             # If/when found ...
@@ -1676,12 +1706,13 @@ class NonTerminal(Tree):
             if isinstance(child, Tree):
                 child.delete(False)
         if self.parent:
+            idx = self.parent.index_of(self)
             if _top:
-                self.parent.children[self.parent.index_of(self)] = NonTerminal(
-                    self.treebank, self.label, operator = self._operator
+                self.parent.children[idx] = SubstitutionSite(
+                    self.treebank, self.label, idx
                 )
             else:
-                self.parent.children[self.parent.index_of(self)] = None
+                self.parent.children[idx] = None
             self.parent = None
         # Note that Label.remove_node() also removes the Label from the node,
         # so no need to do that here
@@ -1773,6 +1804,12 @@ class Terminal(Tree):
     def size(self) -> int:
         """All terminals have size 1"""
         return 1
+    
+    def get_leftmost_substitution_site(self):
+        return None
+
+    def get_all_substitution_sites(self):
+        return []
 
     def to_LaTeX(self, top = True):
         """Converts trees to LaTeX expressions using the `qtree` package.
@@ -1914,13 +1951,13 @@ class Terminal(Tree):
 
     def delete(self, _top = True):
         if self.parent:
+            idx = self.parent.index_of(self)
             if _top:
-                self.parent.children[self.parent.index_of(self)] = NonTerminal(
-                    self.treebank, self.label,
-                    operator = self.treebank.default_op if self.treebank.default_op else ops.UNIT_ID
+                self.parent.children[idx] = SubstitutionSite(
+                    self.treebank, self.label, idx
                 )
             else:
-                self.parent.children[self.parent.index_of(self)] = None
+                self.parent.children[idx] = None
             self.parent = None
         self.label.remove_node(self)
 
@@ -2027,7 +2064,7 @@ class Label:
         >>> adv.print_terminal_subtrees()
         ([Adv]'alone')
         """
-        if isinstance(node, self.treebank.N) or isinstance(node, self.treebank.T):
+        if isinstance(node, (self.treebank.N, self.treebank.T, self.treebank.SS)):
             # If it already has `self` as its label, all that is needed is to
             # add it to self.nodes. This is the expected behaviour, as the
             # setter for label in Tree is what calls add_node, and is
@@ -2314,25 +2351,153 @@ class TypeLabel(Label):
         """
         return ".{$" + op_name + (r'\rightarrow ' if op_name else '') + self.classname + "$}"  ##-OK
 
-# TESTME
-@dataclass
-class SubstitutionSite:
-    """Dataclass containing all the information about a nonterminal leaf node
-    needed to do a node substitution at that location: its label (so we can
-    check the substitution is valid), its parent, and its index in its parent
-    (so the substitution can be performed).
 
-    Attributes:
-        parent (NonTerminal): parent node of the nonterminal leaf node, needed
-            to perform substitution.
-        index (int): index of nonterminal leaf node, needed to perform
-            substitution.
-        label (Label): Label of nonterminal leaf node, needed to ensure
-            substitution if valid.
+class SubstitutionSite(Tree):
+    """Abstract Base Class defining behaviour for all tree nodes.
+
+    All trees are labelled, but some have children (lists of tree nodes below
+    them in the tree structure), and others have leaves - concrete content like
+    words in syntactic parse trees or constants and variables in Genetic
+    Programming systems: so the abstract base class contains a constructor that
+    sets the label, but which the subclasses can extend to add leaves or
+    children.
+
+    Attributes
+    ----------
+        _label : Label
+            Node label determining which subtrees can be substituted where. Set
+            and got by the `label` @property
+        parent : NonTerminal or None
+            The node dirctly above the present in the tree. Each child has a
+            reference to its parent, and each parent has references to all its
+            children.
+        treebank : Treebank
+            Every tree belongs to a Treebank, which defines the set of Labels
+            that `Tree`, its parents, and its children can take.
+
+    Raises
+    ------
+        TypeError
+            If the `label` passed to `__init__` is not a valid Label.
     """
-    parent: NonTerminal
-    index: int
-    label: Label
+
+    def __init__(self, treebank, label, index: int, *args, metadata=None, **kwargs):
+        self.index = index
+        super().__init__(treebank, label)
+    
+    @property
+    def parent(self):
+        return self._parent
+    
+    @parent.setter
+    def parent(self, parent):
+        if parent is None:
+            self.label._make_root(self)
+        elif isinstance(parent, self.label.treebank.N):
+            self.label._make_not_root(self)
+            for i, ch in enumerate(parent):
+                if id(ch) == id(self):
+                    self.index = i
+                    break
+            else:
+                raise ValueError(
+                    "Setting node `p` as parent to node `c` should " +
+                    "not be done directly: set `c` as a child of " +
+                    "`p`, and `p` automatically is made parent to `c`"
+                )
+        else:
+            raise ValueError("parent nodes must be NonTerminals")
+        self._parent = parent
+
+    def __len__(self) -> int:
+        """Number of children"""
+        return 0
+
+    def depth(self) -> int:
+        """Length of chain from self to it's most distant descendant-node"""
+        return 0
+
+    def width(self) -> int:
+        """Number of leaf nodes below current"""
+        return 1
+
+    def size(self) -> int:
+        """Number of nodes in tree overall"""
+        return 1
+
+    def to_LaTeX(self, top:bool = True) -> str:
+        """Outputs LaTeX representation of tree. Handy for putting in papers"""
+        
+        # prepends \Tree if needed
+        LaTeX = r"\Tree " if not (hasattr(self, 'parent') and self.parent) or top else ""
+        # LaTeX of the Label is . followed by the label name
+        LaTeX += f"[{self.label.to_LaTeX()} ] "
+        return LaTeX.strip() if top else LaTeX
+
+    def __call__(self, **kwargs): ## XXX kwargs, update comments
+        """All nodes are callable: Terminals return their leaf, always:
+        NonTerminals call an Operator that belongs to the Label
+        """
+        return None
+
+    def __eq__(self, other):
+        """True if two trees are identical"""
+        return isinstance(other, self.__class__) and self.label == other.label
+
+    def __str__(self):
+        """Readable printout"""
+        return f"({self.label if self.label else ''})"
+
+    def __getitem__(self, position):
+        "So children can be indexed positionally"
+        raise TreeIndexError('SubstitutionSites cannot be indexed', str(self), position, 1)
+
+
+    def get_leftmost_substitution_site(self):
+        return self
+
+    def get_all_substitution_sites(self):
+        return [self]
+
+    def copy_out(self, treebank=None, **kwargs):
+        """Copy self with all children. Copy exists in `treebank`."""
+        
+        # If `treebank` is not provided...
+        if not treebank:
+            # ...make a dummy treebank for the copied Terminal to live in
+            treebank = tbs.Treebank()
+        # return the copy Terminal, with `treebank=treebank`
+        return self.__class__(
+            treebank,
+            self.label if treebank == self.treebank else treebank.get_label(self.label.class_id),  ##-OK both, raw val
+            self.index
+        )
+
+    def delete(self, _top=True):
+        """Removes a tree and all its descendants from their treebank."""
+        if self.parent:
+            self.parent.children[self.index] = None
+            self.parent = None
+        self.label.remove_node(self)
+
+
+# class SubstitutionSite:
+    # """Dataclass containing all the information about a nonterminal leaf node
+    # needed to do a node substitution at that location: its label (so we can
+    # check the substitution is valid), its parent, and its index in its parent
+    # (so the substitution can be performed).
+
+    # Attributes:
+    #     parent (NonTerminal): parent node of the nonterminal leaf node, needed
+    #         to perform substitution.
+    #     index (int): index of nonterminal leaf node, needed to perform
+    #         substitution.
+    #     label (Label): Label of nonterminal leaf node, needed to ensure
+    #         substitution if valid.
+    # """
+    # parent: NonTerminal
+    # index: int
+    # label: Label
 
     def perform_substitution(self, subtree: Tree):
         """Takes a subtree and, if it has the same node label, swaps it for the
@@ -2360,16 +2525,14 @@ class SubstitutionSite:
             )
 
     @property
-    def site(self) -> NonTerminal:
+    def site(self) -> 'SubstitutionSite':
         """(NonTerminal) The actual nonterminal leafnode."""
-        return self.parent[self.index]
+        return self
 
 
 def main():
     import doctest
     doctest.testmod()
-    # t = tbs.tree("([S]([X]x)([Y]y))")
-    # print(t())
 
 
 if __name__ == '__main__':

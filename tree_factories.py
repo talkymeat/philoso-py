@@ -1,4 +1,4 @@
-from typing import Type, Union, Iterable, Mapping
+from typing import Type, Union, Iterable, Mapping, Callable, TypeAlias, TypeVar
 from abc import ABC, abstractmethod, abstractproperty
 import operators as ops
 from trees import Terminal, NonTerminal, Tree
@@ -9,11 +9,15 @@ from itertools import chain, combinations
 from scipy.special import comb
 from functools import reduce
 from dataclasses import dataclass
-# from type_ify import TypeNativiser
-# from observatories import GenFunc
+from type_ify import TypeNativiser
+from observatories import GenFunc
 from treebanks import Treebank
 from rl_bases import Actionable
 from gymnasium.spaces import Box
+
+T = TypeVar('T')
+Var:   TypeAlias = tuple[type, str]
+Const: TypeAlias = tuple[type[T], Callable[[], T]]
 
 class TreeFactory(ABC):
     @abstractmethod
@@ -106,8 +110,6 @@ class CompositeTreeFactory(TreeFactory):
         for tf in self.tree_factories:
             ops |= set(tf.operators)
         return ops
-
-
 
 class RandomPolynomialFactory(TreeFactory):
     """A TreeFactory which makes random trees representing polynomials of a specified
@@ -459,93 +461,99 @@ class TreeFactoryFactory(Actionable):
 
 # XXX consider `full` and `grow` (Poli et al. p.12) methods for tree seeding
 
-# class RandomTreeFactory(TreeFactory):
-#     tn = TypeNativiser()
+class RandomTreeFactory(TreeFactory):
+    tn = TypeNativiser()
 
-#     @dataclass
-#     class TreeTemplate:
-#         root: type
-#         operator: ops.Operator
-#         child_types: tuple[type]
-#         leaf: GenFunc|str
+    @dataclass
+    class NTTemplate:
+        root: type
+        operator: ops.Operator
+        child_types: tuple[type]
 
-#         def _is_valid(self):
-#             return self.operator._type_seq_legal(*self.child_types) and (
-#                 self.var_data
-#                 if isinstance(RandomTreeFactory.tn.type_ify(self.var_data), self.root)
-#                 else isinstance(self.operator.return_type, self.root)
-#             )
+        def __post_init__(self):
+            """Checks that the TreeTemplate is typesafe with the Operator.
 
-#         def __str__(self):
-#             """Describes the subtree represented by the TreeTemplate in function
-#             notation, showing the parameter types and return type.
+            >>> RandomTreeFactory.TreeTemplate(tuple, ops.ID, child_types=(float, int, str))._is_valid()
+            True
+            """
+            if not issubclass(self.root, self.operator.return_type):
+                raise ValueError()
+            # return self.operator._type_seq_legal(*self.child_types) and (
+            #     self.var_data
+            #     if isinstance(RandomTreeFactory.tn.type_ify(self.var_data), self.root)
+            #     else isinstance(self.operator.return_type, self.root)
+            # )
 
-#             XXX FIXME
+        # def __str__(self):
+        #     """Describes the subtree represented by the TreeTemplate in function
+        #     notation, showing the parameter types and return type.
 
-#             Exception raised:
-#                 Traceback (most recent call last):
-#                 File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/doctest.py", line 1348, in __run
-#                     exec(compile(example.source, filename, "single",
-#                 File "<doctest __main__.RandomTreeFactory.TreeTemplate.__str__[0]>", line 1, in <module>
-#                     tt = RandomTreeFactory.TreeTemplate(root=float, operator=ops.SUM, child_types = (float, int, float))
-#                 TypeError: RandomTreeFactory.TreeTemplate.__init__() missing 1 required positional argument: 'var_data'
+        #     XXX FIXME
 
-#             >>> tt = RandomTreeFactory.TreeTemplate(root=float, operator=ops.SUM, child_types = (float, int, float))
-#             >>> print(tt)
-#             SUM(a0: float, a1: int, a2: float) -> float
-#             """
-#             if self.var_data:
-#                 return f"({self.root.__name__}: {self.var_data.name})"
-#             param_str = ", ".join([f"a{i}: {c.__name__!s}" for i, c in enumerate(self.child_types)])
-#             return f"{self.operator.name}({param_str}) -> {self.root.__name__!s}"
+        #     Exception raised:
+        #         Traceback (most recent call last):
+        #         File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/doctest.py", line 1348, in __run
+        #             exec(compile(example.source, filename, "single",
+        #         File "<doctest __main__.RandomTreeFactory.TreeTemplate.__str__[0]>", line 1, in <module>
+        #             tt = RandomTreeFactory.TreeTemplate(root=float, operator=ops.SUM, child_types = (float, int, float))
+        #         TypeError: RandomTreeFactory.TreeTemplate.__init__() missing 1 required positional argument: 'var_data'
 
-#     def __init__(self,
-#             treebank, templates, root_label, max_size, *args,
-#             weights=None, **kwargs):
-#         if templates and len(templates) != len(weights):
-#             raise AttributeError("If you provide a RandomTreeFactory with " +
-#                 "weights, the weight list must be the same length as the list" +
-#                 " of tree templates.")
-#         self.templates = self._validate_templates(templates)
-#         self.weights = weights
-#         self.max_size = max_size
+        #     >>> tt = RandomTreeFactory.TreeTemplate(root=float, operator=ops.SUM, child_types = (float, int, float))
+        #     >>> print(tt)
+        #     SUM(a0: float, a1: int, a2: float) -> float
+        #     """
+        #     if self.var_data:
+        #         return f"({self.root.__name__}: {self.var_data.name})"
+        #     param_str = ", ".join([f"a{i}: {c.__name__!s}" for i, c in enumerate(self.child_types)])
+        #     return f"{self.operator.name}({param_str}) -> {self.root.__name__!s}"
 
-#     def _validate_templates(self,
-#             templates: list[TreeTemplate],
-#             root_types: set[type]):
-#         parent_types = set()
-#         for tt in self.templates:
-#             if not tt._is_valid():
-#                 raise AttributeError(f"{tt!s} is not a valid subtree template")
-#             parent_types.add(tt.root)
-#             root_types.update(tt.child_types)
-#         if root_types == parent_types:
-#             return templates
-#         intersect = root_types & parent_types
-#         problems = []
-#         excess_roots = root_types - intersect
-#         if excess_roots:
-#             problems.append(
-#                 "Union(S, C) of this template set includes some values (" +
-#                 f"{', '.join([x for x in excess_roots])}) that are absent " +
-#                 "P, which therefore cannot be completed"
-#             )
-#         excess_parents = parent_types - intersect
-#         if excess_parents:
-#             problems.append(
-#                 "P of this template set includes some values (" +
-#                 f"{', '.join([x for x in excess_parents])}) that are absent " +
-#                 "Union(S, C), which therefore cannot be placed"
-#             )
-#         raise AttributeError("The union of the set S of start nodes for trees" +
-#             " and the set C of child nodes of subtree templates defines " +
-#             "the set of places tree templates can be inserted, and the " +
-#             "set P of parent nodes defines the set of subtrees that can " +
-#             "fill the places in Union(S, C): however, " +
-#             f"{': and '.join([x for x in problems])}.")
+    def __init__(self,
+            treebank, templates, root_label, max_size, *args,
+            weights=None, **kwargs):
+        if templates and len(templates) != len(weights):
+            raise AttributeError("If you provide a RandomTreeFactory with " +
+                "weights, the weight list must be the same length as the list" +
+                " of tree templates.")
+        self.templates = self._validate_templates(templates)
+        self.weights = weights
+        self.max_size = max_size
 
-#     def __call__(self, *vars: Iterable[str]) -> Tree:
-#         ...
+    def _validate_templates(self,
+            templates: list[NTTemplate],
+            root_types: set[type]):
+        parent_types = set()
+        for tt in self.templates:
+            if not tt._is_valid():
+                raise AttributeError(f"{tt!s} is not a valid subtree template")
+            parent_types.add(tt.root)
+            root_types.update(tt.child_types)
+        if root_types == parent_types:
+            return templates
+        intersect = root_types & parent_types
+        problems = []
+        excess_roots = root_types - intersect
+        if excess_roots:
+            problems.append(
+                "Union(S, C) of this template set includes some values (" +
+                f"{', '.join([x for x in excess_roots])}) that are absent " +
+                "P, which therefore cannot be completed"
+            )
+        excess_parents = parent_types - intersect
+        if excess_parents:
+            problems.append(
+                "P of this template set includes some values (" +
+                f"{', '.join([x for x in excess_parents])}) that are absent " +
+                "Union(S, C), which therefore cannot be placed"
+            )
+        raise AttributeError("The union of the set S of start nodes for trees" +
+            " and the set C of child nodes of subtree templates defines " +
+            "the set of places tree templates can be inserted, and the " +
+            "set P of parent nodes defines the set of subtrees that can " +
+            "fill the places in Union(S, C): however, " +
+            f"{': and '.join([x for x in problems])}.")
+
+    def __call__(self, *vars: Iterable[str]) -> Tree:
+        ...
 
 def main():
     import doctest

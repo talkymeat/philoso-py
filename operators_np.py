@@ -1,8 +1,12 @@
-from typing import List, Dict, Type, Any, Callable, Container
+from typing import List, Dict, Type, Any, Callable, Container, Protocol, runtime_checkable
 import pandas as pd
 import numpy as np
 from functools import reduce
 from type_ify import TypeNativiser, _DoesNothing
+from pandas.api.types import is_bool_dtype, is_integer_dtype, is_float_dtype, is_complex_dtype, is_string_dtype, is_bool, is_integer, is_float, is_complex
+from enum import Enum
+from utils import disjoin_tests, conjoin_tests
+
 # from icecream import ic
 
 import re
@@ -55,6 +59,34 @@ def _sq(*args):
 
 def _cube(*args):
     return args[0]**3
+
+TYPE_TOOLS = {
+    float:   {'test': disjoin_tests([is_float, is_float_dtype]), 'dtype': np.float64  },
+    int:     {'test': disjoin_tests([is_integer, is_integer_dtype]), 'dtype': np.int32    },
+    bool:    {'test': disjoin_tests([is_bool, is_bool_dtype]), 'dtype': np.bool_    },
+    complex: {'test': disjoin_tests([is_complex, is_complex_dtype]), 'dtype': np.complex64},
+    str:     {'test': disjoin_tests([lambda s: isinstance(s, str), is_string_dtype]), 'dtype': np.str_     }
+}
+
+@runtime_checkable
+class ReturnValidator(Protocol):
+    def __call__(return_val, *args) -> bool:
+        ...
+
+@runtime_checkable
+class SimpleValidator(Protocol):
+    def __call__(arg) -> bool:
+        ...
+
+@runtime_checkable
+class Validator(Protocol): 
+    def __call__(return_val: type|np.dtype, *args: type|np.dtype) -> bool:
+        ...
+
+class ForceType(Enum):
+    NO     = 0
+    STRICT = 1
+    LOSSY  = 2
 
 
 class Operator:
@@ -119,94 +151,82 @@ class Operator:
             `True`, 1.5 can be converted to 2.
 
     """
+    VALIDATE_RETURNS = True
+    _FORCE_TYPE_ERR = (
+        'You cannot set an Operator with a dynamic return type' +
+        ' to use ForceType.STRICT or ForceType.LOSSY: pass a ' +
+        'numpy.dtype or a native python type to `return_validator`' +
+        ' to get a static return type, or use the default ' +
+        'ForceType.NO for `force_type`.'
+    ) 
 
-    tn = TypeNativiser()
-
-    type_dict = {
-        str:          's',
-        int:          'i',
-        float:        'f',
-        complex:      'c',
-        bool:         'b',
-        _DoesNothing: 'x'
-    }
-
-    rev_type_dict = {v: k for k, v in type_dict.items()}
-
-    
-    def drt_simple(self, arg_match: re.Match) -> type:
-        if arg_match.groups():
-            typeset = {Operator.rev_type_dict[char] for char in ''.join(arg_match.groups())}
-            return list(typeset)[0] if len(typeset)==1 else Any
-        return self.return_type
-
-    def __init__(
-            self, 
-            func: Callable, 
-            name: str, 
-            return_type: type = Any, 
-            arg_regex: str = "", 
-            force_type: bool = False, 
-            force_type_lossy: bool = False, 
-            apply: bool = False, 
-            return_dtype = None,
-            drt_func: Callable[[re.Match], type] = None
-        ):
-        self.func = func
-        self.name = name
-        self.return_type = return_type
-        self.force_type = force_type
-        self.force_type_lossy = force_type_lossy
-        self.apply = apply
-        self.return_dtype = return_dtype
-        self.dynamic_return_type = drt_func if drt_func else self.drt_simple
-
-
-        # Lambda to create a string of all the type-characters in the
-        # type-dictionary, plus 'x' for 'other'. If a value is not provided for
-        # `arg_regex`, this is used to the default `arg_regex`, which accepts
-        # any non-empty set of arguments. A lambda is created, rather than a
-        # string, so as to reduce the computational overhead in the case where
-        # the default is not needed.
-        type_chars = lambda: ''.join(Operator.type_dict.values()) + 'x'
-        self.arg_regex = arg_regex if arg_regex else r'[' + type_chars() + r']+'
-
-    def __str__(self):
-        return f"<{self.name}>" if self.name else ""
-
-    # def _arg_lengths(self, *args):
-    #     leng = 1
-    #     for arg in args:
-    #         if not len(arg) in [1, leng]:
-    #             if leng == 1:
-    #                 leng = len(arg)
-    #             else:
-    #                 raise ValueError("Argument lengths do not match")
-    #     return [pd.Series([arg[0]]*leng) if len(arg) == 1 else arg for arg in args]
-
-    def _preprocess(self, *args):
-        leng = 1
-        indicators = [-1]*len(args)
-        no_series = True
-        for i, arg in enumerate(args):
-            if isinstance(arg, np.ndarray):
-                args[i] = pd.Series(arg)
-            if isinstance(arg, pd.Series):
-                no_series = False
-                indicators[i] = len(arg)
-                if len(arg) in [1, leng]:
-                    pass
-                elif leng == 1:
-                    leng = len(arg)
+    def __init__(self, 
+        func: Callable, 
+        name: str,
+        validator: Validator = None, 
+        return_validator: ReturnValidator|type|np.dtype=None,
+        force_type: ForceType=ForceType.NO
+    ):
+        self._func      = func
+        self.name       = name
+        self._validator = lambda a, b: True if validator is None else validator
+        self.force_type = lambda x: x # does nothing
+        type_forcer = None
+        numpty = True
+        if isinstance(return_validator, type):
+            if return_validator in TYPE_TOOLS:
+                self._return_validator = lambda return_value, *args: TYPE_TOOLS[return_validator]['test'](return_value)
+                if force_type != ForceType.NO:
+                    type_forcer = lambda outval: outval.astype(TYPE_TOOLS[return_validator]['dtype'])
+            else:
+                self._return_validator = lambda return_value, *args: isinstance(return_value, return_validator)
+                if force_type != ForceType.NO:
+                    type_forcer = lambda outval: return_validator(outval)
+                    numpty = False
+        elif isinstance(return_validator, np.dtype):
+            self._return_validator = lambda return_value, *args: return_validator==return_value.dtype
+            if force_type != ForceType.NO:
+                type_forcer = lambda outval: outval.astype(return_validator)
+        elif isinstance(return_validator, ReturnValidator):
+            self._return_validator = return_validator
+            if force_type != ForceType.NO:
+                raise ValueError(Operator._FORCE_TYPE_ERR)
+        elif return_validator is None:
+            self._return_validator = lambda return_value, *args: True
+            if force_type != ForceType.NO:
+                raise ValueError(Operator._FORCE_TYPE_ERR)
+        else:
+            raise ValueError(
+                'If you set an Operator to have a return_validator, you must either ' +
+                'use a callable that takes the args passed to Operator.__call__ and ' +
+                'the resulting returned value, and returns boolean, OR a type, OR a ' +
+                f'numpy.dtype. You passed a {type(return_validator)}'
+            )
+        if type_forcer:
+            if force_type==ForceType.LOSSY:
+                if numpty:
+                    type_forcer = self._make_strict_np(type_forcer)
                 else:
-                    raise ValueError("Argument lengths do not match")
-        if no_series:
-            return args, False
-        if self.apply:
-            return [pd.Series([arg[0]]*leng) if (ind == 1) else pd.Series([arg]*leng) if (ind==-1) else arg for ind, arg in zip(indicators, args)], True
-        return [arg[0] if ind == 1 else arg for ind, arg in zip(indicators, args)], False
+                    type_forcer = self._make_strict_py(type_forcer)
+            self.force_type = type_forcer
 
-    def __call__(self, *args):
+    def _make_strict_py(self, fn: Callable):
+        def strict_func_py(op_output):
+            type_forced_output = fn(op_output)
+            if op_output == type_forced_output:
+                return type_forced_output
+            raise TypeError("Cannot convert type without information loss")
+        return strict_func_py
+        
+    def _make_strict_np(self, fn: Callable):
+        def strict_func_np(op_output):
+            type_forced_output = fn(op_output)
+            if (op_output == type_forced_output).all():
+                return type_forced_output
+            raise TypeError("Cannot convert type without information loss")
+        return strict_func_np
+
+    def __call__(self, *args) -> Any:
         """A magic method which makes `Operator`s Callable. Checks that the
         arguments and output are legal: returns the output if everything is OK.
 
@@ -218,33 +238,31 @@ class Operator:
         >>> def a_plus_b(*args):
         ...     return args[0] + args[1]
         ...
-        >>> op_ID = Operator(_id, "ID")
-        >>> op_ID()
+        >>> ID()
         Traceback (most recent call last):
             ....
         AttributeError: This operator cannot be called without arguments
-        >>> op_ID(2, 3)
+        >>> ID(2, 3)
         (2, 3)
-        >>> op_ID("regard", "that", "cat")
+        >>> ID("regard", "that", "cat")
         ('regard', 'that', 'cat')
-        >>> op_CONCAT = Operator(_concat, "CONCAT", str, r"ss+")
-        >>> op_CONCAT(2, 3)
+        >>> CONCAT(2, 3)
         Traceback (most recent call last):
             ....
         AttributeError: Incorrect arguments for <CONCAT>: (2, 3)
-        >>> op_CONCAT("regard", "that", "cat")
+        >>> CONCAT("regard", "that", "cat")
         'regard that cat'
-        >>> op_A_PLUS_B_WRONG = Operator(a_plus_b, "A_PLUS_B_WRONG", int, r'[if][if]')
+        >>> op_A_PLUS_B_WRONG = Operator(a_plus_b, "A_PLUS_B_WRONG", same_args_diff_rtn_validator_factory(int, int, float), int)
         >>> op_A_PLUS_B_WRONG("2", "3")
         Traceback (most recent call last):
             ....
-        AttributeError: Incorrect arguments for <A_PLUS_B_WRONG>: ('2', '3')
+        TypeError: Operator A_PLUS_B_WRONG cannot return output 23 of type str.
         >>> op_A_PLUS_B_WRONG(2, 3)
         5
         >>> op_A_PLUS_B_WRONG(2.0, 3.0)
         Traceback (most recent call last):
             ....
-        TypeError: Output float when int was expected
+        TypeError: Operator A_PLUS_B_WRONG cannot return output 5.9 of type float.
         >>> op_A_PLUS_B = Operator(lambda a, b: float(a+b), "A_PLUS_B", float, r'[if][if]')
         >>> op_A_PLUS_B("2", "3")
         Traceback (most recent call last):
@@ -279,187 +297,113 @@ class Operator:
             ....
         AttributeError: Incorrect arguments for <A_PLUS_B>: (2, 3, 5)
         """
-        def custom_type_err(output):
-            # Inner function to create an error message, in the case where the
-            # operator outputs an illegal type. `Operator.__call__` is
-            # structured largely as a decision-tree determining whether to call
-            # the underlying function, call the function and cast to
-            # `self.return_type`, or throw an error: since this error message is
-            # needed on three branches of the tree, using an inner function
-            # avoids code duplication
-            return f"Output {type(output).__name__} when {self.return_type.__name__} was expected"
-        # First, check that the arguments are legal ...
-        if self._arg_seq_legal(*args):
-            # ... if so, call the function ...
-            args, applicable = self._preprocess(*args)
-            if applicable:
-                output = pd.concat(args, axis=1).apply(
-                        lambda row: self.func(*tuple(row)), axis = 1
-                    ) 
-            else: 
-                output = self.func(*args)
-            # ... and return the result if it's also legal.
-            if self.return_type is Any or issubclass(Operator.tn.type_ify(output), self.return_type):
-                # print(output, 'xxds')
-                return output
-            elif isinstance(output, self.return_type):
-                return output
-            # ... there's a possible complication if the return_type is one that
-            # doesn't have a built-in numpy dtype - for instance, `pd.Series` of
-            # strings by default get the dtype `object`; in this case, the
-            # conditional checks that all the elements in output are the correct
-            # native type, casts `self.return_dtype` on it
-            elif isinstance(output, pd.Series) and reduce(lambda p, q: p and q, output.apply(lambda x: isinstance(x, self.return_type))):
-                return output.astype(self.return_dtype if self.return_dtype else self.return_type)
-                # ... If it just isn't the right type...
-            else:
-                # ... then is it allowable to try casting it to the right type?
-                # `self.force_type` is an attrib of the Operator which
-                # automatically rules this out if false. Is it true?
-                if self.force_type:
-                    # If so, it may still be illegal to do the conversion,
-                    # because of broader type conversion rules - like a `str`
-                    # can only be cast to `float` if it has the form of a
-                    # `float` or `int` literal. `try` this and catch the
-                    # `ValueError` if it fails.
-                    try:
-                        # This needs to be split between the cases where the
-                        # output is a native type, and where it's a pandas
-                        # Series
-                        if type(output) == pd.Series:
-                            # if a return dtype was specified when the Operator
-                            # was initialised ...
-                            if self.return_dtype:
-                                # we first use the return_type  attribute to
-                                # convert the Series elements, then return_dtype
-                                # to convert the Series itself. For instance,
-                                # converting a Series of non-strings to a string
-                                # series first needs to be cast to str, but then
-                                # the dtype will be object, so you also need to
-                                # cast to "string"
-                                converted = output.astype(self.return_type).astype(self.return_dtype)
-                            else:
-                                # ...on the other hand, casting output to float,
-                                # for example, changes both the type of the
-                                # elements to float, and the dtype to float64
-                                converted = output.astype(self.return_type)
-                            # If the conversion is successful, there still may be
-                            # one thing to check. `self.force_type_lossy` is an
-                            # attribute which, if true, permits lossy conversion.
-                            # If lossy conversion is permitted, or the conversion is
-                            # not lossy ...
-                            if self.force_type_lossy or reduce(lambda p, q: p and q, output == converted):
-                                #  ... then return the converted value.
-                                return converted
-                        else:
-                            # If the output is a native type, then the
-                            # conversion is simpler
-                            converted = self.return_type(output)
-                            # If the conversion is not illegally lossy ...
-                            if self.force_type_lossy or output == converted:
-                                # ... then return the converted value.
-                                return converted
-                        # If the conversion is lossy, and this isn't allowed,
-                        # raise a TypeError ...
-                        raise TypeError(custom_type_err(output))
-                    # ... same if the output is not convertible ...
-                    except ValueError:
-                        raise TypeError(custom_type_err(output))
-                # ... or if conversion of outputs is illegal.
-                else:
-                    raise TypeError(custom_type_err(output))
-        # Raise AttributeErrors in the case of illegal arguments
+        output = self.force_type(self._func(*self._preprocess(*args)))
+        if self._return_validator(output, *args):
+            return output
+        t = output.dtype if isinstance(output, np.ndarray) else type(output)
+        raise TypeError(f'Operator {self.name} cannot return output {output} of type {t}.')
+
+
+    def is_valid(self, arg_types: tuple[type|np.dtype], return_type: type|np.dtype):
+        return self.validator(return_type, *arg_types)
+
+    def __str__(self):
+        return f"<{self.name}>" if self.name else ""
+
+    def _preprocess(self, *args):
+        return tuple(
+            [arg if isinstance(arg, np.ndarray) else np.array(arg) for arg in args]
+        )
+    
+
+
+    
+    def drt_simple(self, arg_match: re.Match) -> type:
+        if arg_match.groups():
+            typeset = {Operator.rev_type_dict[char] for char in ''.join(arg_match.groups())}
+            return list(typeset)[0] if len(typeset)==1 else Any
+        return self.return_type
+
+
+class DOPerator(Operator):
+    def _preprocess(self, *args):
+        return tuple(
+            [arg if isinstance(arg, str) else str(arg) for arg in args]
+        )
+ 
+
+class NOPErator(Operator):
+    def _preprocess(self, *args):
+        return args
+
+def single_validator_factory(t: type|np.dtype|SimpleValidator, simple=False):
+    if isinstance(t, type):
+        if t in TYPE_TOOLS and not simple:
+            return TYPE_TOOLS[t]['test']
         else:
-            if len(args) == 0:
-                raise AttributeError(
-                    "This operator cannot be called without arguments"
-                )
-            else:
-                raise AttributeError(
-                    f"Incorrect arguments for {self}: {args}"
-                )
+            return lambda x: issubclass(x, t)
+    elif isinstance(t, np.dtype):
+        return lambda x: x==t
+    elif isinstance(t, SimpleValidator):
+        return t
+    else: 
+        raise TypeError(
+            'To make a single-type validator with `simple_validator_factory`,' +
+            'pass a type, a numpy dtype, or a function'
+        )
 
-    @classmethod
-    def _arg_type_tuple(cls, *args):
-        return tuple(cls.tn.type_ify(arg) for arg in args)
+def monotype_validator_factory(t: type|np.dtype|SimpleValidator, simple=False):
+    try:
+        test = single_validator_factory(t, simple=simple)
+    except TypeError:
+        raise TypeError(
+            'To make a single-type validator with `monotype_validator_factory`,' +
+            'pass a type, a numpy dtype, or a function'
+        )
+    def validator(return_type: np.dtype|type, *arg_types: np.dtype|type):
+        return reduce(
+            lambda a, b: test(a) and test(b), 
+            arg_types+(return_type,), 
+            True
+        )
+    return validator
+    
+def same_args_diff_rtn_validator_factory(
+        ret_t:   type|np.dtype|SimpleValidator, 
+        *ts: type|np.dtype|SimpleValidator, 
+        simples=None,
+        simple=False
+    ):
+    if simples is None:
+        simples = []
+    if len(simples) < len(ts):
+        simples += [False]*(len(ts)-len(simples))
+    elif len(simples) > len(ts):
+        raise ValueError('"simples" cannot be longer than "ts"')
+    try:
+        arg_test = disjoin_tests([single_validator_factory(t, simple=s) for t, s in zip(ts, simples)])
+        ret_test = single_validator_factory(ret_t, simple)
+    except TypeError:
+        raise TypeError(
+            'To make a single-type validator with ' +
+            '`same_args_diff_rtn_validator_factory`,' +
+            'pass a type, a numpy dtype, or a function'
+        )
+    def validator(return_type: np.dtype|type, *arg_types: np.dtype|type):
+        return reduce(
+            lambda a, b: arg_test(a) and arg_test(b), 
+            arg_types, 
+            True
+        ) and ret_test(return_type)
+    return validator
 
-    @classmethod
-    def _type_list_str(cls, *types):
-        return ''.join([Operator.type_dict.get(t, 'x') for t in types])
+def num_args_validator(num):
+    def validator(return_type: np.dtype|type, *arg_types: np.dtype|type):
+        return len(arg_types)==num
+    return validator
 
-    def _type_str_legal(self, type_str):
-        return re.fullmatch(self.arg_regex, type_str)
-
-    def _type_seq_legal(self, *types):
-        return self._type_str_legal(Operator._type_list_str(*types))
-
-    def _arg_str(self, *args):
-        """Converts *args to a string of characters, where each character is
-        the value in `Operator.type_dict` corresponding to the type of the
-        argument, unless the type is not in `Operator.type_dict`, in which case
-        'x' is used.
-
-        >>> op = Operator(lambda x: x, "ID")
-        >>> print(op._arg_str("a", 1, 1.0, 1j+0, True))
-        sifcb
-        >>> print(op._arg_str(["a", 1, 1.0, 1j+0, True]))
-        x
-        >>> print(repr(op._arg_str()))
-        ''
-        """
-        return Operator._type_list_str(*Operator._arg_type_tuple(*args))
-        #return ''.join([self.type_dict.get(type(arg), 'x') for arg in args])
-
-    # Could these checks be memoised?
-    def _arg_seq_legal(self, *args):
-        """Checks that a sequence of arguments is legal, based on Operator's
-        `arg_regex`: Iff the string representation of the sequence of types in
-        *args is a regex match to `self.arg_regex`, the sequence is legal. If
-        `self.arg_regex` is empty (`""` or `None`), all non-empty
-
-        >>> op0 = Operator(_id, 'ID0')
-        >>> op1 = Operator(_id, 'ID1', arg_regex = r'sifcb')
-        >>> op2 = Operator(_id, 'ID2', arg_regex = r'f+')
-        >>> op3 = Operator(_id, 'ID3', arg_regex = r'[if][if]')
-        >>> op4 = Operator(_id, 'ID4', arg_regex = r'sf*')
-        >>> ops = (op0, op1, op2, op3, op4)
-        >>> outlst = []
-        >>> for op in ops:
-        ...     outtxt = ""
-        ...     outtxt += 'T' if op._arg_seq_legal() else 'F'
-        ...     outtxt += 'T' if op._arg_seq_legal('blep', 1, 1.0, 1j+1, True) else 'F'
-        ...     outtxt += 'T' if op._arg_seq_legal(1.0) else 'F'
-        ...     outtxt += 'T' if op._arg_seq_legal(2.0, 1.0) else 'F'
-        ...     outtxt += 'T' if op._arg_seq_legal(2.0, 1.0, 7.0, 0.0) else 'F'
-        ...     outtxt += 'T' if op._arg_seq_legal(1) else 'F'
-        ...     outtxt += 'T' if op._arg_seq_legal(1, 2) else 'F'
-        ...     outtxt += 'T' if op._arg_seq_legal(1.0, 2) else 'F'
-        ...     outtxt += 'T' if op._arg_seq_legal(2, 3.0) else 'F'
-        ...     outtxt += 'T' if op._arg_seq_legal(1, 2, 3) else 'F'
-        ...     outtxt += 'T' if op._arg_seq_legal('z') else 'F'
-        ...     outtxt += 'T' if op._arg_seq_legal('z', 'x') else 'F'
-        ...     outtxt += 'T' if op._arg_seq_legal('z', 81) else 'F'
-        ...     outtxt += 'T' if op._arg_seq_legal('zx', 8.0, 1.0) else 'F'
-        ...     outtxt += 'T' if op._arg_seq_legal('zx', 81.0, 0.1, 3.2) else 'F'
-        ...     outtxt += 'T' if op._arg_seq_legal(['zx', 81.0, 0.1, 3.2]) else 'F'
-        ...     outlst.append(outtxt)
-        ...
-        >>> print(outlst[0])
-        FTTTTTTTTTTTTTTT
-        >>> print(outlst[1])
-        FTFFFFFFFFFFFFFF
-        >>> print(outlst[2])
-        FFTTTFFFFFFFFFFF
-        >>> print(outlst[3])
-        FFFTFFTTTFFFFFFF
-        >>> print(outlst[4])
-        FFFFFFFFFFTFFTTF
-        """
-        return self._type_seq_legal(*Operator._arg_type_tuple(*args))
-        #return re.fullmatch(self.arg_regex, self._arg_str(*args))
-
-
-ID = Operator(_id, "ID", tuple, return_dtype='O', apply=True)
+# func, name, validator, return_validator, force_type
+ID = NOPErator(_id, "ID")
 """
 Operator which returns a tuple of the node's children. The basic-ass default
 operator. Mistakes ability to remember funny lines from telly for being funny.
@@ -473,7 +417,7 @@ Returns:
     tuple
 """
 
-UNIT_ID = Operator(_unit_id, "UNIT_ID", arg_regex = r"(.)")
+UNIT_ID = NOPErator(_unit_id, "UNIT_ID")
 """
 Only takes a single argument, which it returns unaltered. The default for
 Terminals. Even blander and more lacking in personality than ID. Occassionally
@@ -488,7 +432,12 @@ Returns:
     The argument.
 """
 
-CONCAT = Operator(_concat, "CONCAT", str, r"s+", apply=True, return_dtype="string")
+CONCAT = DOPerator(
+    _concat, 
+    "CONCAT", 
+    validator=monotype_validator_factory(str, simple=True),
+    return_validator=str
+)
 """
 Concatenates the string representations of child node with a space
 as a separator. Useful for Data Oriented Parsing, as it returns the
@@ -504,7 +453,13 @@ Returns:
     (str) The concatenated string, e.g.: "pet the cat"
 """
 
-SUM = Operator(_sum, "SUM", float, r"[if]*", force_type=True)
+SUM = Operator(
+    _sum, 
+    "SUM", 
+    validator=same_args_diff_rtn_validator_factory(float, int, float), 
+    return_validator=float,
+    force_type=ForceType.STRICT
+)
 """
 Adds floats/ints, and converts the sum to float. Returns 0.0 if called with no
 arguments. As a teenager, dreamed of being a Fields Medalist, but due to
@@ -518,7 +473,13 @@ Returns:
     (float) The sum.
 """
 
-PROD = Operator(_prod, "PROD", float, r"[if]*", force_type=True)
+PROD = Operator(
+    _prod, 
+    "PROD",
+    validator=same_args_diff_rtn_validator_factory(float, int, float), 
+    return_validator=float,
+    force_type=ForceType.STRICT
+)
 """
 Multiplies floats/ints, and converts the sum to float. Returns 1.0 if called
 with no arguments. Was a classmate of SUM's in undergrad, and was a bit more
@@ -533,7 +494,16 @@ Returns:
     (float) The product.
 """
 
-SQ = Operator(_sq, "SQ", float, r"[if]", force_type=True)
+SQ = Operator(
+    _sq, 
+    "SQ", 
+    validator=conjoin_tests([
+        same_args_diff_rtn_validator_factory(float, int, float),
+        num_args_validator(1)
+    ]), 
+    return_validator=float, 
+    force_type=ForceType.STRICT
+)
 """
 Takes a single float or int, squares it, and returns the result as a float.
 Another former classmate of SUM and PROD, but stopped talking to PROD after
@@ -547,7 +517,16 @@ Returns:
     (float) The square.
 """
 
-CUBE = Operator(_cube, "CUBE", float, r"[if]", force_type=True)
+CUBE = Operator(
+    _cube, 
+    "CUBE", 
+    validator=conjoin_tests([
+        same_args_diff_rtn_validator_factory(float, int, float),
+        num_args_validator(1)
+    ]), 
+    return_validator=float, 
+    force_type=ForceType.STRICT
+)
 """
 Takes a single float or int, cubes it, and returns the result as a float.
 Came through the same pre-honours maths program as SUM, PROD, and SQ, but
@@ -562,7 +541,16 @@ Returns:
     (float) The square.
 """
 
-POW = Operator(_pow, "POW", float, r"[if][if]", force_type=True)
+POW = Operator(
+    _pow, 
+    "POW",
+    validator=conjoin_tests([
+        same_args_diff_rtn_validator_factory(float, int, float),
+        num_args_validator(2)
+    ]), 
+    return_validator=float, 
+    force_type=ForceType.STRICT
+)
 """
 Takes two numbers `x` and `n`, which can be either floats or ints, raises `x`
 to the `n`th power, and returns the result as a float. The only member of SUM,
@@ -579,7 +567,12 @@ Returns:
     (float) `x` raised to the `n`th power
 """
 
-EQ = Operator(_eq, "EQ", bool, r"..")
+EQ = Operator(
+    _eq, 
+    "EQ", 
+    validator=num_args_validator(2), 
+    return_validator=bool
+)
 """
 Compares two objects for equality, returning `True` if they are equal. Natural
 enemy of POW. Likes public transport, strong tea, and socialism.
@@ -591,7 +584,12 @@ Returns:
     (bool)
 """
 
-NEQ = Operator(_neq, "NEQ", bool, r"..")
+NEQ = Operator(
+    _neq, 
+    "NEQ", 
+    validator=num_args_validator(2), 
+    return_validator=bool
+)
 """
 Compares two objects for inequality, returning `True` if they are not equal.
 Works in social care. Spends wekends raising funds for food banks.
@@ -603,7 +601,15 @@ Returns:
     (bool)
 """
 
-GT = Operator(_gt, "GT", bool, r"[bif][bif]")
+GT = Operator(
+    _gt, 
+    "GT",
+    validator=conjoin_tests([
+        same_args_diff_rtn_validator_factory(float, int, float, bool),
+        num_args_validator(2)
+    ]), 
+    return_validator=bool
+)
 """
 'Greater than' comparison Operator. Rich, claims to be 'self-made', but actually
 started in business with a loan of £400,000 from the Bank of Mum and Dad, and
@@ -619,7 +625,15 @@ Returns:
     (bool)
 """
 
-EGT = Operator(_egt, "EGT", bool, r"[bif][bif]")
+EGT = Operator(
+    _egt, 
+    "EGT",
+    validator=conjoin_tests([
+        same_args_diff_rtn_validator_factory(float, int, float, bool),
+        num_args_validator(2)
+    ]), 
+    return_validator=bool
+)
 """
 'Greater than or equal to' comparison Operator. Claims to have a strong moral
 commitment to equality and social justice, which primarily manifests as an
@@ -636,7 +650,15 @@ Returns:
     (bool)
 """
 
-LT = Operator(_lt, "LT", bool, r"[bif][bif]")
+LT = Operator(
+    _lt, 
+    "LT",
+    validator=conjoin_tests([
+        same_args_diff_rtn_validator_factory(float, int, float, bool),
+        num_args_validator(2)
+    ]), 
+    return_validator=bool
+)
 """
 'Less than' comparison Operator. Perpetually crushed by low self esteem. A
 writer. Actually very good. Surrounded by people who suck.
@@ -648,7 +670,15 @@ Returns:
     (bool)
 """
 
-ELT = Operator(_elt, "ELT", bool, r"[bif][bif]")
+ELT = Operator(
+    _elt, 
+    "ELT",
+    validator=conjoin_tests([
+        same_args_diff_rtn_validator_factory(float, int, float, bool),
+        num_args_validator(2)
+    ]), 
+    return_validator=bool
+)
 """
 'Less than or equal to' comparison Operator. Works in media. Always the first to
 shut down bullying or bigotry when directed at anyone else, but never fails to
@@ -662,7 +692,15 @@ Returns:
     (bool)
 """
 
-NOT = Operator(_not, "NOT", bool, r"b", apply=True)
+NOT = Operator(
+    _not, 
+    "NOT",
+    validator=conjoin_tests([
+        monotype_validator_factory(bool),
+        num_args_validator(1)
+    ]), 
+    return_validator=bool
+) #  apply=True 
 """
 Boolean negation operator. An open minded free thinker who does their own
 research and doesn't let the authorities and the *lame*stream media tell them
@@ -678,7 +716,13 @@ Returns:
     (bool) ~P
 """
 
-OR = Operator(_sum, "OR", bool, r"b*", True, True)
+OR = Operator(
+    _sum, 
+    "OR", 
+    validator=monotype_validator_factory(bool),
+    return_validator=bool, 
+    force_type=ForceType.LOSSY    
+)
 """
 Boolean inclusive disjunction operator. Knows everyone's pronouns.
 
@@ -690,7 +734,13 @@ Returns:
     (bool) P v Q
 """
 
-AND = Operator(_prod, "AND", bool, r"b*", True, True)
+AND = Operator(
+    _prod, 
+    "AND", 
+    validator=monotype_validator_factory(bool),
+    return_validator=bool, 
+    force_type=ForceType.LOSSY  
+)
 """
 Boolean conjunction operator. Works as a back-end developer for Tinder.
 
@@ -702,8 +752,28 @@ Returns:
     (bool) P & Q
 """
 
+def ternary_operator_factory(r_type):
+    def validate_ternary(*arg_types, return_type):
+        return len(
+            arg_types
+        )==3 and issubclass(
+            arg_types[0], bool
+        ) and (
+            r_type==return_type==arg_types[1]==arg_types[2]
+        )
+    return Operator(
+        _tern, 
+        f"TERN_{str(r_type).upper().replace('.', '_')}", 
+        validator=validate_ternary,
+        return_validator=r_type
+    )
 
-TERN = Operator(_tern, "TERN", Any, r"b(.)(.)", apply=True)
+TERN_INT = ternary_operator_factory(int)
+TERN_FLOAT = ternary_operator_factory(float)
+TERN_COMPLEX = ternary_operator_factory(complex)
+TERN_BOOL = ternary_operator_factory(bool)
+TERN_STR = ternary_operator_factory(str)
+
 """
 A ternary `if P then X else Y` operator. Humanities undergraduate. Perpetually
 in a state of agonising over which of two crushes to ask out. Invariably, by the
@@ -742,7 +812,11 @@ class OperatorFactory:
             "NOT": NOT,
             "OR": OR,
             "AND": AND,
-            "TERN": TERN
+            "TERN_INT": TERN_INT,
+            "TERN_FLOAT": TERN_FLOAT,
+            "TERN_COMPLEX": TERN_COMPLEX,
+            "TERN_BOOL": TERN_BOOL,
+            "TERN_STR": TERN_STR
         }
 
     def add_op(
@@ -1008,7 +1082,7 @@ def main():
     2     True
     3    False
     Name: AND(b2,b1), dtype: bool
-    >>> EQ(df['i3'], TERN(df['b2'], df['i2'], df['i1']))
+    >>> EQ(df['i3'], TERN_INT(df['b2'], df['i2'], df['i1']))
     0    True
     1    True
     2    True
@@ -1020,15 +1094,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-# ReturnValidator = Callable[[tuple, Any], bool]
-# Validator = Callable[[tuple[type|np.dtype],type|np.dtype], bool]
-    # def __init__(self, 
-    #     func: Callable, 
-    #     name: str,
-    #     validator: Validator = None, 
-    #     return_validator: ReturnValidator|type|np.dtype=None,
-    #     force_type: ForceType=ForceType.NO
-    # ):
-# func, name, validator, return_validator, force_type 

@@ -740,10 +740,13 @@ class SineWorldObservatory:
     def __init__(self, 
             ivs: str|list[str], 
             dvs: str|list[str], 
-            world: 'World', 
-            start: float, 
-            stop: float, 
-            num: int, **kwargs):
+            sources: dict = None, # XXX
+            world: 'World' = None, 
+            start: float = None, 
+            stop: float = None, 
+            num: int = None, 
+            **kwargs
+        ):
         self.ivs = collect(ivs, list)
         self.dvs = collect(dvs, list)
         self.world = world

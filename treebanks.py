@@ -40,9 +40,10 @@ class Treebank:
 
     STRICT_ADDITION = True
 
-    def __init__(self, default_op = None, operators = None, leaf_def_op = None, T=None, N=None):
+    def __init__(self, default_op = None, operators = None, leaf_def_op = None, T=None, N=None, SS=None):
         self.T = T if T else tr.Terminal
         self.N = N if N else tr.NonTerminal
+        self.SS = SS if SS else tr.SubstitutionSite
         if operators is None:
             operators = []
         self.labels = {}
@@ -344,7 +345,9 @@ class Treebank:
                 )
         # Creates and returns new NonTerminal with the right label, operator,
         # and children
-        return self.N(self, the_label, *child_list, operator=operator)
+        if child_list:
+            return self.N(self, the_label, *child_list, operator=operator)
+        return self.SS(self, the_label, 999)
 
 
 class TypeLabelledTreebank(Treebank):
