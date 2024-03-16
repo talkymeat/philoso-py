@@ -43,10 +43,10 @@ class DepthFirstBottomUp(TreeIter):
     tree:
 
          A
-        /  \
-       /    \
+        /  \\
+       /    \\
       B      C
-     / \    / \
+     / \    / \\
     D   E  F   G
     |   |  |   |
     h   i  j   k

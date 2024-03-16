@@ -134,19 +134,51 @@ class IDSet(MutableSet):
         a[:] = t
         return a
     
-def disjoin_tests(tests: Collection[Callable[[Any], bool]]):
+def disjoin_tests(*tests: Callable[[Any|None], bool]):
+    """Takes a collection of tests (callables that return boolean) that are capable 
+    of taking the same *args & **kwargs, and returns a fuction which takes the same 
+    *args & **kwargs and returns `True` if at least one of the tests returns `True`
+    for the given *args & **kwargs
+
+    >>> def is_true():
+    ...     return True
+    >>> def is_false():
+    ...     return False
+    >>> test = disjoin_tests(is_false, is_true, is_false)
+    >>> test()
+    True
+    >>> test = disjoin_tests(is_false, is_false, is_false)
+    >>> test()
+    False
+    """
     def test_disjunction(*args, **kwargs):
         return reduce(
-            lambda a, b: a(*args, **kwargs) or b(*args, **kwargs), 
+            lambda a, b: a or b(*args, **kwargs), 
             tests, 
             False
         )
     return test_disjunction
 
-def conjoin_tests(tests: Collection[Callable[[Any], bool]]):
+def conjoin_tests(*tests: Callable[[Any|None], bool]):
+    """Takes a collection of tests (callables that return boolean) that are capable 
+    of taking the same *args & **kwargs, and returns a fuction which takes the same 
+    *args & **kwargs and returns `True` if at least one of the tests returns `True`
+    for the given *args & **kwargs
+
+    >>> def is_true():
+    ...     return True
+    >>> def is_false():
+    ...     return False
+    >>> test = conjoin_tests(is_false, is_true, is_false)
+    >>> test()
+    False
+    >>> test = disjoin_tests(is_true, is_true, is_true)
+    >>> test()
+    True
+    """
     def test_conjunction(*args, **kwargs):
         return reduce(
-            lambda a, b: a(*args, **kwargs) and b(*args, **kwargs), 
+            lambda a, b: a and b(*args, **kwargs), 
             tests, 
             True
         )

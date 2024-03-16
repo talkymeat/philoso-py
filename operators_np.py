@@ -6,6 +6,7 @@ from type_ify import TypeNativiser, _DoesNothing
 from pandas.api.types import is_bool_dtype, is_integer_dtype, is_float_dtype, is_complex_dtype, is_string_dtype, is_bool, is_integer, is_float, is_complex
 from enum import Enum
 from utils import disjoin_tests, conjoin_tests
+from icecream import ic
 
 # from icecream import ic
 
@@ -48,12 +49,6 @@ def _lt(*args):
 def _elt(*args):
     return args[0] <= args[1]
 
-def _not(*args):
-    return not args[0]
-
-def _tern(*args):
-    return args[1] if args[0] else args[2]
-
 def _sq(*args):
     return args[0]**2
 
@@ -61,11 +56,11 @@ def _cube(*args):
     return args[0]**3
 
 TYPE_TOOLS = {
-    float:   {'test': disjoin_tests([is_float, is_float_dtype]), 'dtype': np.float64  },
-    int:     {'test': disjoin_tests([is_integer, is_integer_dtype]), 'dtype': np.int32    },
-    bool:    {'test': disjoin_tests([is_bool, is_bool_dtype]), 'dtype': np.bool_    },
-    complex: {'test': disjoin_tests([is_complex, is_complex_dtype]), 'dtype': np.complex64},
-    str:     {'test': disjoin_tests([lambda s: isinstance(s, str), is_string_dtype]), 'dtype': np.str_     }
+    float:   {'test': disjoin_tests(is_float, is_float_dtype), 'dtype': np.float64  },
+    int:     {'test': disjoin_tests(is_integer, is_integer_dtype), 'dtype': np.int32    },
+    bool:    {'test': disjoin_tests(is_bool, is_bool_dtype), 'dtype': np.bool_    },
+    complex: {'test': disjoin_tests(is_complex, is_complex_dtype), 'dtype': np.complex64},
+    str:     {'test': disjoin_tests(lambda s: isinstance(s, str), is_string_dtype), 'dtype': np.str_     }
 }
 
 @runtime_checkable
@@ -169,7 +164,7 @@ class Operator:
     ):
         self._func      = func
         self.name       = name
-        self._validator = lambda a, b: True if validator is None else validator
+        self._validator = (lambda a, *b: True) if validator is None else validator
         self.force_type = lambda x: x # does nothing
         type_forcer = None
         numpty = True
@@ -203,7 +198,7 @@ class Operator:
                 f'numpy.dtype. You passed a {type(return_validator)}'
             )
         if type_forcer:
-            if force_type==ForceType.LOSSY:
+            if force_type==ForceType.STRICT:
                 if numpty:
                     type_forcer = self._make_strict_np(type_forcer)
                 else:
@@ -237,49 +232,38 @@ class Operator:
 
         >>> def a_plus_b(*args):
         ...     return args[0] + args[1]
-        ...
-        >>> ID()
-        Traceback (most recent call last):
-            ....
-        AttributeError: This operator cannot be called without arguments
         >>> ID(2, 3)
         (2, 3)
         >>> ID("regard", "that", "cat")
         ('regard', 'that', 'cat')
         >>> CONCAT(2, 3)
-        Traceback (most recent call last):
-            ....
-        AttributeError: Incorrect arguments for <CONCAT>: (2, 3)
+        '2 3'
         >>> CONCAT("regard", "that", "cat")
         'regard that cat'
-        >>> op_A_PLUS_B_WRONG = Operator(a_plus_b, "A_PLUS_B_WRONG", same_args_diff_rtn_validator_factory(int, int, float), int)
-        >>> op_A_PLUS_B_WRONG("2", "3")
-        Traceback (most recent call last):
-            ....
-        TypeError: Operator A_PLUS_B_WRONG cannot return output 23 of type str.
+        >>> op_A_PLUS_B_WRONG = Operator(a_plus_b, "A_PLUS_B_WRONG", validator=conjoin_tests(same_args_diff_rtn_validator_factory(int, int, float), num_args_eq_validator(2)), return_validator=int)
+        >>> op_A_PLUS_B_WRONG.is_valid(int, str, str)
+        False
         >>> op_A_PLUS_B_WRONG(2, 3)
         5
         >>> op_A_PLUS_B_WRONG(2.0, 3.0)
         Traceback (most recent call last):
             ....
-        TypeError: Operator A_PLUS_B_WRONG cannot return output 5.9 of type float.
-        >>> op_A_PLUS_B = Operator(lambda a, b: float(a+b), "A_PLUS_B", float, r'[if][if]')
-        >>> op_A_PLUS_B("2", "3")
-        Traceback (most recent call last):
-            ....
-        AttributeError: Incorrect arguments for <A_PLUS_B>: ('2', '3')
+        TypeError: Operator A_PLUS_B_WRONG cannot return output 5.0 of type <class 'numpy.float64'>.
+        >>> op_A_PLUS_B = Operator(lambda a, b: a+b, "A_PLUS_B", validator=conjoin_tests(same_args_diff_rtn_validator_factory(int, int, float), num_args_eq_validator(2)), return_validator=float, force_type=ForceType.STRICT)
+        >>> op_A_PLUS_B_WRONG.is_valid(float, str, str)
+        False
         >>> op_A_PLUS_B(2, 3)
         5.0
         >>> op_A_PLUS_B(2.0, 3.0)
         5.0
-        >>> op_SUM = Operator(_sum, "SUM", float, r"[if]*")
-        >>> op_SUM_FL = Operator(_sum, "SUM_FL", float, r"[if]*", True)
-        >>> op_SUM_INT = Operator(_sum, "SUM_INT", int, r"[if]*", True)
-        >>> op_SUM_INT_LOSSY = Operator(_sum, "SUM_INT_LOSSY", int, r"[if]*", True, True)
+        >>> op_SUM = Operator(_sum, "SUM_FL", validator=same_args_diff_rtn_validator_factory(Any, int, float), return_validator=float, force_type=ForceType.NO)
+        >>> op_SUM_FL = Operator(_sum, "SUM_FL", validator=same_args_diff_rtn_validator_factory(Any, int, float), return_validator=float, force_type=ForceType.STRICT)
+        >>> op_SUM_INT = Operator(_sum, "SUM_INT", validator=same_args_diff_rtn_validator_factory(int, int, float), return_validator=int, force_type=ForceType.STRICT)
+        >>> op_SUM_INT_LOSSY = Operator(_sum, "SUM_INT_LOSSY", validator=same_args_diff_rtn_validator_factory(int, int, float), return_validator=int, force_type=ForceType.LOSSY)
         >>> op_SUM(2, 3)
         Traceback (most recent call last):
             ....
-        TypeError: Output int when float was expected
+        TypeError: Operator SUM_FL cannot return output 5 of type <class 'numpy.int64'>.
         >>> op_SUM_FL(2, 3)
         5.0
         >>> op_SUM_INT(2.0, 3.0)
@@ -287,25 +271,27 @@ class Operator:
         >>> op_SUM_INT(2.0, 2.5)
         Traceback (most recent call last):
             ....
-        TypeError: Output float when int was expected
+        TypeError: Cannot convert type without information loss
         >>> op_SUM_INT_LOSSY(2.0, 2.5)
         4
         >>> op_SUM(2.0, 3.0, 5.0)
         10.0
-        >>> op_A_PLUS_B(2, 3, 5)
-        Traceback (most recent call last):
-            ....
-        AttributeError: Incorrect arguments for <A_PLUS_B>: (2, 3, 5)
+        >>> op_A_PLUS_B.is_valid(int, int, int)
+        False
         """
-        output = self.force_type(self._func(*self._preprocess(*args)))
+        output = self.force_type(
+            self._func(
+                *self._preprocess(*args)
+            )
+        )
         if self._return_validator(output, *args):
             return output
         t = output.dtype if isinstance(output, np.ndarray) else type(output)
         raise TypeError(f'Operator {self.name} cannot return output {output} of type {t}.')
 
 
-    def is_valid(self, arg_types: tuple[type|np.dtype], return_type: type|np.dtype):
-        return self.validator(return_type, *arg_types)
+    def is_valid(self, return_type: type|np.dtype, *arg_types: type|np.dtype):
+        return self._validator(return_type, *arg_types)
 
     def __str__(self):
         return f"<{self.name}>" if self.name else ""
@@ -314,9 +300,6 @@ class Operator:
         return tuple(
             [arg if isinstance(arg, np.ndarray) else np.array(arg) for arg in args]
         )
-    
-
-
     
     def drt_simple(self, arg_match: re.Match) -> type:
         if arg_match.groups():
@@ -381,7 +364,7 @@ def same_args_diff_rtn_validator_factory(
     elif len(simples) > len(ts):
         raise ValueError('"simples" cannot be longer than "ts"')
     try:
-        arg_test = disjoin_tests([single_validator_factory(t, simple=s) for t, s in zip(ts, simples)])
+        arg_test = disjoin_tests(*[single_validator_factory(t, simple=s) for t, s in zip(ts, simples)])
         ret_test = single_validator_factory(ret_t, simple)
     except TypeError:
         raise TypeError(
@@ -397,13 +380,23 @@ def same_args_diff_rtn_validator_factory(
         ) and ret_test(return_type)
     return validator
 
-def num_args_validator(num):
+def num_args_eq_validator(num):
     def validator(return_type: np.dtype|type, *arg_types: np.dtype|type):
         return len(arg_types)==num
     return validator
 
+def num_args_gt_validator(num):
+    def validator(return_type: np.dtype|type, *arg_types: np.dtype|type):
+        return len(arg_types)>num
+    return validator
+
+def num_args_lt_validator(num):
+    def validator(return_type: np.dtype|type, *arg_types: np.dtype|type):
+        return len(arg_types)<num
+    return validator
+
 # func, name, validator, return_validator, force_type
-ID = NOPErator(_id, "ID")
+ID = NOPErator(_id, "ID", validator=num_args_gt_validator(0))
 """
 Operator which returns a tuple of the node's children. The basic-ass default
 operator. Mistakes ability to remember funny lines from telly for being funny.
@@ -497,10 +490,10 @@ Returns:
 SQ = Operator(
     _sq, 
     "SQ", 
-    validator=conjoin_tests([
+    validator=conjoin_tests(
         same_args_diff_rtn_validator_factory(float, int, float),
-        num_args_validator(1)
-    ]), 
+        num_args_eq_validator(1)
+    ), 
     return_validator=float, 
     force_type=ForceType.STRICT
 )
@@ -520,10 +513,10 @@ Returns:
 CUBE = Operator(
     _cube, 
     "CUBE", 
-    validator=conjoin_tests([
+    validator=conjoin_tests(
         same_args_diff_rtn_validator_factory(float, int, float),
-        num_args_validator(1)
-    ]), 
+        num_args_eq_validator(1)
+    ), 
     return_validator=float, 
     force_type=ForceType.STRICT
 )
@@ -544,10 +537,10 @@ Returns:
 POW = Operator(
     _pow, 
     "POW",
-    validator=conjoin_tests([
+    validator=conjoin_tests(
         same_args_diff_rtn_validator_factory(float, int, float),
-        num_args_validator(2)
-    ]), 
+        num_args_eq_validator(2)
+    ), 
     return_validator=float, 
     force_type=ForceType.STRICT
 )
@@ -570,7 +563,7 @@ Returns:
 EQ = Operator(
     _eq, 
     "EQ", 
-    validator=num_args_validator(2), 
+    validator=num_args_eq_validator(2), 
     return_validator=bool
 )
 """
@@ -587,7 +580,7 @@ Returns:
 NEQ = Operator(
     _neq, 
     "NEQ", 
-    validator=num_args_validator(2), 
+    validator=num_args_eq_validator(2), 
     return_validator=bool
 )
 """
@@ -604,10 +597,10 @@ Returns:
 GT = Operator(
     _gt, 
     "GT",
-    validator=conjoin_tests([
+    validator=conjoin_tests(
         same_args_diff_rtn_validator_factory(float, int, float, bool),
-        num_args_validator(2)
-    ]), 
+        num_args_eq_validator(2)
+    ), 
     return_validator=bool
 )
 """
@@ -628,10 +621,10 @@ Returns:
 EGT = Operator(
     _egt, 
     "EGT",
-    validator=conjoin_tests([
+    validator=conjoin_tests(
         same_args_diff_rtn_validator_factory(float, int, float, bool),
-        num_args_validator(2)
-    ]), 
+        num_args_eq_validator(2)
+    ), 
     return_validator=bool
 )
 """
@@ -653,10 +646,10 @@ Returns:
 LT = Operator(
     _lt, 
     "LT",
-    validator=conjoin_tests([
+    validator=conjoin_tests(
         same_args_diff_rtn_validator_factory(float, int, float, bool),
-        num_args_validator(2)
-    ]), 
+        num_args_eq_validator(2)
+    ), 
     return_validator=bool
 )
 """
@@ -673,10 +666,10 @@ Returns:
 ELT = Operator(
     _elt, 
     "ELT",
-    validator=conjoin_tests([
+    validator=conjoin_tests(
         same_args_diff_rtn_validator_factory(float, int, float, bool),
-        num_args_validator(2)
-    ]), 
+        num_args_eq_validator(2)
+    ), 
     return_validator=bool
 )
 """
@@ -693,12 +686,12 @@ Returns:
 """
 
 NOT = Operator(
-    _not, 
+    np.invert, 
     "NOT",
-    validator=conjoin_tests([
+    validator=conjoin_tests(
         monotype_validator_factory(bool),
-        num_args_validator(1)
-    ]), 
+        num_args_eq_validator(1)
+    ), 
     return_validator=bool
 ) #  apply=True 
 """
@@ -762,7 +755,7 @@ def ternary_operator_factory(r_type):
             r_type==return_type==arg_types[1]==arg_types[2]
         )
     return Operator(
-        _tern, 
+        np.where, 
         f"TERN_{str(r_type).upper().replace('.', '_')}", 
         validator=validate_ternary,
         return_validator=r_type
@@ -882,212 +875,94 @@ def main():
     >>> df1["w2"] = df1["w2"].astype("string")
     >>> df1["w3"] = df1["w3"].astype("string")
     >>> df1["w4"] = df1["w4"].astype("string")
-    >>> ID(df["s1"], df1["w1"], df1["w2"], df1["w3"], df1["w4"])
-    0      (one, something's, got, to, give)
-    1      (two, something's, got, to, give)
-    2    (three, something's, got, to, give)
-    3     (four, something's, got, to, give)
-    Name: ID(s1,something's,got,to,give), dtype: object
+    >>> for w in df['s1']:  
+    ...     print(ID(w, df1["w1"].item(), df1["w2"].item(), df1["w3"].item(), df1["w4"].item()))
+    ('one', "something's", 'got', 'to', 'give')
+    ('two', "something's", 'got', 'to', 'give')
+    ('three', "something's", 'got', 'to', 'give')
+    ('four', "something's", 'got', 'to', 'give')
     >>> CONCAT('pet', 'that', 'cat')
     'pet that cat'
-    >>> CONCAT(df["s1"], df1["w1"], df1["w2"], df1["w3"], df1["w4"])
-    0      one something's got to give
-    1      two something's got to give
-    2    three something's got to give
-    3     four something's got to give
-    Name: CONCAT(s1,something's,got,to,give), dtype: string
-    >>> CONCAT(df["s1"], "something's", "got", "to", "give")
-    0      one something's got to give
-    1      two something's got to give
-    2    three something's got to give
-    3     four something's got to give
-    Name: CONCAT(s1,something's,got,to,give), dtype: string
+    >>> for w in df['s1']:  
+    ...     print(CONCAT(w, "something's", "got", "to", "give"))
+    one something's got to give
+    two something's got to give
+    three something's got to give
+    four something's got to give
     >>> SUM(4, 5)
     9.0
     >>> SUM(df["i1"], df['i2'])
-    0     43.0
-    1     71.0
-    2    423.0
-    3    670.0
-    Name: SUM(i1,i2), dtype: float64
+    array([ 43.,  71., 423., 670.])
     >>> SUM(df['i2'], df['f2'], df1['i2'], df1['f2'])
-    0     458.142
-    1     484.718
-    2     834.414
-    3    1080.618
-    Name: SUM(i2,f2,404,9.0), dtype: float64
+    array([ 458.142,  484.718,  834.414, 1080.618])
     >>> PROD(1, 2, 3, 4)
     24.0
     >>> PROD(df['i1'], df['f1'])
-    0     1.0
-    1     4.0
-    2     9.0
-    3    16.0
-    Name: PROD(i1,f1), dtype: float64
+    array([ 1.,  4.,  9., 16.])
     >>> PROD(df['i1'], df['i1'], df1['f2'])
-    0      9.0
-    1     36.0
-    2     81.0
-    3    144.0
-    Name: PROD(i1,i1,9.0), dtype: float64
+    array([  9.,  36.,  81., 144.])
     >>> SQ(12)
     144.0
     >>> SQ(df['i1'])
-    0     1.0
-    1     4.0
-    2     9.0
-    3    16.0
-    Name: SQ(i1), dtype: float64
+    array([ 1.,  4.,  9., 16.])
     >>> SQ(df['f1'])
-    0     1.0
-    1     4.0
-    2     9.0
-    3    16.0
-    Name: SQ(f1), dtype: float64
+    array([ 1.,  4.,  9., 16.])
     >>> CUBE(3)
     27.0
     >>> CUBE(df['i1'])
-    0     1.0
-    1     8.0
-    2    27.0
-    3    64.0
-    Name: CUBE(i1), dtype: float64
+    array([ 1.,  8., 27., 64.])
     >>> CUBE(df['f1'])
-    0     1.0
-    1     8.0
-    2    27.0
-    3    64.0
-    Name: CUBE(f1), dtype: float64
+    array([ 1.,  8., 27., 64.])
     >>> POW(2, 8)
     256.0
     >>> POW(df['i1'], df['i1'])
-    0      1.0
-    1      4.0
-    2     27.0
-    3    256.0
-    Name: POW(i1,i1), dtype: float64
+    array([  1.,   4.,  27., 256.])
     >>> POW(df['i1'], df['f1'])
-    0      1.0
-    1      4.0
-    2     27.0
-    3    256.0
-    Name: POW(i1,f1), dtype: float64
+    array([  1.,   4.,  27., 256.])
     >>> POW(df['f1'], df['i1'])
-    0      1.0
-    1      4.0
-    2     27.0
-    3    256.0
-    Name: POW(f1,i1), dtype: float64
+    array([  1.,   4.,  27., 256.])
     >>> POW(df['f1'], df['f1'])
-    0      1.0
-    1      4.0
-    2     27.0
-    3    256.0
-    Name: POW(f1,f1), dtype: float64
+    array([  1.,   4.,  27., 256.])
     >>> POW(df1['i1'], df['f1'])
-    0      5.0
-    1     25.0
-    2    125.0
-    3    625.0
-    Name: POW(5,f1), dtype: float64
+    array([  5.,  25., 125., 625.])
     >>> POW(df['f1'], df1['f2'])
-    0         1.0
-    1       512.0
-    2     19683.0
-    3    262144.0
-    Name: POW(f1,9.0), dtype: float64
+    array([1.00000e+00, 5.12000e+02, 1.96830e+04, 2.62144e+05])
     >>> EQ(1, 2)
     False
     >>> EQ(1, 1.0)
     True
     >>> EQ(df["i1"], df["f1"])
-    0    True
-    1    True
-    2    True
-    3    True
-    Name: EQ(i1,f1), dtype: bool
+    array([ True,  True,  True,  True])
     >>> EQ(df["i3"], df["f1"])
-    0    False
-    1     True
-    2    False
-    3     True
-    Name: EQ(i3,f1), dtype: bool
+    array([False,  True, False,  True])
     >>> EQ(df["i1"], df1["f3"])
-    0    False
-    1    False
-    2     True
-    3    False
-    Name: EQ(i1,3.0), dtype: bool
+    array([False, False,  True, False])
     >>> NEQ(1, 2)
     True
     >>> NEQ(1, 1.0)
     False
     >>> NEQ(df["i1"], df["f1"])
-    0    False
-    1    False
-    2    False
-    3    False
-    Name: NEQ(i1,f1), dtype: bool
+    array([False, False, False, False])
     >>> NEQ(df["i3"], df["f1"])
-    0     True
-    1    False
-    2     True
-    3    False
-    Name: NEQ(i3,f1), dtype: bool
+    array([ True, False,  True, False])
     >>> NEQ(df["i1"], df1["f3"])
-    0     True
-    1     True
-    2    False
-    3     True
-    Name: NEQ(i1,3.0), dtype: bool
+    array([ True,  True, False,  True])
     >>> GT(df['i1'], df1['f3'])
-    0    False
-    1    False
-    2    False
-    3     True
-    Name: GT(i1,3.0), dtype: bool
+    array([False, False, False,  True])
     >>> EGT(df['i1'], df1['f3'])
-    0    False
-    1    False
-    2     True
-    3     True
-    Name: EGT(i1,3.0), dtype: bool
+    array([False, False,  True,  True])
     >>> LT(df['i1'], df1['f3'])
-    0     True
-    1     True
-    2    False
-    3    False
-    Name: LT(i1,3.0), dtype: bool
+    array([ True,  True, False, False])
     >>> ELT(df['i1'], df1['f3'])
-    0     True
-    1     True
-    2     True
-    3    False
-    Name: ELT(i1,3.0), dtype: bool
+    array([ True,  True,  True, False])
     >>> NOT(df['b1'])
-    0     True
-    1     True
-    2    False
-    3    False
-    Name: NOT(b1), dtype: bool
+    array([ True,  True, False, False])
     >>> OR(df['b2'], df['b1'])
-    0     True
-    1    False
-    2     True
-    3     True
-    Name: OR(b2,b1), dtype: bool
+    array([ True, False,  True,  True])
     >>> AND(df['b2'], df['b1'])
-    0    False
-    1    False
-    2     True
-    3    False
-    Name: AND(b2,b1), dtype: bool
+    array([False, False,  True, False])
     >>> EQ(df['i3'], TERN_INT(df['b2'], df['i2'], df['i1']))
-    0    True
-    1    True
-    2    True
-    3    True
-    Name: EQ(i3,TERN(b2,i2,i1)), dtype: bool
+    array([ True,  True,  True,  True])
     """
     import doctest
     doctest.testmod()
