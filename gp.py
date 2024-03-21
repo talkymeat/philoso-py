@@ -125,9 +125,7 @@ class GPTreebank(TypeLabelledTreebank):
             final_best = None
         scores = np.array(scoreboard['fitness'].fillna(0))
         sum_scores = np.sum(scores)
-        i=0
         if sum_scores != 0:
-            print('G', pop-elitism)
             if np.min(scores) < 0:
                 scores -= np.min(scores)
                 sum_scores = np.sum(scores)
@@ -137,9 +135,6 @@ class GPTreebank(TypeLabelledTreebank):
                 p=normed_scores, # scores/np.sum(scores), 
                 size=pop-elitism
             ):
-                if not i%10:
-                    print(f'gggg-{i}')
-                i += 1
                 t.copy(gp_copy=True) # WUT XXX
         else:
             # print('+'*200)
@@ -148,9 +143,6 @@ class GPTreebank(TypeLabelledTreebank):
             print(scoreboard['fitness'].fillna(0).sum())
             print('H', pop-elitism)
             for t in self.np_random.choice(old_gen, size=pop-elitism):
-                if not i%10:
-                    print(f'hhhh-{i}')
-                i += 1
                 t.copy(gp_copy=True) # WUT XXX
         # record.at[n,'mut8_time'] = self.sw()
         # record.at[n,'time'] += record.at[n,'mut8_time']
@@ -224,7 +216,7 @@ class GPTreebank(TypeLabelledTreebank):
             temp_coeff: float = None,
             best_outvals: str|list[str] = None,
             expt_outvals: str|list[str] = None,
-            ping_freq: int = 1,
+            ping_freq: int = 10,
             to_graph: Collection[str] = None
         ) -> tuple[dict[str, list], dict, GPNonTerminal]:
         """Sets up a genetic programming run and runs it for a specified number 

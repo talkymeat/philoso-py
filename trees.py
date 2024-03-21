@@ -29,7 +29,6 @@ from tree_iter import TreeIter, DepthFirstBottomUp as DFBU
 import treebanks as tbs
 import operators as ops
 from utils import IDSet
-# TODO: don't leave the operator import here: do that in GP, and in tests
 
 
 class Tree(ABC):
@@ -84,6 +83,10 @@ class Tree(ABC):
     @property
     def parent(self):
         return self._parent
+    
+    @property
+    def data_type(self):
+        return self.label.data_type
     
     @parent.setter
     def parent(self, parent):
@@ -287,7 +290,7 @@ class NonTerminal(Tree):
     leafnode, and raises an error only if there is no match.
     """
 
-    def __init__(self, treebank, label, *children, operator=None, metadata=None, **kwargs):
+    def __init__(self, treebank: "tbs.Treebank", label: "Label", *children: Tree, operator: "Operator"=None, metadata: dict=None, **kwargs):
         super().__init__(treebank, label)
         if not children:
             raise AttributeError('NonTerminals must have child nodes')
@@ -1990,6 +1993,10 @@ class Label:
         self.treebank = treebank
         self.is_default = False
         self._roots = IDSet()
+    
+    @property
+    def data_type(self) -> type:
+        return str
 
     @property
     def class_id(self, **kwargs): ##-OK
@@ -2013,7 +2020,7 @@ class Label:
         """
         return self._class_id ##-OK
 
-    @class_id.setter ##-OK
+    @class_id.setter ##-OK ?? XXX ??
     def class_id(self, class_id): ##-OK
         """Setter for class_id. Checks that the name is a `str`, as this is the
         only valid type for labels, and checks that the name is unique.
@@ -2291,6 +2298,9 @@ class TypeLabel(Label):
         """
         return self._class_id.__name__ ##-OK
 
+    @property
+    def data_type(self) -> type:
+        return self._class_id
 
     @class_id.setter ##-OK
     def class_id(self, class_id): ##-OK XXX test this

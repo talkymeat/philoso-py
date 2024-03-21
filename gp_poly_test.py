@@ -348,6 +348,6 @@ def gp_func_test(
 #     return lambda x: sum([b * x**p for b, p in zip(coeffs, exponents)])
 
 if __name__ == '__main__':
-    result = gp_rand_poly_test(500, generations=5, mutation_sd=0.3)
+    result = gp_rand_poly_test(500, generations=2000, mutation_sd=0.3)
     print(result)
     # result = gp_sin_test(500, generations=2000, mutation_sd=0.3)

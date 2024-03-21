@@ -7,6 +7,7 @@ from pandas.api.types import is_bool_dtype, is_integer_dtype, is_float_dtype, is
 from enum import Enum
 from utils import disjoin_tests, conjoin_tests
 from icecream import ic
+import warnings
 
 # from icecream import ic
 
@@ -57,16 +58,13 @@ def _cube(*args):
 
 TYPE_TOOLS = {
     float:   {'test': disjoin_tests(is_float, is_float_dtype), 'dtype': np.float64  },
-    int:     {'test': disjoin_tests(is_integer, is_integer_dtype), 'dtype': np.int32    },
+    int:     {'test': disjoin_tests(is_integer, is_integer_dtype), 'dtype': np.int64    },
     bool:    {'test': disjoin_tests(is_bool, is_bool_dtype), 'dtype': np.bool_    },
     complex: {'test': disjoin_tests(is_complex, is_complex_dtype), 'dtype': np.complex64},
     str:     {'test': disjoin_tests(lambda s: isinstance(s, str), is_string_dtype), 'dtype': np.str_     }
 }
 
-@runtime_checkable
-class ReturnValidator(Protocol):
-    def __call__(return_val, *args) -> bool:
-        ...
+
 
 @runtime_checkable
 class SimpleValidator(Protocol):
@@ -83,6 +81,284 @@ class ForceType(Enum):
     STRICT = 1
     LOSSY  = 2
 
+def array_equals_ignore_nans(a: np.ndarray, b: np.ndarray):
+    """Checks that two ndarrays are equal. However, this differs from the normal
+    behaviour of the == operator, in that it treats two np.nan values as being
+    equal
+
+    >>> n0 = np.array([1.0, np.nan, 2.0])
+    >>> n1 = np.array([1.0, np.nan, 2.0])
+    >>> n2 = np.array([np.nan, 3.0, 2.0])
+    >>> n3 = np.array([np.nan, 3.0, 2.0])
+    >>> n4 = np.array([1.0, 3.0, 2.0])
+    >>> n5 = np.array([1.0, 3.0, 2.0])
+    >>> n6 = np.array([1.0, np.nan, 5.0])
+    >>> n7 = np.array([1.0, np.nan, 5.0])
+    >>> n8 = np.array([np.nan, 3.0, 5.0])
+    >>> n9 = np.array([np.nan, 3.0, 5.0])
+    >>> n10 = np.array([1.0, 3.0, 5.0])
+    >>> n11 = np.array([1.0, 3.0, 5.0])
+    >>> ns = [n0, n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11]
+    >>> for n_a in ns:
+    ...     pn = ""
+    ...     for n_b in ns:
+    ...         pn += "#" if array_equals_ignore_nans(n_a, n_b) else "."
+    ...     print(pn) 
+    ##..........
+    ##..........
+    ..##........
+    ..##........
+    ....##......
+    ....##......
+    ......##....
+    ......##....
+    ........##..
+    ........##..
+    ..........##
+    ..........##
+    """
+    if not isinstance(a, np.ndarray):
+        a = np.array(a)
+    if not isinstance(b, np.ndarray):
+        b = np.array(b)
+    if a.size != b.size:
+        return False
+    neqs = a != b
+    return np.isnan(a[neqs]).all() and np.isnan(b[neqs]).all()
+
+def make_return_validator(rv: type, force_type: ForceType = ForceType.NO):
+    """A factory method to generate function which handle the typing of operator 
+    outputs. What this does depends on whether it is given a numpy dtype, a native
+    type with a numpy equivalent in `TYPE_TOOLS`, or another native type; and 
+    whether it is given NO, STRICT or LOSSY for force_type.
+
+    If a native type is given that is in `TYPE_TOOLS`, a composite test for the 
+    type-validity of an output will be taken from `TYPE_TOOLS`, and an equivalent
+    numpy dtype is also provided, so values can be placed in arrays and, if needed,
+    converted to the correct dtype. If it is a dtype, outputs should be of that
+    dtype, and if it's another native type, they should be of that native type.
+
+    If ForceType.NO is passed, an exception will be raised if a value of the wrong 
+    type/dtype is returned; otherwise, the input value is returned unchanged.
+    If ForceType.STRICT is passed, the output will be converted to the relevant 
+    type, but if any data loss occurs (that is, if the type conversion also alters 
+    the value of the output) an exception will be raised. If ForceType.LOSSY is 
+    passed, the output will be converted to the relevant type/dtype, and no 
+    exception will be raised, even if the value changes.
+
+    In testing we will use float (with NO and STRICT), int (with STRICT and LOSSY,
+    slice (with NO and LOSSY), GoodNum - a custom class with some odd behaviour 
+    around __eq__ (with STRICT), and np.int16 (with all)
+
+    >>> #### float    #### #### #### NO     ####
+    >>> retval = make_return_validator(float, ForceType.NO)
+    >>> retval(666.0)
+    666.0
+    >>> retval(np.array([6.0, 6.0, 6.0]))
+    array([6., 6., 6.])
+    >>> retval(np.array([6.0, 6.0, 6.0], dtype=np.float16))
+    array([6., 6., 6.], dtype=float16)
+    >>> retval(666)
+    Traceback (most recent call last):
+        ....
+    TypeError: Operator returned 666 which is a int, not a float64 as expected.
+    >>> retval(np.array([6, 6, 6]))
+    Traceback (most recent call last):
+        ....
+    TypeError: Operator returned [6 6 6] which is a int64, not a float64 as expected.
+    >>> #### slice    #### #### #### NO     ####
+    >>> retval = make_return_validator(slice, ForceType.NO)
+    >>> retval(slice(6, 6, 6))
+    slice(6, 6, 6)
+    >>> retval(slice(666))
+    slice(None, 666, None)
+    >>> retval(666)
+    Traceback (most recent call last):
+        ....
+    TypeError: Operator returned 666 which is a int, not a slice as expected.
+    >>> retval(np.array([6.0, 6.0, 6.0]))
+    Traceback (most recent call last):
+        ....
+    TypeError: Operator returned [6. 6. 6.] which is a ndarray, not a slice as expected.
+    >>> #### np.int16 #### #### #### NO     ####
+    >>> retval = make_return_validator(np.int16, ForceType.NO)
+    >>> retval(np.array([6, 6, 6], dtype=np.int16))
+    array([6, 6, 6], dtype=int16)
+    >>> retval(np.array([666], dtype=np.int16))
+    array([666], dtype=int16)
+    >>> retval(np.array([6, 6, 6], dtype=np.int32))
+    Traceback (most recent call last):
+        ....
+    TypeError: Operator returned [6 6 6] which is a int32, not a int16 as expected.
+    >>> retval(np.array([666], dtype=np.int32))
+    Traceback (most recent call last):
+        ....
+    TypeError: Operator returned [666] which is a int32, not a int16 as expected.
+    >>> retval(666)
+    Traceback (most recent call last):
+        ....
+    TypeError: Operator returned 666 which is a int, not a int16 as expected.
+    >>> #### int      #### #### #### STRICT ####
+    >>> retval = make_return_validator(int, ForceType.STRICT)
+    >>> retval(666)
+    666
+    >>> retval(666.0)
+    666
+    >>> retval(666.666)
+    Traceback (most recent call last):
+        ....
+    TypeError: Converting 666.666 to int cannot be done without loss of information
+    >>> retval(np.array([6, 6, 6]))
+    array([6, 6, 6])
+    >>> retval(np.array([6.0, 6.0, 6.0]))
+    array([6, 6, 6])
+    >>> retval(np.array([6.66, 6.66, 6.66]))
+    Traceback (most recent call last):
+        ....
+    TypeError: Converting [6.66 6.66 6.66] to int cannot be done without loss of information
+    >>> #### float    #### #### #### STRICT ####
+    >>> retval = make_return_validator(float, ForceType.STRICT)
+    >>> retval(np.array([6.0, 6.0, 6.0, np.nan], dtype='complex64')) 
+    array([ 6.,  6.,  6., nan])
+    >>> #### GoodNum  #### #### #### STRICT ####
+    >>> class GoodNum:
+    ...     def __init__(self, num):
+    ...         self.num = num.num if isinstance(num, self.__class__) else num 
+    ...     def __eq__(self, other):
+    ...         return self.num == other and other != 666
+    ...     def __str__(self):
+    ...         return f"GoodNum({self.num})"
+    ...     def __repr__(self):
+    ...         return f"GoodNum({self.num})"
+    >>> retval = make_return_validator(GoodNum, ForceType.STRICT)
+    >>> retval(GoodNum(777))
+    GoodNum(777)
+    >>> retval(GoodNum(666))
+    GoodNum(666)
+    >>> retval(777)
+    GoodNum(777)
+    >>> retval(666)
+    Traceback (most recent call last):
+        ....
+    TypeError: Converting 666 to GoodNum cannot be done without loss of information
+    >>> #### np.int16 #### #### #### STRICT ####
+    >>> retval = make_return_validator(np.int16, ForceType.STRICT)
+    >>> retval(np.array([6, 6, 6]))
+    array([6, 6, 6], dtype=int16)
+    >>> retval(np.array([6.0, 6.0, 6.0]))
+    array([6, 6, 6], dtype=int16)
+    >>> retval(np.array([6.66, 6.66, 6.66]))
+    Traceback (most recent call last):
+        ....
+    TypeError: Converting [6.66 6.66 6.66] to int16 cannot be done without loss of information
+    >>> retval(666)
+    666
+    >>> retval(666.0)
+    666
+    >>> retval(666.666)
+    Traceback (most recent call last):
+        ....
+    TypeError: Converting 666.666 to int16 cannot be done without loss of information
+    >>> retval(np.int32(666_666_666))
+    Traceback (most recent call last):
+        ....
+    TypeError: Converting 666666666 to int16 cannot be done without loss of information
+    >>> #### int      #### #### #### LOSSY  ####
+    >>> retval = make_return_validator(int, ForceType.LOSSY)
+    >>> retval(np.array([6, 6, 6]))
+    array([6, 6, 6])
+    >>> retval(np.array([6.0, 6.0, 6.0]))
+    array([6, 6, 6])
+    >>> retval(np.array([6.66, 6.66, 6.66]))
+    array([6, 6, 6])
+    >>> retval(666)
+    666
+    >>> retval(666.0)
+    666
+    >>> retval(666.666)
+    666
+    >>> #### slice    #### #### #### LOSSY  ####
+    >>> retval = make_return_validator(slice, ForceType.LOSSY)
+    >>> retval(slice(6, 6, 6))
+    slice(6, 6, 6)
+    >>> retval(slice(666))
+    slice(None, 666, None)
+    >>> retval(666)
+    slice(None, 666, None)
+    >>> #### np.int16 #### #### #### LOSSY  ####
+    >>> retval = make_return_validator(np.int16, ForceType.LOSSY)
+    >>> retval(np.array([6, 6, 6]))
+    array([6, 6, 6], dtype=int16)
+    >>> retval(np.array([6.0, 6.0, 6.0]))
+    array([6, 6, 6], dtype=int16)
+    >>> retval(np.array([6.66, 6.66, 6.66]))
+    array([6, 6, 6], dtype=int16)
+    >>> retval(666)
+    666
+    >>> retval(666.0)
+    666
+    >>> retval(666.666)
+    666
+    >>> retval(np.int32(666_666_666))
+    -31062
+    """
+    dtype = None 
+    if issubclass(rv, np.generic):
+        rval = lambda return_value, *args: hasattr(return_value, 'dtype') and rv==return_value.dtype
+        dtype = rv
+    elif isinstance(rv, type):
+        if rv in TYPE_TOOLS:
+            rval = lambda return_value, *args: TYPE_TOOLS[rv]['test'](return_value)
+            dtype = TYPE_TOOLS[rv]['dtype']
+        else:
+            rval = lambda return_value, *args: isinstance(return_value, rv)
+            do_violence = rv
+    else:
+        raise ValueError(
+            'If you set an Operator to have a return_validator, you must either ' +
+            'use a callable that takes the args passed to Operator.__call__ and ' +
+            'the resulting returned value, and returns boolean, OR a type, OR a ' +
+            f'numpy.dtype. You passed a {type(rv).__name__}'
+        )
+    if dtype is not None:
+        do_violence = dtype
+        eq = array_equals_ignore_nans
+    else:
+        eq = lambda a, b: a==b
+    match force_type:
+        case ForceType.NO:
+            def return_validator(return_val, *args):
+                if not rval(return_val):
+                    raise TypeError(
+                        f"Operator returned {return_val} which is a " +
+                        f"{return_val.dtype if dtype and hasattr(return_val, 'dtype') else type(return_val).__name__}," +
+                        f" not a {dtype.__name__ if dtype else rv.__name__} as expected.")
+                return return_val
+            return return_validator
+        case ForceType.STRICT:
+            def return_validator(return_val, *args):
+                if not rval(return_val):
+                    with warnings.catch_warnings(category="ComplexWarning"):
+                        warnings.simplefilter('ignore')
+                        forced_return_val = do_violence(return_val)
+                    if eq(forced_return_val, return_val):
+                        return_val = forced_return_val
+                    else:
+                        raise TypeError(
+                            f"Converting {return_val} to {rv.__name__} cannot be done " +
+                            "without loss of information"
+                        )
+                return return_val
+            return return_validator
+        case ForceType.LOSSY:
+            def return_validator(return_val, *args):
+                if not rval(return_val):
+                    with warnings.catch_warnings(action='ignore', category="ComplexWarning"):
+                        return do_violence(return_val)
+                return return_val
+            return return_validator
+        case _:
+            raise ValueError("f{force_type} is an invalid value of force_type")
 
 class Operator:
     """Operators which perform computations on the values of the child nodes of
@@ -159,67 +435,24 @@ class Operator:
         func: Callable, 
         name: str,
         validator: Validator = None, 
-        return_validator: ReturnValidator|type|np.dtype=None,
+        return_validator: Callable|type|np.dtype=None,
         force_type: ForceType=ForceType.NO
     ):
-        self._func      = func
-        self.name       = name
-        self._validator = (lambda a, *b: True) if validator is None else validator
-        self.force_type = lambda x: x # does nothing
-        type_forcer = None
-        numpty = True
-        if isinstance(return_validator, type):
-            if return_validator in TYPE_TOOLS:
-                self._return_validator = lambda return_value, *args: TYPE_TOOLS[return_validator]['test'](return_value)
-                if force_type != ForceType.NO:
-                    type_forcer = lambda outval: outval.astype(TYPE_TOOLS[return_validator]['dtype'])
-            else:
-                self._return_validator = lambda return_value, *args: isinstance(return_value, return_validator)
-                if force_type != ForceType.NO:
-                    type_forcer = lambda outval: return_validator(outval)
-                    numpty = False
-        elif isinstance(return_validator, np.dtype):
-            self._return_validator = lambda return_value, *args: return_validator==return_value.dtype
-            if force_type != ForceType.NO:
-                type_forcer = lambda outval: outval.astype(return_validator)
-        elif isinstance(return_validator, ReturnValidator):
-            self._return_validator = return_validator
-            if force_type != ForceType.NO:
-                raise ValueError(Operator._FORCE_TYPE_ERR)
-        elif return_validator is None:
-            self._return_validator = lambda return_value, *args: True
-            if force_type != ForceType.NO:
-                raise ValueError(Operator._FORCE_TYPE_ERR)
+        self._func         = func
+        self.name          = name
+        if return_validator is None:
+            self._validate_out = lambda a, *b: a
+        elif isinstance(return_validator, type):
+            self._validate_out = make_return_validator(return_validator, force_type) 
+        elif isinstance(return_validator, Callable):
+            self._validate_out = return_validator
         else:
-            raise ValueError(
-                'If you set an Operator to have a return_validator, you must either ' +
-                'use a callable that takes the args passed to Operator.__call__ and ' +
-                'the resulting returned value, and returns boolean, OR a type, OR a ' +
-                f'numpy.dtype. You passed a {type(return_validator)}'
+            raise TypeError(
+                "return_validator must be a type, a numpy.dtype, a Callable, or " + 
+                f"None; you used {return_validator}, which is a " + 
+                f"{type(return_validator).__name__}."
             )
-        if type_forcer:
-            if force_type==ForceType.STRICT:
-                if numpty:
-                    type_forcer = self._make_strict_np(type_forcer)
-                else:
-                    type_forcer = self._make_strict_py(type_forcer)
-            self.force_type = type_forcer
-
-    def _make_strict_py(self, fn: Callable):
-        def strict_func_py(op_output):
-            type_forced_output = fn(op_output)
-            if op_output == type_forced_output:
-                return type_forced_output
-            raise TypeError("Cannot convert type without information loss")
-        return strict_func_py
-        
-    def _make_strict_np(self, fn: Callable):
-        def strict_func_np(op_output):
-            type_forced_output = fn(op_output)
-            if (op_output == type_forced_output).all():
-                return type_forced_output
-            raise TypeError("Cannot convert type without information loss")
-        return strict_func_np
+        self._validator = (lambda a, *b: True) if validator is None else validator
 
     def __call__(self, *args) -> Any:
         """A magic method which makes `Operator`s Callable. Checks that the
@@ -248,7 +481,7 @@ class Operator:
         >>> op_A_PLUS_B_WRONG(2.0, 3.0)
         Traceback (most recent call last):
             ....
-        TypeError: Operator A_PLUS_B_WRONG cannot return output 5.0 of type <class 'numpy.float64'>.
+        TypeError: Operator A_PLUS_B_WRONG encountered a problem: Operator returned 5.0 which is a float64, not a int64 as expected.
         >>> op_A_PLUS_B = Operator(lambda a, b: a+b, "A_PLUS_B", validator=conjoin_tests(same_args_diff_rtn_validator_factory(int, int, float), num_args_eq_validator(2)), return_validator=float, force_type=ForceType.STRICT)
         >>> op_A_PLUS_B_WRONG.is_valid(float, str, str)
         False
@@ -263,7 +496,7 @@ class Operator:
         >>> op_SUM(2, 3)
         Traceback (most recent call last):
             ....
-        TypeError: Operator SUM_FL cannot return output 5 of type <class 'numpy.int64'>.
+        TypeError: Operator SUM_FL encountered a problem: Operator returned 5 which is a int64, not a float64 as expected.
         >>> op_SUM_FL(2, 3)
         5.0
         >>> op_SUM_INT(2.0, 3.0)
@@ -271,24 +504,25 @@ class Operator:
         >>> op_SUM_INT(2.0, 2.5)
         Traceback (most recent call last):
             ....
-        TypeError: Cannot convert type without information loss
+        TypeError: Operator SUM_INT encountered a problem: Converting 4.5 to int cannot be done without loss of information
         >>> op_SUM_INT_LOSSY(2.0, 2.5)
         4
         >>> op_SUM(2.0, 3.0, 5.0)
         10.0
         >>> op_A_PLUS_B.is_valid(int, int, int)
+        True
+        >>> op_A_PLUS_B.is_valid(int, int, float)
+        True
+        >>> op_A_PLUS_B.is_valid(int, float, int)
+        True
+        >>> op_A_PLUS_B.is_valid(float, int, int)
         False
         """
-        output = self.force_type(
-            self._func(
-                *self._preprocess(*args)
-            )
-        )
-        if self._return_validator(output, *args):
-            return output
-        t = output.dtype if isinstance(output, np.ndarray) else type(output)
-        raise TypeError(f'Operator {self.name} cannot return output {output} of type {t}.')
-
+        args = self._preprocess(*args)
+        try:
+            return self._validate_out(self._func(*args), *args)
+        except TypeError as e:
+            raise TypeError(f"Operator {self.name} encountered a problem: {str(e)}")
 
     def is_valid(self, return_type: type|np.dtype, *arg_types: type|np.dtype):
         return self._validator(return_type, *arg_types)
@@ -301,11 +535,11 @@ class Operator:
             [arg if isinstance(arg, np.ndarray) else np.array(arg) for arg in args]
         )
     
-    def drt_simple(self, arg_match: re.Match) -> type:
-        if arg_match.groups():
-            typeset = {Operator.rev_type_dict[char] for char in ''.join(arg_match.groups())}
-            return list(typeset)[0] if len(typeset)==1 else Any
-        return self.return_type
+    # def drt_simple(self, arg_match: re.Match) -> type:
+    #     if arg_match.groups():
+    #         typeset = {Operator.rev_type_dict[char] for char in ''.join(arg_match.groups())}
+    #         return list(typeset)[0] if len(typeset)==1 else Any
+    #     return self.return_type
 
 
 class DOPerator(Operator):
@@ -345,17 +579,17 @@ def monotype_validator_factory(t: type|np.dtype|SimpleValidator, simple=False):
         )
     def validator(return_type: np.dtype|type, *arg_types: np.dtype|type):
         return reduce(
-            lambda a, b: test(a) and test(b), 
+            lambda a, b: test(a) and b, 
             arg_types+(return_type,), 
             True
         )
     return validator
     
 def same_args_diff_rtn_validator_factory(
-        ret_t:   type|np.dtype|SimpleValidator, 
-        *ts: type|np.dtype|SimpleValidator, 
-        simples=None,
-        simple=False
+        ret_t: type|np.dtype|SimpleValidator, 
+        *ts:   type|np.dtype|SimpleValidator,
+        ret_simple =False, 
+        simples=None
     ):
     if simples is None:
         simples = []
@@ -365,7 +599,7 @@ def same_args_diff_rtn_validator_factory(
         raise ValueError('"simples" cannot be longer than "ts"')
     try:
         arg_test = disjoin_tests(*[single_validator_factory(t, simple=s) for t, s in zip(ts, simples)])
-        ret_test = single_validator_factory(ret_t, simple)
+        ret_test = single_validator_factory(ret_t, ret_simple)
     except TypeError:
         raise TypeError(
             'To make a single-type validator with ' +
@@ -374,7 +608,7 @@ def same_args_diff_rtn_validator_factory(
         )
     def validator(return_type: np.dtype|type, *arg_types: np.dtype|type):
         return reduce(
-            lambda a, b: arg_test(a) and arg_test(b), 
+            lambda a, b: a and arg_test(b), 
             arg_types, 
             True
         ) and ret_test(return_type)

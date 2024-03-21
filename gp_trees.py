@@ -68,22 +68,10 @@ class GPNonTerminal(NonTerminal):
 
     @property
     def is_valid(self):
-        type_seq_match = self._operator._type_seq_legal(*[ch.label.class_id for ch in self])
-        if not type_seq_match:
+        if not self._operator.is_valid(self.data_type, *[ch.label.data_type for ch in self]):
             raise OperatorError(
-                f"the children of {self} are not a legal argument-sequence " +
+                f"the children and/or label of {self} are not a legal type-signature " +
                 f"for its operator {self._operator.name}"
-            )
-        dr_type = self._operator.dynamic_return_type(type_seq_match)
-        if not issubclass(
-            self.label.class_id, dr_type
-        ) and (
-            dr_type is not Any   
-        ): 
-            raise OperatorError(
-                f"{self} has a mismatch of label-type " +
-                f"({self.label.classname}) and operator " +  
-                f"return-type ({self._operator.return_type.__name__})"
             )
         return True
 
