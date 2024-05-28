@@ -184,20 +184,29 @@ class Action(ABC):
             #     print(sllogits_)
             #     print(sllogits_.shape)
             #     print('_-_-Z-Z---============-----------')
-        return OrderedDict({
-            k: distro(
-                torch.reshape(sllogits, shape)
-                if shape
-                else sllogits
-            )
-            for k, distro, sllogits, shape
-            in zip(
-                self.action_space.keys(),
-                self.distributions, 
-                self.slice_logits(logits),
-                self.logit_dims
-            )
-        })
+        try:
+            return OrderedDict({
+                k: distro(
+                    torch.reshape(sllogits, shape)
+                    if shape
+                    else sllogits
+                )
+                for k, distro, sllogits, shape
+                in zip(
+                    self.action_space.keys(),
+                    self.distributions, 
+                    self.slice_logits(logits),
+                    self.logit_dims
+                )
+            })
+        except Exception as e:
+            print('WH'+'Y'*98)
+            print(self.action_space.keys(),)
+            print(self.distributions) 
+            print(self.slice_logits(logits))
+            print(self.logit_dims)
+            print('WH'+'I'*96+'NE')
+            raise e
         
 
 # GP should put hyperparam and obs param data in self.best, so that's available when it's called by storemem, etc
@@ -449,10 +458,10 @@ class GPNew(Action):
         ):
         if isinstance(gp_register, torch.Tensor):
             gp_register = gp_register.item()
-        observatory = self.obs_fac(*obs_args)
+        observatory = self.obs_fac(*[_i(arg) for arg in obs_args])
         tf_params = [None] # XXX implement this XXX
         tree_factory = self.get_tfs(tf_choices, tf_weights, tf_params, self.rng)
-        scoreboard = self.sb_factory(observatory, temp_coeff, sb_weights)
+        scoreboard = self.sb_factory(observatory, _i(temp_coeff), sb_weights)
         if gp_register >= 0 and gp_register < len(self.gptb_list):
             self.gptb_cts[gp_register] += 1
             self.gptb_list[gp_register] = GPTreebank(
@@ -682,6 +691,7 @@ class StoreMem(Action):
         super().__init__(controller)
         self.memory: Archive = self.ac.memory
         self.gptb_list = self.ac.gptb_list
+        self.vars = self.ac.gp_vars_out
 
     @property
     def action_space(self) -> Space:
@@ -729,7 +739,15 @@ class StoreMem(Action):
             if self.gptb_list[gp_reg]:
                 tree_data = self.gptb_list[gp_reg].best
                 if tree_data['tree'] is not None:
-                    self.memory.insert_tree(tree_data['tree'], journal=mem_loc[0], pos=mem_loc[1], data=tree_data['data'])
+                    data = {k: v for k, v in tree_data['data'].items() if k in self.vars}
+                    try:
+                        self.memory.insert_tree(tree_data['tree'], journal=_i(mem_loc[0]), pos=_i(mem_loc[1]), **data)
+                    except Exception as e:
+                        print('LUB'+'DUB'*29)
+                        print(tree_data)
+                        print('>>>', data)
+                        print('DUB'+'WUB'*29)
+                        raise e
             # no else, do nothing if it tries to pull from an empty slot
 
 class Publish(Action):
@@ -742,6 +760,7 @@ class Publish(Action):
         super().__init__(controller)
         self.repo: Publication = self.ac.repository
         self.gptb_list = self.ac.gptb_list
+        self.vars = self.ac.gp_vars_out
 
     @property
     def action_space(self) -> Space:
@@ -765,7 +784,8 @@ class Publish(Action):
         if self.gptb_list[gp_register]:
             tree_data = self.gptb_list[gp_register].best
             if tree_data['tree'] is not None:
-                self.repo.insert_tree(tree_data['tree'], journal=journal_num, data=tree_data['data'])
+                data = {k: v for k, v in tree_data['data'].items() if k in self.vars}
+                self.repo.insert_tree(tree_data['tree'], self.ac.name, journal=journal_num, data=data)
 
 class Read(Action):
     # publication numbers and addresses,
@@ -834,7 +854,19 @@ class Read(Action):
             # print(td)
             # print('XXX'*40)
             if td['tree'] is not None:
-                self.memory.insert_tree(td['tree'], journal=mem_loc[0], pos=mem_loc[1], data=td[self.vars])
+                try:
+                    self.memory.insert_tree(td['tree'], journal=_i(mem_loc[0]), pos=_i(mem_loc[1]), **td[self.vars])
+                except Exception as e:
+                    print('&'*80)
+                    print('&'*80)
+                    print(self.vars)
+                    print(td[self.vars])
+                    if 'journal' in {**td[self.vars]}:
+                        print(f'N{"O"*97}ES')
+                    print(type(td))
+                    print('&'*80)
+                    print('&'*80)
+                    raise e
 
 
 ##################################################

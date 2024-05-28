@@ -12,7 +12,7 @@ class Reward(ABC):
         self.model = model
 
     def __call__(self) -> MDict[str, float]:
-        return self.process_reward(*self.get_reward_data())
+        return self.process_reward(self.get_reward_data())
 
     @abstractmethod
     def process_reward(self, *args) -> MDict[str, float]:
@@ -37,16 +37,28 @@ class Curiosity(Reward):
         self.def_fitness = def_fitness
         self.first_finding_bonus = first_finding_bonus
 
-    def process_reward(self) -> MDict[str, float]:
-        return MDict(self.get_reward_data())
+    def process_reward(self, data) -> MDict[str, float]:
+        return MDict(data)
     
     def get_reward_data(self):
-        return {a.name: self.agent_reward_data(a) for a in self.agents}
+        try:
+            return {nm: self.agent_reward_data(a) for nm, a in self.agents.items()}
+        except Exception as e:
+            print("WMWMWMWMWM"*10)
+            print(self.agents)
+            print(self.model.agents)
+            print("MWMWMWMWMW"*10)
+            raise e
+
 
     def agent_reward_data(self, agent):
-        mean_tree_fitness = np.array(
-            [agent.ac.memory[self.def_fitness] for agent in self.agents]
-        ).mean()
+        try:
+            mean_tree_fitness = agent.ac.memory[self.def_fitness].mean()
+        except Exception as e:
+            print('WUB'*40)
+            print(self.agents)
+            print('WUB '*30)
+            raise e
         if mean_tree_fitness > 0 and self.mean_mem_fitness_dict[agent.name] == 0:
             self.mean_mem_fitness_dict[agent.name] = mean_tree_fitness
             return self.first_finding_bonus
@@ -60,11 +72,8 @@ class Renoun(Reward):
         ) -> None:
         super().__init__(model)
 
-    def __call__(self) -> MDict[str, float]:
-        return self.get_reward_data(*self.get_reward_data())
-
     def process_reward(self, rewards) -> MDict[str, float]:
         return MDict({row['agent']: row['reward'] for row in rewards.iloc})
 
     def get_reward_data(self):
-        return self.model.publications.agents
+        return self.model.publications._agents

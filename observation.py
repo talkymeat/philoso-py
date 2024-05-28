@@ -115,7 +115,7 @@ class GPObservation(Observation):
             np.array([
                 (
                     np.array([best.get(var, 0.0) for var in self.gp_vars_out], dtype=np.float64) 
-                    if best 
+                    if best is not None
                     else np.zeros(len(self.gp_vars_out), dtype=np.float64)
                 ) for best in bests
             ]), 
@@ -137,7 +137,7 @@ class GPObservation(Observation):
                     for var 
                     in self.gp_vars_core
                 ]
-                if sb
+                if sb is not None
                 else np.zeros((
                     len(self.gp_vars_core), 
                     len(self.sb_statfuncs)
@@ -162,7 +162,7 @@ class GPObservation(Observation):
                     for var 
                     in self.gp_vars_core
                 ]
-                if rec
+                if rec is not None
                 else np.zeros(((len(self.gp_vars_core)), self.record_len))
             )
             for rec 

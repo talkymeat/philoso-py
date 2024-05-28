@@ -205,10 +205,17 @@ class GPTreebank(TypeLabelledTreebank):
         bonus_trees = [t for t in bonus_trees if t is not None]
         bonus_trees = [t for t in bonus_trees if t.size() <= self.max_size]
         bonus_trees = [t for t in bonus_trees if t.depth() <= self.max_depth]
-        foreign_ops = unions_for_all([
+        foreign_ops = unions_for_all(*[
             get_operators(t) for t in bonus_trees
         ])
-        foreign_ops = {op.name: op for op in foreign_ops}
+        try:
+            foreign_ops = {op.name: op for op in foreign_ops}
+        except Exception as e:
+            print('[]'*50)
+            print(foreign_ops)
+            print(unions_for_all(foreign_ops))
+            print(']['*50)
+            raise e
         self.operators = {**self.operators, **foreign_ops}
         for t in bonus_trees:
             t.copy_out(self)

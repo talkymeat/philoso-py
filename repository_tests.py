@@ -59,7 +59,7 @@ def main():
     ]
 
     for ag, gd in zip(agent_nos, goodness):
-        plos_one.insert_tree(T0.copy(), AG[ag], journal=0, goodness=gd)
+        plos_one.insert_tree(T0.copy(), AG[ag].name, journal=0, goodness=gd)
         mt.tick()
 
 
@@ -82,7 +82,7 @@ def main():
             else:
                 assert not plos_one.tables[0].loc[i, f"a{a}"], f"False negative at row {i}, col a{a}"
 
-    plos_one.insert_tree(T0.copy(), AG[0], journal=0, goodness=0.45)
+    plos_one.insert_tree(T0.copy(), AG[0].name, journal=0, goodness=0.45)
     mt.tick()
 
     assert aeq(plos_one._agents.loc['a0', 'reward'], 0.2)

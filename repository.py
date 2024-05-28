@@ -60,6 +60,7 @@ class Archive(TypeLabelledTreebank): #M #P
         self._initialise_df(rows, cols, types)
         self._init_multi_dfs(tables)
         self._validate_cols(cols, value)
+        self.rows = rows
         # observations are a 3d np.ndarray, tables x rows x the length of 
         # the user-provided cols, plus 1 for the tree ages
         self.observation_dims = (tables, rows, len(cols)+1)
@@ -134,16 +135,15 @@ class Archive(TypeLabelledTreebank): #M #P
             raise ValueError(f"No column '{value}' exists")
 
     def _preprocess_entry(self, tree, **data) -> bool:
-        # XXX JANK
-        data = data['data'] if 'data' in data else data
         if set(data.keys()) != self.cols:
             surplus = set(data.keys()) - self.cols
             missing = self.cols - set(data.keys())
             surplus_msg = f"contains the keys {surplus}, which are not in Repository.cols" if surplus else ""
-            missing_msg = f"lacks the keys {missing}, which are required in Repository.cols" if surplus else ""
+            missing_msg = f"lacks the keys {missing}, which are required in Repository.cols" if missing else ""
             and_msg = "; and " if surplus and missing else ""
             print("DIDI GOGO "*10)
-            print(data)
+            print(surplus)
+            print(missing)
             print("GOGO DIDI "*10)
             raise ValueError(f"metadata values passed to Repository.insert_tree {surplus_msg}{and_msg}{missing_msg}.")
         data['tree'] = tree.copy_out(treebank=self)
@@ -171,8 +171,22 @@ class Archive(TypeLabelledTreebank): #M #P
         if isinstance(idx, int):
             return self.tables[idx]
         i = idx[0].item() if isinstance(idx[0], torch.Tensor) else idx[0]
-        if len(idx) == 1:
-            return self.tables[i]
+        if len(idx) == 1 or isinstance(idx, str):
+            if isinstance(idx, int):   
+                return self.tables[i]
+            if isinstance(idx, str):
+                try:
+                    return np.array([
+                        t[idx] for t in self.tables
+                    ])
+                except Exception as e:
+                    print('GAKT '*25)
+                    print('NACK '*25)
+                    for t in self.tables:
+                        print(t[idx])
+                    print('HRGG '*25)
+                    print('ACKK '*25)
+                    raise e
         elif len(idx) == 2:
             j = idx[1].item() if isinstance(idx[1], torch.Tensor) else idx[1]
             return self.tables[i].iloc[j]
@@ -180,7 +194,9 @@ class Archive(TypeLabelledTreebank): #M #P
             j = idx[1].item() if isinstance(idx[1], torch.Tensor) else idx[1]
             return self.tables[i].loc[j, idx[2]]
         else:
-            raise IndexError('Archives take indixes of one orr two ints')
+            raise IndexError('Archives take indices of one orr two ints, or ' 
+                             + 'two ints and a column name, or just column ' 
+                             + f'name: you gave {idx}, of type {type(idx)}.')
             
         
 class Publication(Archive):
@@ -249,32 +265,39 @@ class Publication(Archive):
             return
         self._agents.loc[user.name] = {'agent': user, 'reward': 0.0}     
         
-    def _assign_tree_to_agent(self, agent, **vals): # P
-        vals['credit'] = self.agent_names[agent.name]
+    def _assign_tree_to_agent(self, agent_name, **vals): # P
+        # print(1, ('YAY ' if 'credit' in vals else 'BOO ') * 30)
+        vals['credit'] = self.agent_names[agent_name]
+        # print(2, ('YAY ' if 'credit' in vals else 'BOO ') * 30)
         # for other_id in self._agents.index:
         #     vals[other_id] = agent.name == other_id
         return vals
 
-    def insert_tree(self, tree, agent, journal=-1, **data) -> float:
+    def insert_tree(self, tree, agent_name, journal=-1, **data) -> float:
+        # XXX JANK
+        data = data['data'] if 'data' in data else data
+        # print(3, ('YAY ' if 'credit' in data else 'BOO ') * 30)
+        data = self._assign_tree_to_agent(agent_name, **data) 
+        # print(4, ('YAY ' if 'credit' in data else 'BOO ') * 30)
         data = self._preprocess_entry(tree, **data)
+        # print(5, ('YAY ' if 'credit' in data else 'BOO ') * 30)
         tree = data['tree']
-        data = self._assign_tree_to_agent(agent, **data)
         _journal = self._get_journal(journal)
         
-        if agent.name not in self._agents.index:
-            raise ValueError(f'User {agent.name} does not have access to this repository')
+        if agent_name not in self._agents.index: 
+            raise ValueError(f'User {agent_name} does not have access to this repository')  
         
         empty = _journal[~_journal['exists']] # why was the below commented out? XXX TODO
         # if len(empty):
         #     _journal.iloc[empty.index[0]] = data
         if data[self.value] < _journal[self.value].min():
             # WOMP WOMP
-            self._agents.loc[agent.name, 'reward'] += self._reward(**data, reject=True)
+            self._agents.loc[agent_name, 'reward'] += self._reward(**data, reject=True) 
             return # "you suck"
         else:
             # SUCCESS
             # calculate rewards to others
-            rewards = tree.tree_map_reduce(sum_all, agent, map_any=calculate_credit)
+            rewards = tree.tree_map_reduce(sum_all, agent_name, map_any=calculate_credit) 
             # calculate self reward
             index = (_journal[self.value] > data[self.value]).sum()
             own_reward = self._reward(index, **data)
@@ -282,7 +305,7 @@ class Publication(Archive):
                 rewards *= own_reward/sum(rewards.values())
             # sign tree
             tree.apply(init_reward_tree, own_reward)
-            tree.apply(sign_tree, agent)
+            tree.apply(sign_tree, agent_name)  # just needs name
             # punish agent whose tree was kicked out
             last = len(_journal)
             _journal.loc[last] = data
@@ -297,7 +320,7 @@ class Publication(Archive):
                 rewards += MDict({dt_author: dt_reward})
             _journal.drop(last, inplace=True)
             # Push punishments & rewards to buffer
-            rewards += MDict({agent.name: own_reward})
+            rewards += MDict({agent_name: own_reward}) 
         for id, rew in rewards.items():
             self._agents.loc[id, 'reward'] += rew
             # XXX handle case where repo is not yet full

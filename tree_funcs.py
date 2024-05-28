@@ -7,7 +7,7 @@ from icecream import ic
 
 
 # XXX make maxlen a hyperparam
-def sign_tree(tree: Tree, agent, *args, **kwargs):
+def sign_tree(tree: Tree, agent_name, *args, **kwargs):
     """This takes a tree-node and an agent (the agent that created the tree) and appends the id
     of the agent to the list of 'credits' in the tree-nodes metadata dict. The credits are 
     recorded in a fixed-length (len=4) dict, so when a 5th id is added, the oldest id in the
@@ -16,8 +16,8 @@ def sign_tree(tree: Tree, agent, *args, **kwargs):
     This function is designed to be used with Tree.apply
 
     >>> from test_materials import T0, AG, to_list, get_credit_pos
-    >>> T0.apply(sign_tree, AG[5])
-    >>> T0.apply(sign_tree, AG[7])
+    >>> T0.apply(sign_tree, 'a5')
+    >>> T0.apply(sign_tree, 'a7')
     >>> get_credit_pos(T0, 0)
     'a7'
     >>> get_credit_pos(T0, 1)
@@ -38,9 +38,9 @@ def sign_tree(tree: Tree, agent, *args, **kwargs):
     True
     """
     if 'credit' in tree.metadata:
-        tree.metadata['credit'].appendleft(agent.id)
+        tree.metadata['credit'].appendleft(agent_name)
     else:
-        tree.metadata['credit'] = deque([agent.id], 4)
+        tree.metadata['credit'] = deque([agent_name], 4)
 
 def init_reward_tree(tree: Tree, rew, *args, **kwargs):
     tree.metadata['init_reward'] = rew
@@ -54,14 +54,14 @@ def calculate_credit(tree: Tree, except_id, *args, **kwargs):
     This function is designed to be used as a mapping function with Tree.tree_map_reduce
 
     >>> from test_materials import T0, AG, to_list, get_credit_pos
-    >>> T0.apply(sign_tree, AG[5])
-    >>> T0[0,0].apply(sign_tree, AG[8])
-    >>> T0.apply(sign_tree, AG[3])
-    >>> T0[1].apply(sign_tree, AG[1])
-    >>> T0[0,0,1,0].apply(sign_tree, AG[9])
-    >>> T0.apply(sign_tree, AG[4])
-    >>> T0[0,0,1,0,1].apply(sign_tree, AG[9])
-    >>> T0.apply(sign_tree, AG[1])
+    >>> T0.apply(sign_tree, 'a5')
+    >>> T0[0,0].apply(sign_tree, 'a8')
+    >>> T0.apply(sign_tree, 'a3')
+    >>> T0[1].apply(sign_tree, 'a1')
+    >>> T0[0,0,1,0].apply(sign_tree, 'a9')
+    >>> T0.apply(sign_tree, 'a4')
+    >>> T0[0,0,1,0,1].apply(sign_tree, 'a9')
+    >>> T0.apply(sign_tree, 'a1')
     >>> for pos in range(4):
     ...     print(T0.tree_map_reduce(to_list, pos, map_any=get_credit_pos))
     ['a1', 'a1', 'a1', 'a1', 'a1', 'a1', 'a1', 'a1', 'a1', 'a1', 'a1', 'a1', 'a1', 'a1', 'a1']
@@ -126,8 +126,10 @@ def unions_for_all(*sets, **kwargs):
     """This function collects the union of `set` valuess, and is intended for 
     use as a reduce_func in Tree.tree_map_reduce. Also, Solidarity!
     
+    >>> unions_for_all({1,2,3}, {2,3,4})
+    {1, 2, 3, 4}
     """
-    return reduce(lambda x, y: x|y, sets)
+    return reduce(lambda x, y: x|y, sets, set())
 
 def get_operators(tree: Tree):
     """Gathers all the Operators on the NonTerminals of `tree`

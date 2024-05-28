@@ -308,11 +308,19 @@ class AgentController(Env):
         return self._mems_to_use
     
     @mems_to_use.setter
-    def mems_to_use(self, mems: list[dict]):
+    def mems_to_use(self, mems: Tree):
+        mems = [mem for mem in mems if mem is not None]
         if len(mems) > self.short_term_mem_size:
-            self._mems_to_use = self.np_random.choice(
-                mems, self.short_term_mem_size, replace=False
-            )
+            try:
+                self._mems_to_use = self.np_random.choice(
+                    mems, self.short_term_mem_size, replace=False
+                )
+            except Exception as e:
+                print('A'*100)
+                for mem in mems:
+                    print(mem)
+                print('V'*100)
+                raise e
         else:
             self._mems_to_use = mems
 
