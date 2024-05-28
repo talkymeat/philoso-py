@@ -339,7 +339,7 @@ class GPNew(Action):
         box_len = 11 + num_wobf_params + (
             len(self.tf_options) if len(self.tf_options) > 1 else 0
         )
-        long_box       = Box(low=-np.inf, high=np.inf, shape=(box_len,))
+        long_box = Box(low=-np.inf, high=np.inf, shape=(box_len,))
         return Dict({
             'gp_register': gp_register_sp,
             'long_box': long_box
@@ -561,15 +561,18 @@ class GPContinue(Action):
     def process_action(self, 
         in_vals: OrderedDict[str, np.ndarray|int|float|bool]
     ):
+        # Some refactoring would be good: this would make a good
+        # parent class to GPNew
+        arr = (torch.tanh(in_vals['misc_box'])[0] + 1)/2
         if self.gptb_list[in_vals['gp_register'].item()]:
             gp_register = in_vals['gp_register'].item()
-            crossover_rate = in_vals['misc_box'][0,0] # no scaling
-            mutation_rate = in_vals['misc_box'][0,1]  # no scaling
-            mutation_sd = in_vals['misc_box'][0,2]    # no scaling
+            crossover_rate = arr[0] # no scaling
+            mutation_rate = arr[1]  # no scaling
+            mutation_sd = arr[2]    # no scaling
             elitism =  int(
-                in_vals['misc_box'][0,3].item()*self.gptb_list[gp_register].pop
+                arr[3].item()*self.gptb_list[gp_register].pop
             ) if self.gptb_list[gp_register] else -1
-            temp_coeff = in_vals['misc_box'][0,4].item()*2
+            temp_coeff = arr[4].item()*2
         else:
             gp_register = -1
             crossover_rate = mutation_rate = mutation_sd = temp_coeff = 0.0

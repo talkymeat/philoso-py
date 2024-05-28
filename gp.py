@@ -315,6 +315,7 @@ class GPTreebank(TypeLabelledTreebank):
                 print(normed_scores) # scores/np.sum(scores), 
                 print(the_masses)
                 print('BWAA'+"HA"*48)
+                print(e)
                 raise e
         # However, if they sum to exactly zero, that is practically
         # certainly because all the trees are NANing out - in which case

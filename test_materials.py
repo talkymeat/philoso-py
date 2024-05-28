@@ -12,8 +12,8 @@ from model_time import ModelTime
 
 
 class DummyAgent:
-    def __init__(self, id):
-        self.id = id
+    def __init__(self, name):
+        self.name = name
 
 
 mt = ModelTime()
@@ -28,16 +28,17 @@ MEM = Archive(
     value='goodness',
 )
 
-PLOS1 = Publication(
+PLOS1 = Publication( 
     cols=['goodness'], 
     rows=10,
     model_time=mt,
-    users=AG,
+    agent_names={a.name: i for i, a in enumerate(AG)},
     types={'goodness': np.float64},
     tables=3,
     value='goodness',
     reward='ranked'
 )
+PLOS1.add_users(AG)
 
 
 class DummyTreeFactory:

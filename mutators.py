@@ -426,14 +426,19 @@ class CrossoverMutator(Mutator):
             #    being substituted out. Note these are only computed if the maximums
             #    are set - no need to do unnecessary computation
             pruned_size = sd.size - size
-            # Make a collection of all same-label nodes in the treebank EXCEPT the 
+            # Make an array of all same-label nodes in the treebank EXCEPT the 
             # substitution site, val
-            complement = val.label.nodes - val
-            # pick a random subtree from that collection
-            if not complement:
+            complement = (val.label.nodes - val).array()
+            # If there aren't any, never mind, cancel the mutation and use the original
+            # subtree
+            if not len(complement):
                 return val
-            subtree = self.rng.choice(complement.array())
-            sts, std = subtree.size(), subtree.depth()
+            # shuffle the array and pick the first subtree, using the index i,
+            # initialised to 0, to pick it
+            i=0
+            self.rng.shuffle(complement)
+            subtree = complement[i]
+            
             # Now, it must be checked that it's within size and/or depth bounds.
             # SizeDepth is set up to be Callable, such that calling `sd` with
             # values for the new output tree size and depth results in the size and
@@ -441,15 +446,15 @@ class CrossoverMutator(Mutator):
             # limits, and returns boolean, True if the update is successful, False
             # otherwise. Therefore, if the update succeeds, the loop condition is
             # broken
-            # n = 0
+            sts, std = subtree.size(), subtree.depth()
             while not sd(pruned_size+sts, max(sd.depth, pruned_depth+std)):
-                # If we have to try again, remove the no-good subtree from the pool
-                complement -= subtree
-                # If we drain the pool entirely, then the substitution is impossible,
+                # If it doesn't work, increment I and try again
+                i+=1
+                # If we run out of subtrees, then the substitution is impossible,
                 # and the original subtree will be returned
-                if not complement:
+                if i>=len(complement):
                     return val
-                subtree = self.rng.choice(complement.array())
+                subtree = complement[i]
                 # print('Size complement:', len(complement))
                 sts, std = subtree.size(), subtree.depth()
                 # print(f'trouble copying, n={n}')

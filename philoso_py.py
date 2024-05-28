@@ -78,7 +78,7 @@ class Model:
     async def get_rewards(self, name):
         while self.not_done:
             await asyncio.sleep(0.2)
-        reward_dict = self.reward_dict if self.reward_dict else sum_all(
+        reward_dict = self._reward_dict if self._reward_dict else sum_all(
             *[reward() for reward in self.rewards]
         )
         return reward_dict[name]
