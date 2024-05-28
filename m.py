@@ -230,20 +230,20 @@ class Exponentiable(Protocol):
 
 class MDict(dict):
     def __add__(self, other: dict) -> 'MDict':
-        return {**self, **other, **{k: self[k] + other[k] for k in self if k in other}}
+        return MDict({**self, **other, **{k: self[k] + other[k] for k in self if k in other}})
     
     def __radd__(self, other: dict) -> 'MDict':
         return self+other
     
     def __mul__(self, other: Mapping|Multiplicable) -> 'MDict':
         if isinstance(other, Mapping):
-            return {
+            return MDict({
                 M(k)*M(k_): M(v)*M(v_) 
                 for k, v in self.items() 
                 for k_, v_ in other.items()
-            }
+            })
         else:
-            return {k: M(v)*M(other) for k, v in self.items()}
+            return MDict({k: M(v)*M(other) for k, v in self.items()})
 
 
 CTDict: TypeAlias = MDict[Hashable, int]

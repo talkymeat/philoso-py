@@ -50,7 +50,8 @@ class GPNonTerminal(NonTerminal):
     >>> from gp import GPTreebank
     >>> import operators as ops
     >>> op = [ops.SUM, ops.PROD, ops.SQ, ops.CUBE, ops.POW]
-    >>> gp = GPTreebank(operators=op)
+    >>> from test_materials import DummyTreeFactory
+    >>> gp = GPTreebank(operators=op, tree_factory=DummyTreeFactory())
     >>> mewtwo = gp.tree("([float]<SUM>([float]<SQ>([int]$mu))([float]<SUM>([float]<PROD>([int]3)([int]$mu))([int]2)))")
     >>> mewtwo(mu=-2)
     0.0

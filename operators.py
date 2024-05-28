@@ -13,6 +13,7 @@ import warnings
 
 import re
 
+np.seterr(all='ignore')
 
 def _id(*args):
     return args
@@ -832,7 +833,7 @@ GT = Operator(
     _gt, 
     "GT",
     validator=conjoin_tests(
-        same_args_diff_rtn_validator_factory(float, int, float, bool),
+        same_args_diff_rtn_validator_factory(bool, int, float, bool),
         num_args_eq_validator(2)
     ), 
     return_validator=bool
@@ -856,7 +857,7 @@ EGT = Operator(
     _egt, 
     "EGT",
     validator=conjoin_tests(
-        same_args_diff_rtn_validator_factory(float, int, float, bool),
+        same_args_diff_rtn_validator_factory(bool, int, float, bool),
         num_args_eq_validator(2)
     ), 
     return_validator=bool
@@ -881,7 +882,7 @@ LT = Operator(
     _lt, 
     "LT",
     validator=conjoin_tests(
-        same_args_diff_rtn_validator_factory(float, int, float, bool),
+        same_args_diff_rtn_validator_factory(bool, int, float, bool),
         num_args_eq_validator(2)
     ), 
     return_validator=bool
@@ -901,7 +902,7 @@ ELT = Operator(
     _elt, 
     "ELT",
     validator=conjoin_tests(
-        same_args_diff_rtn_validator_factory(float, int, float, bool),
+        same_args_diff_rtn_validator_factory(bool, int, float, bool),
         num_args_eq_validator(2)
     ), 
     return_validator=bool
@@ -980,7 +981,7 @@ Returns:
 """
 
 def ternary_operator_factory(r_type):
-    def validate_ternary(*arg_types, return_type):
+    def validate_ternary(return_type, *arg_types):
         return len(
             arg_types
         )==3 and issubclass(
@@ -990,7 +991,7 @@ def ternary_operator_factory(r_type):
         )
     return Operator(
         np.where, 
-        f"TERN_{str(r_type).upper().replace('.', '_')}", 
+        f"TERN_{r_type.__name__.upper().replace('.', '_')}", 
         validator=validate_ternary,
         return_validator=r_type
     )

@@ -860,7 +860,7 @@ class VectorWorld(World):
         )
         return world
 
-
+# this contains a bunch of gymnasium.spaces stuff that isn't needed
 class SineWorld(World):
     @dataclass
     class SineWave:

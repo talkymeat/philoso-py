@@ -10,7 +10,10 @@ from copy import deepcopy
 from functools import wraps
 from utils import collect
 from grapher import Grapher
+import torch
+
 from icecream import ic
+
 
 # use pydantic/pandera to specify Dataframe should have 'trees: Tree' (can I make a custon dtype?) and 'fitness: float' XXX This isn't needed
 # class FitnessFunction(Protocol):
@@ -390,11 +393,11 @@ def get_errs(tree: GPNonTerminal, target: pd.Series=None, ivs=None) -> pd.Series
     errs = target - ests
     nans = np.isnan(ests).sum()
     if nans:
-        tree.metadata['hasnans'] = True
+        tree.tmp['hasnans'] = True
         if nans <= np.round(len(ests) * 0.04):
-            tree.metadata['penalty'] = tree.metadata.get('penalty', 1.0) * 2.0**nans
+            tree.tmp['penalty'] = tree.tmp.get('penalty', 1.0) * 2.0**nans
         else:
-            tree.metadata['survive'] = False
+            tree.tmp['survive'] = False
     return errs
 
 @scoreboard_pipeline_element(out_key='mse')
@@ -435,9 +438,17 @@ def heat(raw_fitness: float, temp_coeff: float, **kwargs):
     else:
         # No need to compute the mean is temp_coeff is 0
         temp = 0.0
-    return raw_fitness + temp
+    try:
+        return raw_fitness + temp
+    except Exception as e:
+        print('UW'*49+"U")
+        print(temp_coeff)
+        print(raw_fitness)
+        print(temp)
+        print('OW'*49+"O")
+        raise e
 
-def from_meta(varname: str, default=None):
+def from_tmp(varname: str, default=None):
     """ Outputs metadata attached to trees into a scoreboard column. 
     Common examples:
 
@@ -453,13 +464,13 @@ def from_meta(varname: str, default=None):
         Hasnans: Indicates that the tree generated NaNs
     """
     @scoreboard_pipeline_element(out_key=varname)
-    def get_meta(tree: GPNonTerminal, **kwargs):
-        return tree.metadata.get(varname, default)
-    return get_meta
+    def get_tmp(tree: GPNonTerminal, **kwargs):
+        return tree.tmp.get(varname, default)
+    return get_tmp
 
-penalty = from_meta('penalty', default=1)
-survive = from_meta('survive', default=True)
-hasnans = from_meta('hasnans', default=False)
+penalty = from_tmp('penalty', default=1)
+survive = from_tmp('survive', default=True)
+hasnans = from_tmp('hasnans', default=False)
 
 # @scoreboard_pipeline_element(out_key='penalty')
 # def penalty(tree: GPNonTerminal, **kwargs):
@@ -553,6 +564,62 @@ def clear(*to_clear: str, except_for: str|list[str]=None):
         dels = to_clear if to_clear else ['<ALL>'] + [f"-{exn}" for exn in except_for])
     return clr
 
+class SimpleGPScoreboardFactory:
+    def __init__(self, best_outvals, dv, def_fitness: str='irmse'):
+        self.def_fitness = def_fitness
+        self.best_outvals = best_outvals
+        self.dv = dv
+
+    def __call__(self, observatory: Observatory, temp_coeff, weights=None):
+        self.observatory = observatory
+        _weights = weights if weights is not None else [1, 0, 0]
+        temp_coeff = temp_coeff.item() if isinstance(temp_coeff, torch.Tensor) else temp_coeff
+        sb_kwargs = {
+            "temp_coeff": temp_coeff,
+            "obs": self.observatory,
+            "weights": _weights
+        }
+        pipeline          = [clear(except_for='tree'), size, depth]
+        match self.def_fitness:
+            case 'imse':
+                pipeline += [mse]
+            case 'irmse':
+                pipeline += [mse, rmse]
+            case 'isae':
+                pipeline += [sae]
+        pipeline         += [safe_inv(self.def_fitness[1:])]
+        if weights is not None:
+            pipeline     += [
+                                safe_inv('size'), 
+                                safe_inv('depth'), 
+                                weighted_sum(self.def_fitness, 'isize', 'idepth')
+                            ]
+            def_2_fitness = f"ws_{self.def_fitness}_isize_idepth"
+        else: 
+            def_2_fitness = self.def_fitness
+        if temp_coeff:
+            pipeline     += [rename(def_2_fitness, 'raw_fitness'), heat, rename("fitness", 'pre_fitness_1')]
+        else:
+            pipeline     += [rename(def_2_fitness, 'pre_fitness_1')]
+        pipeline         += [
+                                hasnans, 
+                                penalty, 
+                                divide('pre_fitness_1', 'penalty', out_key='pre_fitness_2'),
+                                survive, 
+                                multiply('pre_fitness_2', 'survive', out_key='pre_fitness_3'),
+                                nan_zero('pre_fitness_3', out_key='fitness'),  
+                            ]
+        def_outputs = collect(self.best_outvals, list) if self.best_outvals else None
+        dv = self.dv # XXX JAAAAAANK
+        for arg, val in (
+            ('def_outputs', def_outputs), 
+            ('dv', self.dv)
+        ):
+            val = eval(arg)
+            if val:
+                sb_kwargs[arg] = val 
+        return GPScoreboard(*pipeline, **sb_kwargs)
+
 class GPScoreboard(pd.DataFrame):
     """Extension to pandas.Dataframe to function as a scoreboard for GP,
     with a pipeline for fitness and record-keeping calculations
@@ -582,6 +649,9 @@ class GPScoreboard(pd.DataFrame):
     ] # Reserve these variable names so pandas doesn't think I'm trying to create
     # a column
 
+    # XXX TODO Pipeline visualiser
+    # TODO Scoreboard configurator
+
     def __init__(
             self,
             *pipeline: ScoreboardPipelineElement,
@@ -592,7 +662,7 @@ class GPScoreboard(pd.DataFrame):
             provide: str|Collection[str]='tree', 
             require: str|Collection[str]='fitness',
             def_outputs: str|Collection[str]=None,
-            to_graph: Collection[str] = None,
+            # to_graph: Collection[str] = None,
             **kwargs
         ) -> None:
         super().__init__()
@@ -652,6 +722,17 @@ class GPScoreboard(pd.DataFrame):
         self._pipeline = pipeline
         self._post_process_pipeline()
 
+    # XXX TODO XXX This is good enough for my first tests, but needs to generalise
+    @property
+    def sb_params(self):
+        return {
+            'temp_coeff': self.kwargs['temp_coeff'],
+            'wt_fitness': self.kwargs['weights'][0],
+            'wt_size': self.kwargs['weights'][1],
+            'wt_depth': self.kwargs['weights'][2]
+        } 
+    
+
     def _post_process_pipeline(self):
         final_cols, error = self._validate_pipeline()
         if error:
@@ -663,10 +744,14 @@ class GPScoreboard(pd.DataFrame):
         elif self.def_outputs:
             for d_o in self.def_outputs:
                 if d_o not in final_cols:
+                    print('dshfs'*20)
+                    print(d_o)
+                    print(final_cols)
+                    print("as"+ ('A'*60) + 'sa')
                     raise ValueError(
                         "A value listed as a default scoreboard output, " +
                         f"{d_o}, is not in the final outputs of the tree" +
-                        "scoring pipeline"
+                        f"scoring pipeline. Valid values are: {final_cols}"
                     )
         else:
             self.def_outputs = final_cols
@@ -752,6 +837,7 @@ class GPScoreboard(pd.DataFrame):
                 )]
         return list(cols), None
     
+    # TODO XXX make this a setter, self.obs; make a getter
     def dv_obs_check(self, dv: str=None, obs: Observatory=None):
         self.obs = self.obs if obs is None else obs
         if not self.obs:
@@ -810,8 +896,9 @@ class GPScoreboard(pd.DataFrame):
 
         >>> import operators as ops
         >>> from gp import *
+        >>> from test_materials import DummyTreeFactory
         >>> op = [ops.SUM, ops.PROD]
-        >>> gp = GPTreebank(operators = op)
+        >>> gp = GPTreebank(operators = op, tree_factory=DummyTreeFactory())
         >>> t = [
         ...     gp.tree("([float]<SUM>([int]0)([int]1))"),
         ...     gp.tree("([float]<SUM>([int]2)([int]3))"),
@@ -826,7 +913,7 @@ class GPScoreboard(pd.DataFrame):
         ...     best = gps.k_best(k)
         ...     print(len(best))
         ...     print(sorted([tree() for tree in best])) 
-        ...     print([tt.metadata["to_delete"] for tt in t])
+        ...     print([tt.tmp["to_delete"] for tt in t])
         0
         []
         [True, True, True, True, True]
@@ -850,7 +937,7 @@ class GPScoreboard(pd.DataFrame):
         >>> nr = {'tree': gp.tree("([float]<SUM>([int]12)([int]13))"), 'fitness': -12.34}
         >>> gps.loc[len(gps)] = nr
         >>> best = gps.k_best(1, mark_4_del=False)
-        >>> print([tt.metadata.get("to_delete", None) for tt in gps['tree']])
+        >>> print([tt.tmp.get("to_delete", None) for tt in gps['tree']])
         [False, False, False, False, False, None, None]
         >>> print(best[0]()) 
         21.0
@@ -858,11 +945,11 @@ class GPScoreboard(pd.DataFrame):
         best = self.nlargest(k, 'fitness')
         if tree_only:
             best = best['tree']
-        else:
-            ic(best)
+        # else:
+        #     ic(best)
         if mark_4_del:
-            self['tree'].apply(lambda t: t.metadata.__setitem__('to_delete', True))
-            best.apply(lambda t: t.metadata.__setitem__('to_delete', False))
+            self['tree'].apply(lambda t: t.tmp.__setitem__('to_delete', True))
+            best.apply(lambda t: t.tmp.__setitem__('to_delete', False))
         return list(best) if tree_only else best.reset_index()
 
     def winner(self, *cols, except_for: str|list[str]=None, **kwargs)-> dict: 
@@ -890,8 +977,9 @@ class GPScoreboard(pd.DataFrame):
         >>> import operators as ops
         >>> from gp import GPTreebank
         >>> from observatories import StaticObservatory
-        >>> op = [ops.PROD, ops.EQ, ops.TERN, ops.GT]
-        >>> gp = GPTreebank(operators = op, temp_coeff=0.5)
+        >>> from test_materials import DummyTreeFactory
+        >>> op = [ops.PROD, ops.EQ, ops.TERN_FLOAT, ops.GT]
+        >>> gp = GPTreebank(operators = op, temp_coeff=0.5, tree_factory=DummyTreeFactory)
         >>> iv = [0., 2., 4., 6., 8.,]
         >>> dv0 = [0., 0., 0., 0., 0.]
         >>> dv1 = [0., 10., 20., 30., 40.]
@@ -958,14 +1046,14 @@ class GPScoreboard(pd.DataFrame):
         ...     t_.delete()
         >>> wrong = [
         ...     gp.tree("([float]<PROD>([float]$x)([float]np.nan))"),
-        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<EQ>([float]$x)([float]1.))([float]1.0)([float]np.nan)))"),
-        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<EQ>([float]$x)([float]1.))([float]np.nan)([float]1.0)))"),
-        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<GT>([float]$x)([float]1.92))([float]np.nan)([float]1.0)))"),
-        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<GT>([float]$x)([float]1.93))([float]np.nan)([float]1.0)))"),
-        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<GT>([float]$x)([float]1.95))([float]np.nan)([float]1.0)))"),
-        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<GT>([float]$x)([float]1.96))([float]np.nan)([float]1.0)))"),
-        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<GT>([float]$x)([float]1.98))([float]np.nan)([float]1.0)))"),
-        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN>([bool]<GT>([float]$x)([float]1.99))([float]np.nan)([float]1.0)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN_FLOAT>([bool]<EQ>([float]$x)([float]1.))([float]1.0)([float]np.nan)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN_FLOAT>([bool]<EQ>([float]$x)([float]1.))([float]np.nan)([float]1.0)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN_FLOAT>([bool]<GT>([float]$x)([float]1.92))([float]np.nan)([float]1.0)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN_FLOAT>([bool]<GT>([float]$x)([float]1.93))([float]np.nan)([float]1.0)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN_FLOAT>([bool]<GT>([float]$x)([float]1.95))([float]np.nan)([float]1.0)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN_FLOAT>([bool]<GT>([float]$x)([float]1.96))([float]np.nan)([float]1.0)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN_FLOAT>([bool]<GT>([float]$x)([float]1.98))([float]np.nan)([float]1.0)))"),
+        ...     gp.tree("([float]<PROD>([float]$x)([float]<TERN_FLOAT>([bool]<GT>([float]$x)([float]1.99))([float]np.nan)([float]1.0)))"),
         ...     gp.tree("([float]<PROD>([float]$x)([float]1.0))")
         ... ]
         >>> cols = list(gps2(wrong).columns)
@@ -1039,165 +1127,166 @@ class GPScoreboard(pd.DataFrame):
         )-> dict:
         return self(trees, **kwargs).winner(*cols, **kwargs)
 
-class SimpleScoreboardFactory(Actionable):
-    """Generates scoreboards for RL-generated GP runs
+# class SimpleScoreboardFactory(Actionable):
+#     """Generates scoreboards for RL-generated GP runs
 
-    >>> import operators as ops
-    >>> from gp import GPTreebank
-    >>> from observatories import StaticObservatory
-    >>> op = [ops.PROD, ops.EQ, ops.TERN, ops.GT]
-    >>> gp = GPTreebank(operators = op, temp_coeff=0.5)
-    >>> iv = [0., 2., 4., 6., 8.,]
-    >>> dv0 = [0., 0., 0., 0., 0.]
-    >>> dv1 = [0., 10., 20., 30., 40.]
-    >>> df = pd.DataFrame({'x': iv, 'y0': dv0, 'y1': dv1})
-    >>> t = [
-    ...     gp.tree("([float]<PROD>([float]$x)([int]1))"),
-    ...     gp.tree("([float]<PROD>([float]$x)([int]3))"),
-    ...     gp.tree("([float]<PROD>([float]$x)([int]5))"),
-    ...     gp.tree("([float]<PROD>([float]$x)([int]7))"),
-    ...     gp.tree("([float]<PROD>([float]$x)([int]9))"),
-    ...     gp.tree("([float]<PROD>([float]6.)([int]6))")
-    ... ]
-    >>> obs0 = StaticObservatory('x', 'y0', sources=df, obs_len=5)
-    >>> obs1 = StaticObservatory('x', 'y1', sources=df, obs_len=5)
-    >>> ssf = SimpleScoreboardFactory()
-    >>> params = np.array([0.5, 1., 2., 3., 0.04, 0.05], dtype=np.float32) 
-    >>> sb0 = ssf.act(params, obs0, max_size=20, max_depth=8, best_outvals='fitness', dv='y')
-    >>> cols = list(sb0(t).columns) #[list(sb0.columns)[1:]]
-    >>> (cols[:7])
-    ['tree', 'size', 'depth', 'mse', 'imse', 'rmse', 'irmse']
-    >>> cols[7:13]
-    ['sae', 'isae', 'n_minus_size', 'n_minus_depth', 'raw_fitness', 'pre_fitness_1']
-    >>> cols[13:]
-    ['hasnans', 'penalty', 'pre_fitness_2', 'survive', 'pre_fitness_3', 'fitness']
-    >>> sb0[cols[1:7]]
-       size  depth     mse      imse       rmse     irmse
-    0     3      2    24.0  0.040000   4.898979  0.169521
-    1     3      2   216.0  0.004608  14.696938  0.063707
-    2     3      2   600.0  0.001664  24.494897  0.039224
-    3     3      2  1176.0  0.000850  34.292856  0.028334
-    4     3      2  1944.0  0.000514  44.090815  0.022177
-    5     3      2  1296.0  0.000771  36.000000  0.027027
-    >>> sb0[cols[7:13]]
-        sae      isae  n_minus_size  n_minus_depth  raw_fitness  pre_fitness_1
-    0   4.0  0.200000            17              6     1.959042       2.614677
-    1  12.0  0.076923            17              6     1.342791       1.998426
-    2  20.0  0.047619            17              6     1.202968       1.858603
-    3  28.0  0.034483            17              6     1.140967       1.796602
-    4  36.0  0.027027            17              6     1.105950       1.761585
-    5  36.0  0.027027            17              6     1.115906       1.771541
-    >>> sb0[cols[13:]]
-       hasnans  penalty  pre_fitness_2  survive  pre_fitness_3   fitness
-    0    False        1       2.614677     True       2.614677  2.614677
-    1    False        1       1.998426     True       1.998426  1.998426
-    2    False        1       1.858603     True       1.858603  1.858603
-    3    False        1       1.796602     True       1.796602  1.796602
-    4    False        1       1.761585     True       1.761585  1.761585
-    5    False        1       1.771541     True       1.771541  1.771541
-    """
-    def __init__(self, 
-            use_irmse: bool=False,
-            use_imse: bool=True,
-            use_isae: bool=True,
-            use_size: bool=True,
-            use_depth: bool=True,
-            # other_measures: dict[str, ScoreboardPipelineElement]=None, XXX later
-            # use_others: dict[str, bool]=None
-        ):
-        self.use_imse = use_imse
-        self.use_irmse = use_irmse
-        self.use_isae = use_isae
-        self.use_size = use_size
-        self.use_depth = use_depth
-        self.fitness_factors = []
-        num_measures = sum(
-            [
-                self.use_irmse, self.use_imse, self.use_isae, 
-                self.use_size, self.use_depth
-            ] # + list(use_others.values())
-        )
-        self.pipeline_setup = [clear(except_for='tree'), size, depth]
-        if self.use_imse or self.use_irmse:
-            self.pipeline_setup += [mse] 
-            if self.use_imse:
-                self.pipeline_setup += [safe_inv('mse')]
-                self.fitness_factors += ['imse']
-            if self.use_irmse:
-                self.pipeline_setup += [rmse, safe_inv('rmse')]
-                self.fitness_factors += ['irmse']
-        if self.use_isae:
-            self.pipeline_setup += [sae, safe_inv('sae')]
-            self.fitness_factors += ['isae']
-        self.pipeline_post = [
-            hasnans,
-            penalty, 
-            divide('pre_fitness_1', 'penalty', out_key='pre_fitness_2'),
-            survive, 
-            multiply('pre_fitness_2', 'survive', out_key='pre_fitness_3'),
-            nan_zero('pre_fitness_3', out_key='fitness'),  
-        ]
-        if num_measures == 0:
-            raise ValueError('Scoreboard uses no fitness measures at all!')
-        elif num_measures == 1:
-            num_measures = 0
-        self._act_param_space = Box(              # First term is temp_coeff, the rest are 
-            low=np.array([0.0]*(num_measures+1), dtype=np.float32),           # weights on fitness measures: however,
-            high=np.array([np.inf] + ([1.0]*num_measures), dtype=np.float32), # if only one measure is used no weights
-            dtype=np.float32)                     # are needed
+#     >>> import operators as ops
+#     >>> from gp import GPTreebank
+#     >>> from observatories import StaticObservatory
+#     >>> from test_materials import DummyTreeFactory
+#     >>> op = [ops.PROD, ops.EQ, ops.TERN_FLOAT, ops.GT]
+#     >>> gp = GPTreebank(operators = op, temp_coeff=0.5, tree_factory=DummyTreeFactory())
+#     >>> iv = [0., 2., 4., 6., 8.,]
+#     >>> dv0 = [0., 0., 0., 0., 0.]
+#     >>> dv1 = [0., 10., 20., 30., 40.]
+#     >>> df = pd.DataFrame({'x': iv, 'y0': dv0, 'y1': dv1})
+#     >>> t = [
+#     ...     gp.tree("([float]<PROD>([float]$x)([int]1))"),
+#     ...     gp.tree("([float]<PROD>([float]$x)([int]3))"),
+#     ...     gp.tree("([float]<PROD>([float]$x)([int]5))"),
+#     ...     gp.tree("([float]<PROD>([float]$x)([int]7))"),
+#     ...     gp.tree("([float]<PROD>([float]$x)([int]9))"),
+#     ...     gp.tree("([float]<PROD>([float]6.)([int]6))")
+#     ... ]
+#     >>> obs0 = StaticObservatory('x', 'y0', sources=df, obs_len=5)
+#     >>> obs1 = StaticObservatory('x', 'y1', sources=df, obs_len=5)
+#     >>> ssf = SimpleScoreboardFactory(use_irmse=True)
+#     >>> params = np.array([0.5, 1., 2., 3., 0.04, 0.05], dtype=np.float32) 
+#     >>> sb0 = ssf.act(params, obs0, max_size=20, max_depth=8, best_outvals='fitness', dv='y')
+#     >>> cols = list(sb0(t).columns) #[list(sb0.columns)[1:]]
+#     >>> (cols[:7])
+#     ['tree', 'size', 'depth', 'mse', 'imse', 'rmse', 'irmse']
+#     >>> cols[7:13]
+#     ['sae', 'isae', 'n_minus_size', 'n_minus_depth', 'raw_fitness', 'pre_fitness_1']
+#     >>> cols[13:]
+#     ['hasnans', 'penalty', 'pre_fitness_2', 'survive', 'pre_fitness_3', 'fitness']
+#     >>> sb0[cols[1:7]]
+#        size  depth     mse      imse       rmse     irmse
+#     0     3      2    24.0  0.040000   4.898979  0.169521
+#     1     3      2   216.0  0.004608  14.696938  0.063707
+#     2     3      2   600.0  0.001664  24.494897  0.039224
+#     3     3      2  1176.0  0.000850  34.292856  0.028334
+#     4     3      2  1944.0  0.000514  44.090815  0.022177
+#     5     3      2  1296.0  0.000771  36.000000  0.027027
+#     >>> sb0[cols[7:13]]
+#         sae      isae  n_minus_size  n_minus_depth  raw_fitness  pre_fitness_1
+#     0   4.0  0.200000            17              6     1.959042       2.614677
+#     1  12.0  0.076923            17              6     1.342791       1.998426
+#     2  20.0  0.047619            17              6     1.202968       1.858603
+#     3  28.0  0.034483            17              6     1.140967       1.796602
+#     4  36.0  0.027027            17              6     1.105950       1.761585
+#     5  36.0  0.027027            17              6     1.115906       1.771541
+#     >>> sb0[cols[13:]]
+#        hasnans  penalty  pre_fitness_2  survive  pre_fitness_3   fitness
+#     0    False        1       2.614677     True       2.614677  2.614677
+#     1    False        1       1.998426     True       1.998426  1.998426
+#     2    False        1       1.858603     True       1.858603  1.858603
+#     3    False        1       1.796602     True       1.796602  1.796602
+#     4    False        1       1.761585     True       1.761585  1.761585
+#     5    False        1       1.771541     True       1.771541  1.771541
+#     """
+#     def __init__(self, 
+#             use_irmse: bool=False,
+#             use_imse: bool=True,
+#             use_isae: bool=True,
+#             use_size: bool=True,
+#             use_depth: bool=True,
+#             # other_measures: dict[str, ScoreboardPipelineElement]=None, XXX later
+#             # use_others: dict[str, bool]=None
+#         ):
+#         self.use_imse = use_imse
+#         self.use_irmse = use_irmse
+#         self.use_isae = use_isae
+#         self.use_size = use_size
+#         self.use_depth = use_depth
+#         self.fitness_factors = []
+#         num_measures = sum(
+#             [
+#                 self.use_irmse, self.use_imse, self.use_isae, 
+#                 self.use_size, self.use_depth
+#             ] # + list(use_others.values())
+#         )
+#         self.pipeline_setup = [clear(except_for='tree'), size, depth]
+#         if self.use_imse or self.use_irmse:
+#             self.pipeline_setup += [mse] 
+#             if self.use_imse:
+#                 self.pipeline_setup += [safe_inv('mse')]
+#                 self.fitness_factors += ['imse']
+#             if self.use_irmse:
+#                 self.pipeline_setup += [rmse, safe_inv('rmse')]
+#                 self.fitness_factors += ['irmse']
+#         if self.use_isae:
+#             self.pipeline_setup += [sae, safe_inv('sae')]
+#             self.fitness_factors += ['isae']
+#         self.pipeline_post = [
+#             hasnans,
+#             penalty, 
+#             divide('pre_fitness_1', 'penalty', out_key='pre_fitness_2'),
+#             survive, 
+#             multiply('pre_fitness_2', 'survive', out_key='pre_fitness_3'),
+#             nan_zero('pre_fitness_3', out_key='fitness'),  
+#         ]
+#         if num_measures == 0:
+#             raise ValueError('Scoreboard uses no fitness measures at all!')
+#         elif num_measures == 1:
+#             num_measures = 0
+#         self._act_param_space = Box(              # First term is temp_coeff, the rest are 
+#             low=np.array([0.0]*(num_measures+1), dtype=np.float32),           # weights on fitness measures: however,
+#             high=np.array([np.inf] + ([1.0]*num_measures), dtype=np.float32), # if only one measure is used no weights
+#             dtype=np.float32)                     # are needed
 
-    def act(self, 
-            params: np.ndarray, 
-            observatory: Observatory, 
-            max_size: int=0, 
-            max_depth: int=0,
-            best_outvals: str|list[str]=None,
-            dv: str=None
-        ):
-        sb_kwargs = {
-            "temp_coeff": params[0],
-            "obs": observatory,
-        }
-        def_outputs = collect(best_outvals, list) if best_outvals else None
-        for arg, val in (
-            ('def_outputs', def_outputs), 
-            ('dv', dv), 
-        ):
-            val = eval(arg)
-            if val:
-                sb_kwargs[arg] = val 
-        fitness_factors = []
-        pipeline = []
-        if self.use_size:
-            if max_size:
-                pipeline += [n_minus('size', n=max_size)]
-                fitness_factors += ['n_minus_size']
-            else:
-                pipeline += [safe_inv('size')]
-                fitness_factors += ['isize']
-        if self.use_depth:
-            if max_depth:
-                pipeline += [n_minus('depth', n=max_depth)]
-                fitness_factors += ['n_minus_depth']
-            else:
-                pipeline += [safe_inv('depth')]
-                fitness_factors += ['idepth']
-        if len(fitness_factors) > 1:
-            pipeline += [weighted_sum(
-                *(self.fitness_factors+fitness_factors), 
-                weights=params[1:]
-            )]
-            def_fitness = 'ws_' + ('_'.join(self.fitness_factors + fitness_factors))
-        else:
-            def_fitness = fitness_factors[0]
-        pipeline += [
-            rename(def_fitness, 'raw_fitness'), 
-            heat, 
-            rename("fitness", 'pre_fitness_1')
-        ]
-        return GPScoreboard(
-            *self.pipeline_setup+pipeline+self.pipeline_post, **sb_kwargs
-        )
+#     def act(self, 
+#             params: np.ndarray, 
+#             observatory: Observatory, 
+#             max_size: int=0, 
+#             max_depth: int=0,
+#             best_outvals: str|list[str]=None,
+#             dv: str=None
+#         ):
+#         sb_kwargs = {
+#             "temp_coeff": params[0],
+#             "obs": observatory,
+#         }
+#         def_outputs = collect(best_outvals, list) if best_outvals else None
+#         for arg, val in (
+#             ('def_outputs', def_outputs), 
+#             ('dv', dv), 
+#         ):
+#             val = eval(arg)
+#             if val:
+#                 sb_kwargs[arg] = val 
+#         fitness_factors = []
+#         pipeline = []
+#         if self.use_size:
+#             if max_size:
+#                 pipeline += [n_minus('size', n=max_size)]
+#                 fitness_factors += ['n_minus_size']
+#             else:
+#                 pipeline += [safe_inv('size')]
+#                 fitness_factors += ['isize']
+#         if self.use_depth:
+#             if max_depth:
+#                 pipeline += [n_minus('depth', n=max_depth)]
+#                 fitness_factors += ['n_minus_depth']
+#             else:
+#                 pipeline += [safe_inv('depth')]
+#                 fitness_factors += ['idepth']
+#         if len(fitness_factors) > 1:
+#             pipeline += [weighted_sum(
+#                 *(self.fitness_factors+fitness_factors), 
+#                 weights=params[1:]
+#             )]
+#             def_fitness = 'ws_' + ('_'.join(self.fitness_factors + fitness_factors))
+#         else:
+#             def_fitness = fitness_factors[0]
+#         pipeline += [
+#             rename(def_fitness, 'raw_fitness'), 
+#             heat, 
+#             rename("fitness", 'pre_fitness_1')
+#         ]
+#         return GPScoreboard(
+#             *self.pipeline_setup+pipeline+self.pipeline_post, **sb_kwargs
+#         )
     
 
 def main():

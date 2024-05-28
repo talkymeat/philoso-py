@@ -1,7 +1,7 @@
-from typing import Type, Union, Iterable, Mapping, Callable, TypeAlias, TypeVar
-from abc import ABC, abstractmethod, abstractproperty
+from typing import Type, Union, Iterable, Mapping, Callable, TypeAlias, TypeVar, Sequence
+from abc import ABC, abstractmethod
 import operators as ops
-from trees import Terminal, NonTerminal, Tree
+from trees import Terminal, NonTerminal, Tree, SubstitutionSite
 from gp_trees import GPTerminal, GPNonTerminal
 import pandas as pd
 import numpy as np
@@ -14,6 +14,8 @@ from observatories import GenFunc
 from treebanks import Treebank
 from rl_bases import Actionable
 from gymnasium.spaces import Box
+from tree_funcs import get_operators
+from operators import Operator
 
 T = TypeVar('T')
 Var:   TypeAlias = tuple[type, str]
@@ -28,8 +30,9 @@ class TreeFactory(ABC):
     def __call__(self, *vars: Iterable[str], treebank: Treebank=None) -> Tree:
         pass
 
-    @abstractproperty
-    def operators(self):
+    @property
+    @abstractmethod
+    def op_set(self)->set[Operator]:
         pass
 
     @property
@@ -42,6 +45,14 @@ class TreeFactory(ABC):
             self.np_random = seed
         else:
             self.np_random = np.random.Generator(np.random.PCG64(seed))
+    
+    @property
+    def tf_params(self):
+        return {}
+    
+    @property
+    def prefix(self):
+        pass
 
 
 class TestTreeFactory(TreeFactory):
@@ -55,13 +66,21 @@ class TestTreeFactory(TreeFactory):
     def __call__(self, *vars: Iterable[str], treebank: Treebank=None) -> Tree:
         return self.start_tree.copy_out(treebank if treebank else self.treebank)
     
+    @property
+    def op_set(self):
+        return get_operators(self.start_tree)
+    
+    @property
+    def prefix(self):
+        return "test"
+    
 class CompositeTreeFactory(TreeFactory):
     def __init__(self, 
-            treebank: Treebank, 
             tree_factories: list[TreeFactory], 
             weights: Iterable[float|int], 
             *args,
             seed: int|np.random.Generator|None = None, 
+            treebank: Treebank|None = None, 
             **kwargs):
         if weights and len(weights) != len(tree_factories):
             raise ValueError(
@@ -71,11 +90,12 @@ class CompositeTreeFactory(TreeFactory):
             tf.seed = seed
         self.tree_factories = tree_factories
         self.weights = weights
-        self.set_treebank(treebank)
+        if treebank:
+            self.set_treebank(treebank)
 
     def set_treebank(self, treebank: Treebank):
         for tf in self.tree_factories:
-            tf.treebank = treebank
+            tf.set_treebank(treebank)
 
     def __call__(self, *vars: Iterable[str], treebank: Treebank=None) -> Tree:
         return self.np_random.choice(
@@ -105,11 +125,22 @@ class CompositeTreeFactory(TreeFactory):
                 tf.seed = seed    
     
     @property
-    def operators(self):
+    def op_set(self)->set[Operator]:
         ops = set()
         for tf in self.tree_factories:
-            ops |= set(tf.operators)
+            ops |= set(tf.op_set)
         return ops
+    
+    @property
+    def tf_params(self):
+        param_dict = {f"{tf.prefix}_weight": weight for tf, weight in zip (self.tree_factories, self.weights)}
+        for tf in self.tree_factories:
+            param_dict = {**param_dict, **tf.tf_params}
+        return param_dict
+    
+    @property
+    def prefix(self):
+        return ""
 
 class RandomPolynomialFactory(TreeFactory):
     """A TreeFactory which makes random trees representing polynomials of a specified
@@ -125,19 +156,26 @@ class RandomPolynomialFactory(TreeFactory):
 
     def __init__(
             self,
-            params: np.ndarray,
+            params: np.ndarray|None=None,
             treebank: Treebank = None,
-            seed: int|list[int]|None = None
+            seed: int|list[int]|None = None # XXX get rid of this default
         ):
         self.seed = seed
-        self.order = int(params[0])
-        self.const_min = params[1]
-        self.const_max = params[2]
+        if params is not None:
+            self.order = int(params[0])
+            self.const_min = params[1]
+            self.const_max = params[2]
+        else:
+            self.order = 3
+            self.const_min = -1.0
+            self.const_max = 1.0
         if self.const_min > self.const_max:
             self.const_min, self.const_max = self.const_max, self.const_min
         if treebank:
             self.set_treebank(treebank)
-        self._operators = {
+        else:
+            self.treebank = None
+        self.operators = {
             "SUM": ops.SUM,
             "PROD": ops.PROD,
             "SQ": ops.SQ,
@@ -146,10 +184,18 @@ class RandomPolynomialFactory(TreeFactory):
         }
         if treebank:
             self.treebank.operators = self.operators
+    
+    @property
+    def tf_params(self):
+        return {
+            "rpf_const_min": self.const_min,
+            "rpf_const_max": self.const_max,
+            "rpf_order": self.order
+        }
 
     @property
-    def operators(self):
-        return self._operators
+    def op_set(self)->set[Operator]:
+        return set(self.operators.values())
 
     def _poly_terms(self, vars_: Iterable[str], order: int) -> tuple[tuple[str|int]]:
         """Generates a tuple of tuples, in which each tuple represents a term of 
@@ -345,7 +391,7 @@ class RandomPolynomialFactory(TreeFactory):
                 *args
             )
         else:
-            raise ValueError('op_name must be in the tree factory\'s operators dict')
+            raise ValueError(f'op_name "{op_name}" must be in the tree factory\'s operators dict, {self.operators}')
 
     def set_treebank(self, treebank: Treebank):
         self.treebank = treebank
@@ -446,6 +492,10 @@ class RandomPolynomialFactory(TreeFactory):
                 term_subtrees.append(self._binarise_tree('PROD', var_pows, initial=treebank.T(self.treebank, float, float(coeff)), nt=treebank.N))
         # Finally, the terms are combined in a binary tree with 'SUM'
         return self._binarise_tree('SUM', term_subtrees, nt=treebank.N)
+    
+    @property
+    def prefix(self):
+        return 'poly'
 
 class TreeFactoryFactory(Actionable):
     """Don't look at me."""
@@ -466,46 +516,102 @@ class RandomTreeFactory(TreeFactory):
 
     @dataclass
     class NTTemplate:
-        root: type
         operator: ops.Operator
-        child_types: tuple[type]
+        root: type
+        children: Sequence[type]
+        treebank: Treebank
 
         def __post_init__(self):
             """Checks that the TreeTemplate is typesafe with the Operator.
 
-            >>> RandomTreeFactory.TreeTemplate(tuple, ops.ID, child_types=(float, int, str))._is_valid()
-            True
+            >>> from gp import GPTreebank
+            >>> gptb = GPTreebank()
+            >>> RandomTreeFactory.NTTemplate(root=tuple, operator=ops.ID, children=(float, int, str), treebank=gptb)
+            (float, int, str) -> tuple
+            >>> RandomTreeFactory.NTTemplate(root=str, operator=ops.SUM, children=(int, int), treebank=gptb)
+            Traceback (most recent call last):
+                ...
+            TypeError: root: str and children: (int, int) is not a valid template for Operator <SUM>
+            >>> RandomTreeFactory.NTTemplate(root=int, operator=ops.SUM, children=(str, int), treebank=gptb)
+            Traceback (most recent call last):
+                ...
+            TypeError: root: int and children: (str, int) is not a valid template for Operator <SUM>
             """
-            if not issubclass(self.root, self.operator.return_type):
-                raise ValueError()
-            # return self.operator._type_seq_legal(*self.child_types) and (
-            #     self.var_data
-            #     if isinstance(RandomTreeFactory.tn.type_ify(self.var_data), self.root)
-            #     else isinstance(self.operator.return_type, self.root)
-            # )
+            if not self.operator.is_valid(self.root, *self.children):
+                raise TypeError(
+                    f"root: {self.root.__name__} and children: (" +
+                    f"{', '.join([t.__name__ for t in self.children])}) is not a valid" + 
+                    f" template for Operator {self.operator}")
+            
+        def __str__(self):
+            """Describes the subtree represented by the TreeTemplate in function
+            notation, showing the parameter types and return type.
 
-        # def __str__(self):
-        #     """Describes the subtree represented by the TreeTemplate in function
-        #     notation, showing the parameter types and return type.
+            >>> from gp import GPTreebank
+            >>> gptb = GPTreebank()
+            >>> tt = RandomTreeFactory.NTTemplate(root=float, operator=ops.SUM, children = (float, int, float), treebank=gptb)
+            >>> print(tt)
+            SUM(float, int, float) -> float
+            """
+            param_str = ", ".join([c.__name__ for c in self.children])
+            return f"{self.operator.name}({param_str}) -> {self.root.__name__!s}"
+        
+        def __repr__(self):
+            return str(self)
+        
+        def __call__(self):
+            """Generates a depth-1 subtree"""
+            return GPNonTerminal(
+                self.treebank, 
+                self.root, 
+                *[
+                    SubstitutionSite(self.treebank, child, i) 
+                    for i, child 
+                    in enumerate(self.children)
+                ]
+            )
+        
+    @dataclass
+    class ConstTemplate:
+        root: type[T]
+        genfunc: Callable[[], T]
+        treebank: Treebank
 
-        #     XXX FIXME
+        def __call__(self):
+            """
+            
+            >>> from gp import GPTreebank
+            >>> gf1 = lambda: 2
+            >>> gf2 = lambda: 2.0
+            >>> gf3 = lambda: 'bollocks'
+            >>> gptb = GPTreebank()
+            >>> ct1 = RandomTreeFactory.ConstTemplate(int, gf1, gptb)
+            >>> ct1()
+            tree("([int]2)")
+            """
+            x = self.genfunc()
+            if isinstance(x, self.root):
+                return GPTerminal(self.treebank, self.root, x)
+            raise TypeError(
+                f"genfunc for ConstTemplate {self.root.__name__} returned " +
+                f"{x}, which is not a {self.root.__name__}"
+            )
+        
+        def __str__(self):
+            return f"Const k: {self.root}"
+        
+    @dataclass
+    class VarTemplate:
+        root: type[T]
+        name: str
+        treebank: Treebank
 
-        #     Exception raised:
-        #         Traceback (most recent call last):
-        #         File "/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/doctest.py", line 1348, in __run
-        #             exec(compile(example.source, filename, "single",
-        #         File "<doctest __main__.RandomTreeFactory.TreeTemplate.__str__[0]>", line 1, in <module>
-        #             tt = RandomTreeFactory.TreeTemplate(root=float, operator=ops.SUM, child_types = (float, int, float))
-        #         TypeError: RandomTreeFactory.TreeTemplate.__init__() missing 1 required positional argument: 'var_data'
+        def __call__(self):
+            return GPTerminal(self.treebank, self.root, f'${self.name}')
+        
+        def __str__(self):
+            return f"Var ${self.name}: {self.root}"
 
-        #     >>> tt = RandomTreeFactory.TreeTemplate(root=float, operator=ops.SUM, child_types = (float, int, float))
-        #     >>> print(tt)
-        #     SUM(a0: float, a1: int, a2: float) -> float
-        #     """
-        #     if self.var_data:
-        #         return f"({self.root.__name__}: {self.var_data.name})"
-        #     param_str = ", ".join([f"a{i}: {c.__name__!s}" for i, c in enumerate(self.child_types)])
-        #     return f"{self.operator.name}({param_str}) -> {self.root.__name__!s}"
 
     def __init__(self,
             treebank, templates, root_label, max_size, *args,
@@ -526,7 +632,7 @@ class RandomTreeFactory(TreeFactory):
             if not tt._is_valid():
                 raise AttributeError(f"{tt!s} is not a valid subtree template")
             parent_types.add(tt.root)
-            root_types.update(tt.child_types)
+            root_types.update(tt.children)
         if root_types == parent_types:
             return templates
         intersect = root_types & parent_types
@@ -551,6 +657,14 @@ class RandomTreeFactory(TreeFactory):
             "set P of parent nodes defines the set of subtrees that can " +
             "fill the places in Union(S, C): however, " +
             f"{': and '.join([x for x in problems])}.")
+    
+    @property
+    def prefix(self):
+        return 'rand'
+    
+    @property
+    def op_set(self)->set[Operator]:
+        return set()
 
     def __call__(self, *vars: Iterable[str]) -> Tree:
         ...

@@ -255,7 +255,7 @@ class Treebank:
         """
         # if the treestr is valid, this regex will have exactly one match
         m = re.match(
-            r"\((\[(?P<label>[^\]]*)\])?(\<(?P<operator>[A-Z]+)\>)?" +
+            r"\((\[(?P<label>[^\]]*)\])?(\<(?P<operator>[A-Z_]+)\>)?" +
             r"(?P<node_data>\{.*\})?((?P<children>\(.*\)*?)|(?P<leaf>[^\)]*))\)",
             treestr
         )
@@ -284,7 +284,7 @@ class Treebank:
         if oper80r:
             operator = self.operators.get(oper80r, None)
             if not operator:
-                raise AttributeError(f"Invalid operator {oper80r} in {treestr}")
+                raise AttributeError(f"Invalid operator {oper80r} in {treestr}, only {self.operators}")
         elif self.default_op and not leaf:
             operator = self.default_op
         else:

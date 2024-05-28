@@ -214,22 +214,20 @@ def gp_func_test(
             ["mse", "rmse", 'raw_fitness'], 
             ["size", "depth", 'time']
     ]):
+    rpf = RandomPolynomialFactory(
+        params = np.array([order, coeff_min, coeff_max], dtype=np.float32),
+        # treebank = gp
+    )
     gp = GPTreebank(
+        pop=pop, tree_factory=rpf,
+        observatory=obs, temp_coeff=temp_coeff,
         mutation_rate = mutation_rate, mutation_sd=mutation_sd,
         crossover_rate=crossover_rate, max_size=max_size, max_depth=max_depth,
-        operators=OPSET
+        operators=OPSET, def_fitness=def_fitness, elitism=elitism
     )
     res, data, final_tree = gp.run(
-        RandomPolynomialFactory(
-            params = np.array([order, coeff_min, coeff_max], dtype=np.float32),
-            treebank = gp
-        ),
-        obs, 
-        generations, pop,
-        def_fitness=def_fitness, 
-        elitism=elitism,
-        temp_coeff=temp_coeff,
-        to_graph=to_graph
+        steps=generations,
+        to_graph=to_graph, ping_freq=25
     )
     print("Best trees by generation:")
     n = len(res['tree'])

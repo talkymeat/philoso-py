@@ -330,7 +330,6 @@ class MutatorFactory:
 
 class CrossoverMutator(Mutator):
 
-
     def __init__(self, 
             mutation_rate: float=0.0, 
             max_depth: int=0, 
@@ -362,6 +361,7 @@ class CrossoverMutator(Mutator):
 
         >>> from tree_factories import RandomPolynomialFactory
         >>> from gp import GPTreebank
+        >>> from test_materials import DummyTreeFactory
         >>> import pandas as pd
         >>> import operators as ops
         >>> ms, md = 300, 70
@@ -371,9 +371,10 @@ class CrossoverMutator(Mutator):
         ...     crossover_rate=0.5, 
         ...     max_depth=md,
         ...     max_size=ms, 
-        ...     operators=[ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE]
+        ...     operators=[ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE], 
+        ...     tree_factory=DummyTreeFactory()
         ... )
-        >>> rpf = RandomPolynomialFactory(params = np.array([5, -10.0, 10.0], dtype=np.float), treebank=gp)
+        >>> rpf = RandomPolynomialFactory(params = np.array([5, -10.0, 10.0], dtype=float), treebank=gp)
         >>> trees = [rpf('x', 'y') for _ in range(5)]
         >>> df = pd.DataFrame({'x': [1.0, 1.0], 'y': [1.0, 1.0]})
         >>> bigtrees, deeptrees = 0, 0
@@ -384,7 +385,7 @@ class CrossoverMutator(Mutator):
         ...     valmax = -np.inf
         ...     for t in trees:
         ...         val = t(**df)
-        ...         if isinstance(val, pd.Series):
+        ...         if isinstance(val, np.ndarray):
         ...             val = val.sum()
         ...         if val is None:
         ...             print(val)
@@ -440,6 +441,7 @@ class CrossoverMutator(Mutator):
             # limits, and returns boolean, True if the update is successful, False
             # otherwise. Therefore, if the update succeeds, the loop condition is
             # broken
+            n = 0
             while not sd(pruned_size+sts, max(sd.depth, pruned_depth+std)):
                 # If we have to try again, remove the no-good subtree from the pool
                 complement -= subtree
@@ -448,7 +450,10 @@ class CrossoverMutator(Mutator):
                 if not complement:
                     return val
                 subtree = self.rng.choice(complement.array())
+                print('Size complement:', len(complement))
                 sts, std = subtree.size(), subtree.depth()
+                print(f'trouble copying, n={n}')
+                n+=1
             if len(subtree)==0:
                 print('wut?')
             return subtree

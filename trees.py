@@ -20,7 +20,7 @@ Created on Thu Nov 30 16:59:45 2017
 @author: Xandra Dave Cochran
 """
 
-from copy import copy
+from copy import copy, deepcopy
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Dict, Tuple, Union
@@ -29,6 +29,9 @@ from tree_iter import TreeIter, DepthFirstBottomUp as DFBU
 import treebanks as tbs
 import operators as ops
 from utils import IDSet
+from icecream import ic
+from random import randbytes
+
 
 
 class Tree(ABC):
@@ -60,12 +63,16 @@ class Tree(ABC):
             If the `label` passed to `__init__` is not a valid Label.
     """
 
-    def __init__(self, treebank, label, *args, metadata=None, **kwargs):
+    def __init__(self, treebank, label, *args, metadata=None, tmp=None, **kwargs):
         # Set parent to None: parent, if there is one, will set child's `parent`
         # param
         self._parent = None
         # If no metadata is provided, set an empty dict just in case
         self.metadata = metadata if metadata else {}
+        self.metadata['id'] = randbytes(8)
+        # Likewise tmp. The difference is metadata is copied when the
+        # tree is copied, but tmp is not
+        self.tmp = tmp if tmp else {}
         # DOP uses strings as labels, GP uses types, so those are OK
         if isinstance(label, (str, type)):
             self.label = treebank.get_label(label)
@@ -253,6 +260,15 @@ class Tree(ABC):
         checking when needed.
         """
         return True
+    
+    @abstractmethod
+    def tree_map_reduce(self, reduce_func, *args, map_any=None, map_non_terminal=None, map_terminal=None, map_subsite=None, top_down=False, **kwargs):
+        pass
+    
+    @abstractmethod
+    def apply(self, func, *args, top_down=False, **kwargs) -> None:
+        pass
+
 
 
 class NonTerminal(Tree):
@@ -260,8 +276,6 @@ class NonTerminal(Tree):
     carry terminal content like words in syntactic parsing or constants and
     variables in genetic programming, but which can take other tree nodes as
     children
-
-    TODO: add a metadata attribute
 
     Parameters
     ----------
@@ -290,8 +304,8 @@ class NonTerminal(Tree):
     leafnode, and raises an error only if there is no match.
     """
 
-    def __init__(self, treebank: "tbs.Treebank", label: "Label", *children: Tree, operator: "Operator"=None, metadata: dict=None, **kwargs):
-        super().__init__(treebank, label)
+    def __init__(self, treebank: "tbs.Treebank", label: "Label", *children: Tree, operator: "Operator"=None, metadata: dict=None, tmp: dict=None, **kwargs):
+        super().__init__(treebank, label, metadata=metadata, tmp=tmp)
         if not children:
             raise AttributeError('NonTerminals must have child nodes')
         self._children = []
@@ -547,7 +561,7 @@ class NonTerminal(Tree):
             return False
 
     def to_LaTeX(self, top = True):
-        """Converts trees to LaTeX expressions using the `qtree` package.
+        r"""Converts trees to LaTeX expressions using the `qtree` package.
         Remember to include `\\usepackage{qtree}` in the document header. For
         NonTerminals, the format is `[.$label $child* ]`. The label expression
         is provided by a similar function in Label. The $child expressions are
@@ -935,7 +949,8 @@ class NonTerminal(Tree):
             treebank,
             self.label if treebank == self.treebank else treebank.get_label(self.label.class_id), ##-OK both, raw val
             *[c.copy_out(treebank, **kwargs) for c in self],
-            operator = self._operator
+            operator = self._operator,
+            metadata = deepcopy(self.metadata)
         )
 
     def get_leftmost_substitution_site(self):
@@ -1721,14 +1736,199 @@ class NonTerminal(Tree):
         # so no need to do that here
         if self.label:
             self.label.remove_node(self)
+    
+    def apply(self, func, *args, top_down=False, **kwargs) -> None:
+        """This function takes a function `func` and applies it to each node in the tree.
+        The function to be applied should not return any value, but instead performs an
+        action (e.g., writing a value to metadata) on the node
+        
+        >>> tb = tbs.Treebank(ops.CONCAT)
+        >>> tree0 = tbs.tree("([S]([NP]([PN]'she'))([VP]([V]'saw')([S]([NP]([NP]([Det]'the')([N]'dog'))([PP]([Prep]'with')([NP]([Det]'the')([N]'telescope'))))([VP]([V]'observing')([NP]([PN]'neptune'))))))", treebank = tb)
+        >>> def print_t(tree):
+        ...     print(tree())
+        >>> def iritator():
+        ...     i=0
+        ...     while i < 100:
+        ...         yield i
+        ...         i += 1
+        >>> tree0.apply(print_t)
+        she
+        she
+        saw
+        the
+        dog
+        the dog
+        with
+        the
+        telescope
+        the telescope
+        with the telescope
+        the dog with the telescope
+        observing
+        neptune
+        neptune
+        observing neptune
+        the dog with the telescope observing neptune
+        saw the dog with the telescope observing neptune
+        she saw the dog with the telescope observing neptune
+        >>> tree0.apply(print_t, top_down=True)
+        she saw the dog with the telescope observing neptune
+        she
+        she
+        saw the dog with the telescope observing neptune
+        saw
+        the dog with the telescope observing neptune
+        the dog with the telescope
+        the dog
+        the
+        dog
+        with the telescope
+        with
+        the telescope
+        the
+        telescope
+        observing neptune
+        observing
+        neptune
+        neptune
+        >>> it = iritator()
+        >>> def number_node(tree, iter8or):
+        ...     tree.metadata['i'] = next(it)
+        >>> def print_i(tree):
+        ...     print(tree.metadata.get('i', 'i'))
+        >>> tree0.apply(number_node, it)
+        >>> tree0.apply(print_i)
+        0
+        1
+        2
+        3
+        4
+        5
+        6
+        7
+        8
+        9
+        10
+        11
+        12
+        13
+        14
+        15
+        16
+        17
+        18
+        >>> it = iritator()
+        >>> tree0.apply(number_node, it, top_down=True)
+        >>> tree0.apply(print_i)
+        2
+        1
+        4
+        8
+        9
+        7
+        11
+        13
+        14
+        12
+        10
+        6
+        16
+        18
+        17
+        15
+        5
+        3
+        0
+        """
+        if top_down:
+            func(self, *args, **kwargs)
+        for child in self:
+            child.apply(func, *args, top_down=top_down, **kwargs)
+        if not top_down:
+            func(self, *args, **kwargs)
+
+    # XXX TODO make 'map_any' a cover-all for unset map_$x$'s
+    def tree_map_reduce(self, reduce_func, *args, map_any=None, map_non_terminal=None, map_terminal=None, map_subsite=None, top_down=False, **kwargs):
+        """Recursively applies mapping and reducing functions to a whole tree. Separate
+        mapping functions for terminals (`map_terminal`) and nonterminals 
+        (`map_non_terminal`) may be given, or a single mapping function (`map_all`):
+        The following logic is followed:
+
+        *   If `map_all` is given, any functions given to `map_terminal` or 
+            `map_non_terminal` are ignored
+        *   If `map_all` is not given, `map_terminal` and `map_non_terminal` are used,
+            if they exist. 
+        *   If `map_all` is not given, and one or both of `map_terminal` and 
+            `map_non_terminal` do not exist, and identity function will be used in place
+            of the missing function(s)
+
+        The counterpart of this function in `Terminal` applies the appropriate `map` 
+        function to itself, and returns the result.
+
+        This function, NonTerminal.tree_map_reduce applies the appropriate `map` function
+        to `self`, and recursively applies `tree_map_reduce` to the children of `self`.
+
+        *   If the `top_down` flag is `True`, the self-mapping is done before the recursive
+            calls
+        *   If the `top_down` flag is `False` (default), the recursive calls are done first
+
+        The reduce function is then applied to the output of the self-map call *and* the 
+        recursive calls on the children of `self`, all in one call, of the format:
+
+        ```reduce(self_mapping, *map_reductions_of_children)```
+
+        >>> tb = tbs.Treebank(ops.CONCAT)
+        >>> tree0 = tbs.tree("([S]([NP]([PN]'she'))([VP]([V]'saw')([S]([NP]([NP]([Det]'the')([N]'dog'))([PP]([Prep]'with')([NP]([Det]'the')([N]'telescope'))))([VP]([V]'observing')([NP]([PN]'neptune'))))))", treebank = tb)
+        >>> def iritator():
+        ...     i=0
+        ...     while i < 100:
+        ...         yield i
+        ...         i += 1
+        >>> it = iritator()
+        >>> def number_node(tree, iter8or):
+        ...     tree.metadata['i'] = next(it)
+        >>> tree0.apply(number_node, it)
+        >>> def get_num(t, *args, **kwargs):
+        ...     return [t.metadata['i']]
+        >>> def get_none(t, *args, **kwargs):
+        ...     return None
+        >>> def list_node_vals(self_val, *child_vals):
+        ...     if child_vals:
+        ...         child_vals = [val for val in child_vals if val is not None]
+        ...     retval = []
+        ...     for val in child_vals + [self_val]:
+        ...         retval += val
+        ...     return retval
+        >>> tree0.tree_map_reduce(list_node_vals, map_any=get_num)
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+        """
+        if map_any:
+            map_non_terminal = map_any
+            map_terminal = map_any
+            map_subsite = map_subsite
+        map_non_terminal = (lambda x: x) if map_non_terminal is None else map_non_terminal
+        map_terminal = (lambda x: x) if map_terminal is None else map_terminal 
+        map_subsite = (lambda x: x) if map_subsite is None else map_subsite 
+        if top_down:
+            self_val = map_non_terminal(self, *args, **kwargs)
+        child_vals = [child.tree_map_reduce(
+            reduce_func, *args,
+            map_non_terminal=map_non_terminal, 
+            map_terminal=map_terminal, 
+            map_subsite = map_subsite,
+            top_down=top_down,
+            **kwargs
+        ) for child in self]
+        if not top_down:
+            self_val = map_non_terminal(self, *args, **kwargs)
+        return reduce_func(self_val, *child_vals, **kwargs)
+
 
 
 class Terminal(Tree):
     """A general class of terminal node, agnostic as to whether we are using
     Trees to represent strings, functions, music, visual images, motor scores,
     etc.
-
-    TODO: add a metadata attribute
 
     Attributes:
         _label (Label): Inherited from Tree. Node label determining
@@ -1742,7 +1942,7 @@ class Terminal(Tree):
         leaf: The terminal content of this branch of the tree, like a word in
             syntactic parsing, or a constant or variable in Genetic Programming
     """
-    def __init__(self, treebank, label, leaf, operator=None, metadata=None):
+    def __init__(self, treebank, label, leaf, operator=None, metadata=None, tmp=None):
         self._operator = operator
         if isinstance(leaf, str):
             try:
@@ -1751,7 +1951,7 @@ class Terminal(Tree):
                 self.leaf = leaf
         else:
             self.leaf = leaf
-        super().__init__(treebank, label)
+        super().__init__(treebank, label, metadata=metadata, tmp=tmp)
 
     def __str__(self):
         """Readable string representation of a Terminal. This consists of a pair
@@ -1815,7 +2015,7 @@ class Terminal(Tree):
         return []
 
     def to_LaTeX(self, top = True):
-        """Converts trees to LaTeX expressions using the `qtree` package.
+        r"""Converts trees to LaTeX expressions using the `qtree` package.
         Remember to include `\\usepackage{qtree}` in the document header. For
         Terminals, the format is `[.$label $leaf]`. The label expression is
         provided by a similar function in Label.
@@ -1949,7 +2149,8 @@ class Terminal(Tree):
             treebank,
             self.label if treebank == self.treebank else treebank.get_label(self.label.class_id),  ##-OK both, raw val
             copy(self.leaf),
-            operator = self._operator
+            operator = self._operator,
+            metadata = deepcopy(self.metadata)
         )
 
     def delete(self, _top = True):
@@ -1963,6 +2164,14 @@ class Terminal(Tree):
                 self.parent.children[idx] = None
             self.parent = None
         self.label.remove_node(self)
+    
+    def apply(self, func, *args, top_down=False, **kwargs) -> None:
+        func(self, *args, **kwargs)
+
+    def tree_map_reduce(self, reduce_func, *args, map_any=None, map_non_terminal=None, map_terminal=None, map_subsite=None, top_down=False, **kwargs):
+        identity = lambda x: x
+        map_terminal = map_terminal if map_terminal else map_any if map_any else identity
+        return map_terminal(self, *args, **kwargs)
 
 
 class Label:
@@ -2193,7 +2402,7 @@ class Label:
             return  f".{self.classname}"  ##-OK
 
     def print_terminal_subtrees(self, is_LaTeX=False):
-        """A helper function for testing and inspection, mostly. Prints out all
+        r"""A helper function for testing and inspection, mostly. Prints out all
         trees with the current `Label`, either using `__str__` or `to_LaTeX`.
 
         Parameters
@@ -2391,9 +2600,9 @@ class SubstitutionSite(Tree):
             If the `label` passed to `__init__` is not a valid Label.
     """
 
-    def __init__(self, treebank, label, index: int, *args, metadata=None, **kwargs):
+    def __init__(self, treebank, label, index: int, *args, metadata=None, tmp=None, **kwargs):
         self.index = index
-        super().__init__(treebank, label)
+        super().__init__(treebank, label, metadata=metadata, tmp=tmp)
     
     @property
     def parent(self):
@@ -2489,6 +2698,14 @@ class SubstitutionSite(Tree):
             self.parent.children[self.index] = None
             self.parent = None
         self.label.remove_node(self)
+
+    def tree_map_reduce(self, reduce_func, *args, map_any=None, map_non_terminal=None, map_terminal=None, map_subsite=None, top_down=False, **kwargs):
+        identity = lambda x: x
+        map_subsite = map_subsite if map_subsite else map_any if map_any else identity
+        return map_subsite(self, *args, **kwargs)
+    
+    def apply(self, func, *args, top_down=False, **kwargs) -> None:
+        func(self, *args, **kwargs)
 
 
 # class SubstitutionSite:

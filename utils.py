@@ -3,8 +3,14 @@ from typing import Collection
 from collections.abc import MutableSet
 from icecream import ic
 import numpy as np
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 from functools import reduce
+
+def scale_to_sum(arr: np.ndarray, _sum=1) -> np.ndarray:
+    return arr/arr.sum() * _sum
+
+class InsufficientPostgraduateFundingError(Exception):
+    pass
 
 def list_transpose(ls, i, j):
     """Transposes the items in list `ls` at index `i` and `j`"""
@@ -75,6 +81,11 @@ def collect(a, t: type[Collection], empty_if_none=False):
     elif empty_if_none or a is not None:
         return t()
 
+def _id(elem):
+    if hasattr(elem, 'metadata') and 'id' in elem.metadata:
+        return elem.metadata['id']
+    return id(elem)
+
 class IDSet(MutableSet):
     def __init__(self, iterable=None):
         self._dict = {}
@@ -83,7 +94,7 @@ class IDSet(MutableSet):
                 self.add(it)
 
     def __contains__(self, other):
-        return id(other) in self._dict
+        return _id(other) in self._dict
     
     def __iter__(self):
         return self._dict.values().__iter__()
@@ -92,7 +103,7 @@ class IDSet(MutableSet):
         return len(self._dict)
     
     def add(self, elem):
-        self._dict[id(elem)] = elem
+        self._dict[_id(elem)] = elem
     
     def discard(self, other):
         """Removes `other` from the `IDSet`
@@ -109,8 +120,11 @@ class IDSet(MutableSet):
         >>> print(s_a)
         IDSet([])
         """
-        if id(other) in self._dict:
-            del self._dict[id(other)]
+        if _id(other) in self._dict:
+            del self._dict[_id(other)]
+        else:
+            print(_id(other))
+            print(self._dict.keys())
 
     def __repr__(self):
         return f'IDSet({list(self._dict.values()) if self._dict else "[]"})'

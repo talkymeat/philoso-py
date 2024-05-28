@@ -59,6 +59,12 @@ class Grapher:
     def __getitem__(self, key: str):
         return self.axnames[key]
     
+    def update(self, record, n):
+        if n==1:
+            self.plot_data(**record, n=n)
+        else:
+            self.set_data(**record, n=n)
+    
     def plot_data(self, n: int=None, **data):
         for k, y in data.items():
             if k in self.axnames:

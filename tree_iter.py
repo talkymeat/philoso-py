@@ -89,7 +89,7 @@ class DepthFirstBottomUp(TreeIter):
     ([bool]False)
     ([bool]<OR>([bool]<NOT>([bool]<EQ>([int]0)([int]1)))([bool]False))
     ([bool]<AND>([bool]<EQ>([float]<SQ>([int]6))([float]<PROD>([int]9)([float]<SUM>([float]2.5)([float]1.5))))([bool]<OR>([bool]<NOT>([bool]<EQ>([int]0)([int]1)))([bool]False)))
-    >>> gpt1 = tlt.tree("([bool]<AND>([bool]<EQ>([float]<SQ>([int]6))([float]<PROD>))([bool]<OR>([bool]<NOT>([bool]<EQ>([int]0)([int]1)))([bool]False)))")
+    >>> gpt1 = tlt.tree("([bool]<AND>([bool]<EQ>([float]<SQ>([int]6))([float]))([bool]<OR>([bool]<NOT>([bool]<EQ>([int]0)([int]1)))([bool]False)))")
     >>> it1 = DepthFirstBottomUp(gpt1)
     >>> has_next = True
     >>> while has_next:
@@ -101,8 +101,8 @@ class DepthFirstBottomUp(TreeIter):
     6
     ([int]6)
     ([float]<SQ>([int]6))
-    ([float]<PROD>)
-    ([bool]<EQ>([float]<SQ>([int]6))([float]<PROD>))
+    ([float])
+    ([bool]<EQ>([float]<SQ>([int]6))([float]))
     0
     ([int]0)
     1
@@ -112,7 +112,7 @@ class DepthFirstBottomUp(TreeIter):
     False
     ([bool]False)
     ([bool]<OR>([bool]<NOT>([bool]<EQ>([int]0)([int]1)))([bool]False))
-    ([bool]<AND>([bool]<EQ>([float]<SQ>([int]6))([float]<PROD>))([bool]<OR>([bool]<NOT>([bool]<EQ>([int]0)([int]1)))([bool]False)))
+    ([bool]<AND>([bool]<EQ>([float]<SQ>([int]6))([float]))([bool]<OR>([bool]<NOT>([bool]<EQ>([int]0)([int]1)))([bool]False)))
     """
     def __init__(self, tree):
         super().__init__(tree)

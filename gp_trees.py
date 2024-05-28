@@ -12,7 +12,7 @@ from logtools import MiniLog
 from typing import Any
 from icecream import ic
 import warnings
-
+from copy import deepcopy
 
 DEBUG = True
 
@@ -46,9 +46,10 @@ class GPNonTerminal(NonTerminal):
     tree and operated on
 
     >>> from gp import GPTreebank
+    >>> from test_materials import DummyTreeFactory
     >>> import operators as ops
     >>> op = [ops.SUM, ops.PROD, ops.SQ, ops.CUBE, ops.POW]
-    >>> gp = GPTreebank(operators=op)
+    >>> gp = GPTreebank(operators=op, tree_factory=DummyTreeFactory())
     >>> mewtwo = gp.tree("([float]<SUM>([float]<SQ>([int]$mu))([float]<SUM>([float]<PROD>([int]3)([int]$mu))([int]2)))")
     >>> mewtwo(mu=-2)
     0.0
@@ -57,8 +58,8 @@ class GPNonTerminal(NonTerminal):
     >>> mewtwo(mu=-3)
     2.0
     """
-    def __init__(self, treebank, label, *children, operator=None, metadata=None):
-        super().__init__(treebank, label, *children, operator=operator, metadata=metadata)
+    def __init__(self, treebank, label, *children, operator=None, metadata=None, tmp=None):
+        super().__init__(treebank, label, *children, operator=operator, metadata=metadata, tmp=tmp)
         self.gp_operator = CrossoverMutator(
             treebank.crossover_rate, 
             treebank.max_depth, 
@@ -126,7 +127,8 @@ class GPNonTerminal(NonTerminal):
                 if gp_copy
                 else c.copy_out(treebank, gp_copy=gp_copy, **kwargs)
             ) for c in self],
-            operator = self._operator
+            operator = self._operator,
+            metadata = deepcopy(self.metadata)
         ) 
     
     def __call__(self, **kwargs):
@@ -143,12 +145,12 @@ class GPNonTerminal(NonTerminal):
                 for i, child in enumerate(self):
                     child_outputs[f'C_{i}'] = child(**kwargs)
                 for j, row in child_outputs.iterrows():
-                    tmp = (j, row)
+                    tmp = (j, row) ### ??? XXX
                     try:
                         self._operator([val for val in row])
                     except:
                         ic(f'GUILTY: {self._operator} on {row} at {j}')
-            self.root.metadata['penalty'] = self.root.metadata.get('penalty', 1.0) * 2.0
+            self.root.tmp['penalty'] = self.root.tmp.get('penalty', 1.0) * 2.0
             return None
         except TypeError as e:
             if "'NoneType'" in str(e) and 'unsupported operand type' in str(e):
@@ -169,17 +171,17 @@ class GPNonTerminal(NonTerminal):
             if DEBUG:
                 ic('Zero Division')
                 ic(self)
-            self.root.metadata['penalty'] = self.root.metadata.get('penalty', 1.0) * 2.0**0.1
+            self.root.tmp['penalty'] = self.root.tmp.get('penalty', 1.0) * 2.0**0.1
             return None
             
         
 class GPTerminal(Terminal):
-    def __new__(cls, treebank, label, leaf, operator=None, metadata=None):
+    def __new__(cls, treebank, label, leaf, operator=None, metadata=None, tmp=None):
         if isinstance(leaf, str):
             if leaf.startswith('$'):
                 return cls.__new__(
                     Variable, treebank, label, leaf,
-                    operator=operator, metadata=metadata
+                    operator=operator, metadata=metadata, tmp=tmp
                 )
             try:
                 leaf = eval(leaf) # the eval'd leaf doesn't get passed to Constant
@@ -190,24 +192,26 @@ class GPTerminal(Terminal):
             treebank,
             label, leaf,
             operator=operator,
-            metadata=metadata
+            metadata=metadata,
+            tmp=tmp
         )
 
 
 class Variable(GPTerminal):
-    def __new__(cls, treebank, label, leaf, operator=None, metadata=None):
+    def __new__(cls, treebank, label, leaf, operator=None, metadata=None, tmp=None):
         return Terminal.__new__(cls)
     
-    def __init__(self, treebank, label, leaf, operator=None, metadata=None):
+    def __init__(self, treebank, label, leaf, operator=None, metadata=None, tmp=None):
         leaf = leaf.strip('$')
-        super().__init__(treebank, label, leaf, operator=None, metadata=None)
+        ## The line below used to have ```operator=None, metadata=None``` - it didn't seem to break anything, tho :-S
+        super().__init__(treebank, label, leaf, operator=operator, metadata=metadata, tmp=tmp)
 
     def __str__(self):
         """Readable string representation of a Terminal. This consists of a pair
         of parentheses containing a representation of the node's label (label
         name in square brackets), followed by the leaf value, e.g.:
 
-        ([float]x).
+        ([float]$x)
         """
         return f"({self.label if self.label else ''}${self.leaf})"
 
@@ -284,7 +288,8 @@ class Variable(GPTerminal):
             treebank,
             self.label if treebank == self.treebank else treebank.get_label(self.label.class_id),  ##-OK both, raw val
             '$' + copy(self.leaf),
-            operator = self._operator
+            operator = self._operator,
+            metadata=deepcopy(self.metadata)
         )
 
 class Constant(GPTerminal):
@@ -294,10 +299,10 @@ class Constant(GPTerminal):
     >>>
     >>>
     """
-    def __new__(cls, treebank, label, leaf, operator=None, metadata=None):
+    def __new__(cls, treebank, label, leaf, operator=None, metadata=None, tmp=None):
         return Terminal.__new__(cls)
 
-    def __init__(self, treebank, label, leaf, operator=None, metadata=None):
+    def __init__(self, treebank, label, leaf, operator=None, metadata=None, tmp=None):
         leaf = D(leaf)
         # if isinstance(leaf, str):
         #     try:
@@ -316,7 +321,7 @@ class Constant(GPTerminal):
             treebank.mutation_sd,
             rng = treebank.np_random
         )
-        super().__init__(treebank, label, leaf, operator=operator, metadata=metadata)
+        super().__init__(treebank, label, leaf, operator=operator, metadata=metadata, tmp=tmp)
 
     def _leaf_str(self):
         try:
@@ -409,7 +414,8 @@ class Constant(GPTerminal):
             treebank,
             self.label if treebank == self.treebank else treebank.get_label(self.label.class_id),  ##-OK both, raw val
             self.gp_operator(copy(self.leaf)) if gp_copy else copy(self.leaf),
-            operator = self._operator
+            operator = self._operator,
+            metadata=deepcopy(self.metadata)
         )
 
     @property

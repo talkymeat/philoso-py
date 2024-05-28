@@ -3,6 +3,7 @@ import numpy as np
 from typing import Protocol, runtime_checkable, TypeAlias
 from collections.abc import Callable, Mapping, Iterable, Hashable, Sequence
 from typing import Any
+from abc import ABC, abstractmethod
 # import pandera as pa
 # from pandera import Column, DataFrameSchema, Check, Index
 from utils import nice_list, collect
@@ -134,6 +135,10 @@ class Observatory(Protocol):
     @property
     def ivs(self) -> list[str]:
         ...
+    
+    @property
+    def obs_params(self):
+        ...
 
 @runtime_checkable
 class TargetFunc(Protocol):
@@ -200,7 +205,13 @@ class StaticObservatory:
         except AttributeError:
             self.obs_len = self.sources.shape[0]
             return self._obs_len
-        
+    
+
+    @property
+    def obs_params(self):
+        return {
+            'obs_len': self._obs_len
+        }
 
     def __next__(self) -> pd.DataFrame:
         if '__sample__' in self.sources:
@@ -397,6 +408,13 @@ class FunctionObservatory:
     @property
     def cartesian(self):
         return self._cartesian
+    
+    @property
+    def obs_params(self):
+        return {
+            'obs_cartesian': self._cartesian,
+            **{f'obs_len_{k}': v for k, v in self._obs_lens.items()}
+        }
     
     @cartesian.setter
     def cartesian(self, val):
@@ -734,13 +752,65 @@ class StaticFunctionObservatory(FunctionObservatory):
         return self._last_dv_out.copy()
     
     # self._dv_data[[col for col in self._dv_data.columns if self.dv_key in col]].copy()
-        
+
+
+class ObservatoryFactory(ABC):
+    def __init__(self, world):
+        self.world = world
+
+    @abstractmethod
+    def __call__(self, *args: Any, **kwargs: Any) -> Observatory:
+        pass
+
+    @property
+    @abstractmethod
+    def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
+        pass
+    
+
+class SineWorldObservatoryFactory(ObservatoryFactory):
+    @property
+    def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
+        return self.world.range, self.world.range, (0, self.world.max_observation_size)
+
+    def __call__(
+            self, start: float, stop: float, num: int,  **kwargs: Any
+        ) -> Observatory:
+        if start > stop:
+            start, stop = stop, start
+        return SineWorldObservatory(
+            self.world.iv,
+            self.world.dv,
+            world=self.world,
+            start = start if start >= self.world.range[0] else self.world.range[0],
+            stop  = stop  if stop  <= self.world.range[1] else self.world.range[1],
+            num = int(num) if num <= self.world.max_observation_size else self.world.max_observation_size
+        )
 
 class SineWorldObservatory:
+    """Observatory class for SineWorld, a World consisting of the sum of
+    one or more sine waves.
+
+    Attributes
+    ----------
+
+    ivs (string or list of strings):
+        Name(s) of independent variable(s) - typically just 'x'
+    dvs (string or list of strings):
+        Name(s) of dependent variable(s) - typically just 'y'
+    world (World):
+        The SineWorld from which the Observatory draws observations 
+    start (float):
+        Starting value of IV 
+    stop (float):
+        Ending value of IV  
+    num (int):
+        Number of samples drawn between `start` and `stop` 
+    """
     def __init__(self, 
             ivs: str|list[str], 
             dvs: str|list[str], 
-            sources: dict = None, # XXX
+            sources: dict = None, # Not needed, except for compatability
             world: 'World' = None, 
             start: float = None, 
             stop: float = None, 
@@ -762,6 +832,14 @@ class SineWorldObservatory:
     @property
     def dv(self):
         return self.dvs[0]
+    
+    @property
+    def obs_params(self):
+        return {
+            'obs_start': self.start,
+            'obs_stop': self.stop,
+            'obs_num': self.num
+        }
 
     def __next__(self) -> pd.DataFrame:
         self.data = self.world.observe(self.start, self.stop, self.num)

@@ -71,3 +71,14 @@ class OperatorError(Exception):
     def __str__(self):
         if self.treestr:
             return f"Error in {self.treestr}: {self.msg}"
+        
+class UserIDCollision(Exception):
+    def __init__(self, msg, id=None):
+        self.id  = id
+        self.msg = msg
+
+    def __str__(self):
+        clash = ""
+        if self.id:
+            clash = f"Two distinct Agents share the ID {self.id}. "
+        return clash + self.msg
