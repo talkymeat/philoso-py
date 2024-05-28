@@ -306,7 +306,7 @@ class GPTreebank(TypeLabelledTreebank):
                 ):
                     # Note that making a copy automatically adds it to the
                     # treebank, so there's no need to assign this 
-                    print(f'Tree {n} of {the_masses}, copying {t}')
+                    # print(f'Tree {n} of {the_masses}, copying {t}')
                     n +=1
                     t.copy(gp_copy=True) 
             except Exception as e:

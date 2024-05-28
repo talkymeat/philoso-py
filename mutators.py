@@ -441,7 +441,7 @@ class CrossoverMutator(Mutator):
             # limits, and returns boolean, True if the update is successful, False
             # otherwise. Therefore, if the update succeeds, the loop condition is
             # broken
-            n = 0
+            # n = 0
             while not sd(pruned_size+sts, max(sd.depth, pruned_depth+std)):
                 # If we have to try again, remove the no-good subtree from the pool
                 complement -= subtree
@@ -450,10 +450,10 @@ class CrossoverMutator(Mutator):
                 if not complement:
                     return val
                 subtree = self.rng.choice(complement.array())
-                print('Size complement:', len(complement))
+                # print('Size complement:', len(complement))
                 sts, std = subtree.size(), subtree.depth()
-                print(f'trouble copying, n={n}')
-                n+=1
+                # print(f'trouble copying, n={n}')
+                # n+=1
             if len(subtree)==0:
                 print('wut?')
             return subtree
