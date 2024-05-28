@@ -318,11 +318,19 @@ class GPTreebank(TypeLabelledTreebank):
                     t.copy(gp_copy=True) 
             except Exception as e:
                 print('FA'+'HA'*49)
+                print(e)
                 print(old_gen) 
+                print(pd.DataFrame({'t': old_gen}).isna())
                 print(normed_scores) # scores/np.sum(scores), 
                 print(the_masses)
+                print('-'*100)
+                print(self.scoreboard)
+                print('='*100)
+                empty=self.scoreboard['tree'].isna()
+                print(empty)
+                print('-'*100)
+                print(empty.sum())
                 print('BWAA'+"HA"*48)
-                print(e)
                 raise e
         # However, if they sum to exactly zero, that is practically
         # certainly because all the trees are NANing out - in which case

@@ -80,9 +80,16 @@ class Agent:
     async def day_step(self):
         # NN outputs: action_logits is raw NN output, a 1D tensor of floats.
         # choice is a simpler task as it's just a single Categorical, not a Dict
-        choice, choice_log_prob, action_logits, val = self.nn(torch.tensor(
+        obs = torch.tensor(
             [self.obs], dtype=torch.float32, device=self.device
-        ))
+        )
+        try:
+            choice, choice_log_prob, action_logits, val = self.nn(obs)
+        except Exception as e:
+            print('BLEBTH '*100)
+            print(obs)
+            print('BRICKSH '*100)
+            raise e
         # set the observaton, plus the act and obs for `choice`
         training_instance = {('obs', 'v'): self.obs, ('choice', 'act'): choice, ('choice', 'log_prob'): choice_log_prob}
         # separate action-representations for doing actions and training the 

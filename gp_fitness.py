@@ -872,7 +872,20 @@ class GPScoreboard(pd.DataFrame):
             dv: str=None, 
             **kwargs
         ):
-        self['tree'] = pd.Series(trees)
+        trees = pd.Series(trees)
+        self['tree'] = trees
+        # If the run is a continuation of a previous run, but the 
+        # agent is adding a tree from memory, assigning `trees` to
+        # `self['tree']` will not add rows to the dataframe to 
+        # accommodate the extra. The following adds the extra in
+        # new rows
+        while len(self) < len(trees):
+            self.loc[len(self)] = {'tree': trees[len(self)]}
+        # If the agent introduces trees from memory into a run, this
+        # temporarily increases the population, which drops back down
+        # after the first generation. This adds rows to the scoreboard,
+        # which need to be dropped after the population resets
+        self.dropna(inplace=True, subset=['tree'])
         if temp_coeff is not None:
             self.kwargs["temp_coeff"] = temp_coeff 
         dv = self.dv_obs_check(dv=dv, obs=obs)
