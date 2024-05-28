@@ -122,9 +122,9 @@ class IDSet(MutableSet):
         """
         if _id(other) in self._dict:
             del self._dict[_id(other)]
-        else:
-            print(_id(other))
-            print(self._dict.keys())
+        # else:
+        #     print(_id(other))
+        #     print(self._dict.keys())
 
     def __repr__(self):
         return f'IDSet({list(self._dict.values()) if self._dict else "[]"})'
