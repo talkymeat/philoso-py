@@ -507,7 +507,13 @@ def nan_zero(a: float, **kwargs):
 
 @scoreboard_pipeline_element(out_key='size')
 def size(tree: GPNonTerminal, **kwargs):
-    return tree.size()
+    try:
+        return tree.size()
+    except Exception as e:
+        print("."*500)
+        print(tree)
+        print("."*500)
+        raise e
 
 @scoreboard_pipeline_element(out_key='depth')
 def depth(tree: GPNonTerminal, **kwargs):
@@ -872,8 +878,14 @@ class GPScoreboard(pd.DataFrame):
         dv = self.dv_obs_check(dv=dv, obs=obs)
         kwargs['ivs'] = next(self.obs)
         kwargs['target'] = self.obs.target[dv]
-        for pipe_ele in self.pipeline:
-            pipe_ele(self, **{**self.kwargs, **kwargs})
+        try:
+            for pipe_ele in self.pipeline:
+                pipe_ele(self, **{**self.kwargs, **kwargs})
+        except Exception as e:
+            print("',"*250)
+            print(self)
+            print("',"*250)
+            raise e
         return self
     
     def k_best(self, k: int, mark_4_del: bool=True, tree_only: bool=True):
