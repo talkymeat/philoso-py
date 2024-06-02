@@ -64,6 +64,8 @@ class Agent:
             value_lr=value_lr
         )
 
+    def __str__(self):
+        return self.name
 
     @property
     def name(self):
@@ -87,7 +89,7 @@ class Agent:
             choice, choice_log_prob, action_logits, val = self.nn(obs)
         except Exception as e:
             print('BLEBTH '*100)
-            print(obs)
+            print(list(obs[0]))
             print('BRICKSH '*100)
             raise e
         # set the observaton, plus the act and obs for `choice`
@@ -159,7 +161,11 @@ class Agent:
         self.day_rewards.append(self.day_reward)
 
     # run training loop
-    def night(self):
+    def night(self, parquet_fname=None):
+        if parquet_fname:
+            self.training_buffer = pd.read_parquet(parquet_fname)
+        else:
+            self.training_buffer.to_parquet(self.ac.out_dir / 'pq')
         permute_idxs = self.rng.permutation(len(self.training_buffer))
 
         # Policy data
@@ -176,7 +182,7 @@ class Agent:
             dtype=torch.float32, 
             device=self.device
         )
-
+        print(acts)
         for pol_name in self.policy_names:
             # Slightly different cases depending on whether the policy
             # is 'choice' or something else, as 'choice' is a simple

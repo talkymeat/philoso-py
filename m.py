@@ -235,16 +235,35 @@ class MDict(dict):
     def __radd__(self, other: dict) -> 'MDict':
         return self+other
     
-    def __mul__(self, other: Mapping|Multiplicable) -> 'MDict':
-        if isinstance(other, Mapping):
-            return MDict({
-                M(k)*M(k_): M(v)*M(v_) 
-                for k, v in self.items() 
-                for k_, v_ in other.items()
-            })
-        else:
-            return MDict({k: M(v)*M(other) for k, v in self.items()})
+    # def __mul__(self, other: Mapping|Multiplicable) -> 'MDict':
+    #     if isinstance(other, Mapping):
+    #         return MDict({
+    #             M(k)*M(k_): M(v)*M(v_) 
+    #             for k, v in self.items() 
+    #             for k_, v_ in other.items()
+    #         })
+    #     else:
+    #         return MDict({k: M(v)*M(other) for k, v in self.items()})
+"""
+XXX
 
+Traceback (most recent call last):
+  File "/Users/xan/CodeToJoy/philoso-py/agent.py", line 142, in day_step
+    next_obs, reward, done, _, _, _ = await self.ac.step(action_to_do)
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xan/CodeToJoy/philoso-py/agent_controller.py", line 350, in step
+    self.actions[act](params)
+  File "/Users/xan/CodeToJoy/philoso-py/action.py", line 76, in __call__
+    self.do(*self.process_action(act))
+  File "/Users/xan/CodeToJoy/philoso-py/action.py", line 788, in do
+    self.repo.insert_tree(tree_data['tree'], self.ac.name, journal=journal_num, data=data)
+  File "/Users/xan/CodeToJoy/philoso-py/repository.py", line 305, in insert_tree
+    rewards *= own_reward/sum(rewards.values())
+  File "/Users/xan/CodeToJoy/philoso-py/m.py", line 246, in __mul__
+    return MDict({k: M(v)*M(other) for k, v in self.items()})
+                     ^^^^
+TypeError: M() takes no arguments
+"""
 
 CTDict: TypeAlias = MDict[Hashable, int]
 

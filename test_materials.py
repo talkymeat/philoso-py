@@ -70,6 +70,11 @@ DTF = DummyTreeFactory()
 DC = DummyController()
 GP = GPTreebank(operators=[ops.SUM, ops.PROD, ops.SQ, ops.CUBE, ops.POW], tree_factory=DummyTreeFactory())
 T0 = GP.tree('([float]<SUM>([float]<SQ>([float]<SUM>([float]<SQ>([int]$mu))([float]<SUM>([float]<PROD>([int]3)([int]$mu))([int]2))))([float]<SUM>([float]<PROD>([int]3)([int]$mu))([int]2)))')
+T1 = GP.tree('([float]<PROD>([int]3)([int]2))')
+T2 = GP.tree('([int]5)')
+T3 = GP.tree('([float]<PROD>([int]7)([int]11))')
+T4 = GP.tree('([int]13)')
+T5 = GP.tree('([float]<SUM>([float]<SQ>([float]<SUM>([float]<SQ>([int]17))([float]<SUM>([float]<PROD>([int]3)([int]19))([int]2))))([float]<SUM>([float]<PROD>([int]3)([int]23))([int]2)))')
 TF = TestTreeFactory(T0)
 
 
@@ -81,4 +86,18 @@ def to_list(self_val, *child_vals, **kwargs):
 
 def get_credit_pos(tree, pos):
     return tree.metadata['credit'][pos]
+
+tree_lists = [
+    [T0, T1, T2],
+    [T0, T2],
+    [T0, T1],
+    [T1, T2],
+    [T1, T3],
+    [T2, T4],
+    [T0],
+    [T1],
+    [T2]
+]
+
+
 

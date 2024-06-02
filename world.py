@@ -867,6 +867,7 @@ class SineWorld(World):
         wavelength: float = 1.0
         amplitude: float = 1.0
         phase: float = 0.0
+        # speed ## XXX
 
         def __call__(self, x):
             return np.sin(

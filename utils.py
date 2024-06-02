@@ -6,6 +6,7 @@ import numpy as np
 from typing import Any, Callable, Sequence
 from functools import reduce
 
+
 def scale_to_sum(arr: np.ndarray, _sum=1) -> np.ndarray:
     return arr/arr.sum() * _sum
 
@@ -197,7 +198,6 @@ def conjoin_tests(*tests: Callable[[Any|None], bool]):
             True
         )
     return test_conjunction
-
 
 
 

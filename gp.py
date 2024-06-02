@@ -60,7 +60,8 @@ class GPTreebank(TypeLabelledTreebank):
             elitism: int = 0,
             dv: str=None, 
             def_fitness: str = None,
-            best_vec_out: list[str] = None
+            best_vec_out: list[str] = None,
+            ping_freq = 5
         ):
         super().__init__(default_op = default_op, operators = operators)
         if isinstance(seed, np.random.Generator):
@@ -87,6 +88,7 @@ class GPTreebank(TypeLabelledTreebank):
         self.temp_coeff = temp_coeff
         self.pop = pop
         self.elitism = elitism
+        self.ping_freq = ping_freq
         self.best = None
         self.gens_past = 0
         self.observatory = observatory
@@ -188,14 +190,14 @@ class GPTreebank(TypeLabelledTreebank):
 
     def run(
             self,
-            ping_freq: int = 1,
+            ping_freq: int = None,
             to_graph: Collection[str] = None
         ) -> tuple[dict[str, list], dict, GPNonTerminal]:
         self.set_up_run(to_graph)
-        return self.continue_run(ping_freq=ping_freq)
+        return self.continue_run(ping_freq=ping_freq if ping_freq else self.ping_freq)
     
-    def continue_run(self, ping_freq: int = 1):
-        best = self.run_episode(ping_freq=ping_freq)
+    def continue_run(self, ping_freq: int = None):
+        best = self.run_episode(ping_freq=ping_freq if ping_freq else self.ping_freq)
         return self.process_run_output(best)
     
     def insert_trees(self, bonus_trees: Sequence[Tree]):
@@ -203,8 +205,15 @@ class GPTreebank(TypeLabelledTreebank):
         # Ignore any that exceed max size 
         # ?? XXX TODO maybe penalise this?
         bonus_trees = [t for t in bonus_trees if t is not None]
-        bonus_trees = [t for t in bonus_trees if t.size() <= self.max_size]
-        bonus_trees = [t for t in bonus_trees if t.depth() <= self.max_depth]
+        try:
+            bonus_trees = [t for t in bonus_trees if t.size() <= self.max_size]
+            bonus_trees = [t for t in bonus_trees if t.depth() <= self.max_depth]
+        except Exception as e:
+            print('F'*500)
+            for t in bonus_trees:
+                print(type(t))
+                print(t)
+            print('F'*500)
         foreign_ops = unions_for_all(*[
             get_operators(t) for t in bonus_trees
         ])

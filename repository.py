@@ -302,7 +302,7 @@ class Publication(Archive):
             index = (_journal[self.value] > data[self.value]).sum()
             own_reward = self._reward(index, **data)
             if rewards:
-                rewards *= own_reward/sum(rewards.values())
+                rewards = {k: reward * own_reward/sum(rewards.values()) for k, reward in rewards.items()}
             # sign tree
             tree.apply(init_reward_tree, own_reward)
             tree.apply(sign_tree, agent_name)  # just needs name

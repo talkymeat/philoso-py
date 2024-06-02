@@ -231,7 +231,9 @@ class GPNew(Action):
             def_fitness: str,
             max_volume: int,
             # gp_best_vec_out: list[str],
-            theta: float = 0.05
+            theta: float = 0.05,
+            ping_freq=5
+
         ) -> None:
         super().__init__(controller)
         self.gptb_list  = self.ac.gptb_list
@@ -253,6 +255,7 @@ class GPNew(Action):
         self.def_fitness = def_fitness
         self.max_volume = max_volume
         self.theta = theta
+        self.ping_freq = ping_freq
         # self.gp_best_vec_out = gp_best_vec_out
 
     @property
@@ -482,7 +485,8 @@ class GPNew(Action):
                 seed = self.rng,
                 _dir = self.out_dir / 'gp_out' / f"{gp_register}" / f"{self.gptb_cts[gp_register]}" / 'g0' / f"t{self.t}",
                 elitism = _i(elitism),
-                fitness = scoreboard
+                fitness = scoreboard,
+                ping_freq = self.ping_freq
                 # dv = self.dv, 
                 # def_fitness = self.def_fitness,
             )
@@ -681,6 +685,7 @@ class UseMem(Action):
         ):
         self.ac.mems_to_use = [self.memory[table, row, 'tree'] for table, row in locations]
 
+
 class StoreMem(Action):
     # Treebank number of mem to be stored
     # address of mem register for
@@ -875,5 +880,18 @@ class Read(Action):
 #     # runs further testing on trees in memory  #
 #     # the amount of testing done is stored in  #
 #     # mem data dict                            #
+#     pass                                       #
+##################################################
+
+##################################################
+# Also:                                          #
+# class Simplify(Action):                        #
+#     # uses an existing tree in memory as the   #
+#     # source of a FunctionObservatory, with    #
+#     # * zero noise                             #
+#     # * heavy penalties for error outside a    #
+#     #   given tolerance                        #
+#     # * if tolerances are met, high value for  #
+#     ¢   reducing tree size                     #
 #     pass                                       #
 ##################################################

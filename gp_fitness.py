@@ -136,7 +136,17 @@ class ScoreboardPipelineElement:
         # If it can't, `vec` should be false, and `apply` will be used to go row
         # by row 
         else:
-            sb[self.out_key] = sb.apply(lambda row: self.fn(**row, **kwargs, **self.spem_kwargs), axis=1)
+            try:
+                sb[self.out_key] = sb.apply(lambda row: self.fn(**row, **kwargs, **self.spem_kwargs), axis=1)
+            except Exception as e:
+                print('JESUS WAS A TERRORIST '*30)
+                print(self.out_key)
+                print(sb)
+                print('-'*100)
+                print(self)
+                print(sb.apply(lambda row: self.fn(**row, **kwargs, **self.spem_kwargs), axis=1))
+                print('JESUS WAS A TERRORIST '*30)
+                raise e
 
     def __str__(self):
         """Returns a string representation of the ScoreboardPipelineElement"""

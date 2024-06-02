@@ -27,7 +27,8 @@ class Model:
         publications: Publication=None,
         sb_factory: SimpleGPScoreboardFactory=None,
         #rewards: list[Reward]=None,
-        time: ModelTime=None
+        time: ModelTime=None,
+        ping_freq=1
     ):
         self.world = world
         self.agents: Container[Agent] = agents
@@ -57,6 +58,7 @@ class Model:
         print('Good morning!')
         for agent in self.agents:
             agent.morning_routine()
+        print('Oh, what a lovely day')
         for _ in range(steps):
             self.not_done = self.agent_name_set.copy()
             self._reward_dict = {}
@@ -65,12 +67,16 @@ class Model:
             tasks = [asyncio.create_task(agent.day_step()) for agent in shuffled_agents]
             _ = await asyncio.wait(tasks)
             self.t.tick()
+        print('What a beautiful sunset!')
         for agent in self.agents:
             agent.evening_routine()
 
     def night(self):
+        print("Good night!")
         for agent in self.agents:
+            print(f'Agent {agent} is dreaming')
             agent.night()
+            print(f'Agent {agent} is sleeping deeply')
 
     def mark_done(self, name):
         self.not_done -= {name}
@@ -89,7 +95,7 @@ def model_from_json(json: str) -> Model:
 def model_from_file(fname: str) -> Model:
     pass
 
-def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test')) -> Model:
+def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping_freq=5) -> Model:
     world = SineWorld(
         np.pi*5, 100, 0.05, (1,1), (0.1, 0.1)
     )
@@ -142,7 +148,8 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test')) -> M
                 max_readings=3, # max_readings, # int = 5,
                 mem_col_types=np.float32, # Sequence[np.dtype]|Mapping[str, np.dtype]|np.dtype|None=None,
                 gp_vars_core=gp_vars_core,
-                gp_vars_more=gp_vars_more
+                gp_vars_more=gp_vars_more,
+                ping_freq=ping_freq
             ), # AgentController
             # PPOTrainer(), # PPOTrainer
             # ActorCriticNetwork(), #nn ActorCriticNetwork
@@ -177,5 +184,5 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test')) -> M
 
 
 if __name__ == "__main__":
-    model = example_model(seed=42)
+    model = example_model(seed=42, ping_freq=5)
     model.run(100, 100)

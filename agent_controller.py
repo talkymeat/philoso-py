@@ -3,26 +3,27 @@ from typing import Any, Sequence, Mapping, Callable
 from pathlib import Path
 from collections import OrderedDict
 import numpy as np
-import pandas as pd
+#import pandas as pd
 from world import World
-from tree_factories import TreeFactory, CompositeTreeFactory, TreeFactoryFactory
+from tree_factories import TreeFactory #, CompositeTreeFactory, TreeFactoryFactory
 from gp import GPTreebank
+from trees import Tree
 from observatories import ObservatoryFactory
-import operators as ops
+# import operators as ops
 from dataclasses import dataclass
 from world import World
 from trees import Tree
 from gymnasium import Env
-from gymnasium.spaces import Dict, Tuple, Discrete, Box, MultiBinary, MultiDiscrete, Space
-from gymnasium.spaces.utils import flatten, unflatten, flatten_space
-from gymnasium.utils import seeding
-from rl_bases import Actionable
+from gymnasium.spaces import Dict #, Tuple, Discrete, Box, MultiBinary, MultiDiscrete, Space
+from gymnasium.spaces.utils import flatten, flatten_space #, unflatten
+# from gymnasium.utils import seeding
+# from rl_bases import Actionable
 from gp_fitness import SimpleGPScoreboardFactory
 from repository import Archive, Publication
 from model_time import ModelTime
 from action import Action, GPNew, GPContinue, UseMem, StoreMem, Publish, Read
 from observation import Observation, GPObservation, Remembering, LitReview
-from ppo import ActorCriticNetwork, PPOTrainer
+# from ppo import ActorCriticNetwork, PPOTrainer
 
 from icecream import ic
 
@@ -83,6 +84,7 @@ class AgentController(Env):
             # value_measures: list=None,
             # value_measure_weights: list[float]=None,
             device: str='cpu',
+            ping_freq=5,
             *args, **kwargs
         ):
         """What should be in __init__, and what in reset?
@@ -104,6 +106,7 @@ class AgentController(Env):
         self.sb_factory = sb_factory
         self.agent_names = agent_names
         self.theta = theta
+        self.ping_freq = ping_freq
         self.short_term_mem_size = short_term_mem_size
         self.record_obs_len = record_obs_len
         self._mems_to_use = []
@@ -154,11 +157,12 @@ class AgentController(Env):
                                             self.dv,
                                             self.def_fitness,
                                             self.max_volume,
-                                            self.theta
+                                            self.theta,
+                                            self.ping_freq
                                         )
         self.actions["gp_continue"] = GPContinue(self,
                                             self.out_dir,
-                                            self.t,
+                                            self.t
                                         )
         self.actions["use_mem"]     = UseMem(self) 
         self.actions["store_mem"]   = StoreMem(self) 
@@ -312,17 +316,14 @@ class AgentController(Env):
         mems = [mem for mem in mems if mem is not None]
         if len(mems) > self.short_term_mem_size:
             try:
-                self._mems_to_use = self.np_random.choice(
-                    mems, self.short_term_mem_size, replace=False
-                )
+                mems = mems[:self.short_term_mem_size]
             except Exception as e:
                 print('A'*100)
                 for mem in mems:
                     print(mem)
                 print('V'*100)
                 raise e
-        else:
-            self._mems_to_use = mems
+        self._mems_to_use = mems
 
     # I think this needs to be async - must wait until all agents have acted before getting reward
     async def step(self, action): ### XXX XXX This needs to be broken the fuck up into constituent actions
