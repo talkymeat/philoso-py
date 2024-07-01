@@ -110,7 +110,6 @@ class Agent:
                     gp.scoreboard.to_parquet(fname)
                     print('='*80)
             print('='*80)
-            print(gp.observatory)
             print('BRICKSH '*100)
             raise e
         # set the observaton, plus the act and obs for `choice`
@@ -252,10 +251,11 @@ class Agent:
                 log_probs_vecs = log_prob_dicts.apply(logprobdict_2_tensor).to_list()
                 # which is now a 2-d tensor, as promised
                 try:
-                    act_log_probs[pol_name] = torch.stack(
-                        log_probs_vecs, 
-                        dim=0
-                    ).to(self.device, dtype=torch.float64)
+                    if log_probs_vecs:
+                        act_log_probs[pol_name] = torch.stack(
+                            log_probs_vecs, 
+                            dim=0
+                        ).to(self.device, dtype=torch.float64)
                 except Exception as e:
                     print('YQK '*100)
                     print(f"{pol_name=}")

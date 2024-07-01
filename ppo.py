@@ -19,31 +19,39 @@ from icecream import ic
 # dicts of tensors to tensors
 
 def logprobdict_2_tensor(logprob_dict):
+    """Joins all the Tensors in an OrderedDict of Tensors into one Tensor"""
     for k, v in logprob_dict.items():
         if len(v.shape)==2 and v.shape[0]==1:
             logprob_dict[k] = v[0]
-    try:
-        return torch.concatenate(list(logprob_dict.values()))
-    except Exception as e:
-        print('69'*69)
-        print(logprob_dict)
-        print({k: v.shape for k, v in logprob_dict.items()})
-        print('96'*69)
-        raise e
-
+    return torch.concatenate(list(logprob_dict.values()))
+    
 def tensorise_dict(act_dict, device):
+    """Converts a dict with string keys and list-like, array-like 
+    or tensor-like values into an OrderedDict of Tensors
+    """
     return OrderedDict({k: t if isinstance(t, torch.Tensor) else torch.tensor(t, device=device) for k, t in act_dict.items()})
 
 
 # Policy and value model
 class ActorCriticNetwork(nn.Module):
+    """Multi headed actor-critic ntwork for philoso.py Agents: the 
+    agents choose from multiple possible actions and each action also
+    has a set of action parameters. When the agents acts, it first
+    uses the 'choice' head to choose which actions to perform (a *choice*
+    consists of a sequence of one or more *actions*) and then uses the
+    head(s) corresponding to the chosen action(s) to set the parameters 
+    for the action
+    """
     def __init__(self, obs_space_size, action_space_sizes, device:str="cpu",):
         super().__init__() # manadatory
+        # dict for action heads
         self.policy_layers: dict[str, nn.Sequential] = {}
 
+        # needed to find this bug! :\
         torch.autograd.set_detect_anomaly(True)
 
-        # self.last_policy_networks = [] # ??? XXX
+        # these are the choices the 'choice' head can choose from:
+        # each action name is a key in the action head dictionary
         self.action_choices = [
             ['gp_new'],
             ['gp_continue'],
@@ -72,58 +80,32 @@ class ActorCriticNetwork(nn.Module):
         #     ['read'] <<== optional, reads into mem, not gp run
         # ]
 
+        # chared with the value (critic) head, the choice head,
+        # and all action heads
         self.shared_layers = nn.Sequential(
             nn.Linear(obs_space_size, 64).double(),
-            nn.ReLU().double(),
-            nn.Linear(64, 64).double(),
-            nn.ReLU().double())
+            nn.ReLU().double(), 
+            nn.Linear(64, 64).double(), 
+            nn.ReLU().double()) 
         
+        # choice head
         self.policy_layers['choice'] = nn.Sequential(
-            nn.Linear(64, 64).double(),
-            nn.ReLU().double(),
-            nn.Linear(64, self.action_choice_space.n).double())
+            nn.Linear(64, 64).double(), 
+            nn.ReLU().double(), 
+            nn.Linear(64, self.action_choice_space.n).double()) 
         
+        # action heads
         for name, size in action_space_sizes.items():
             self.policy_layers[name] = nn.Sequential(
                 nn.Linear(64, 64).double(),
                 nn.ReLU().double(),
                 nn.Linear(64, size).double())
         
-        """# Also, 'gp_new'. XXX DELETE commented out code once AC is known to work
-        # self.policy_networks['gp_continue'] = nn.Sequential(
-        #     nn.Linear(64, 64),
-        #     nn.ReLU(),
-        #     nn.Linear(64, action_space_size))
-        
-        # self.policy_networks['store_mem'] = nn.Sequential(
-        #     nn.Linear(64, 64),
-        #     nn.ReLU(),
-        #     nn.Linear(64, action_space_size))
-        
-        # self.policy_networks['use_mem'] = nn.Sequential(
-        #     nn.Linear(64, 64),
-        #     nn.ReLU(),
-        #     nn.Linear(64, action_space_size))
-        
-        # self.policy_networks['use_public'] = nn.Sequential(
-        #     nn.Linear(64, 64),
-        #     nn.ReLU(),
-        #     nn.Linear(64, action_space_size))
-        
-        # self.policy_networks['publish'] = nn.Sequential(
-        #     nn.Linear(64, 64),
-        #     nn.ReLU(),
-        #     nn.Linear(64, action_space_size))
-        
-        # self.policy_networks['read'] = nn.Sequential(
-        #     nn.Linear(64, 64),
-        #     nn.ReLU(),
-        #     nn.Linear(64, action_space_size))"""
-        
+        # value (critic) head
         self.value_layers = nn.Sequential(
-            nn.Linear(64, 64).double(),
-            nn.ReLU().double(),
-            nn.Linear(64, 1).double())
+            nn.Linear(64, 64).double(),  # DOUBLE
+            nn.ReLU().double(), # DOUBLE
+            nn.Linear(64, 1).double()) # DOUBLE
 
     def value(self, obs):
         z = self.shared_layers(obs)
@@ -139,24 +121,40 @@ class ActorCriticNetwork(nn.Module):
         return action_logits
 
     def forward(self, obs): # mandatory
+        """Given an observation, will first call the choice head
+        to select actions, when calls the actions heads corresponding
+        to the chosen actions. Outputs the choice, the log probability
+        of the choice, the action logits, and the predicted value
+        """
 
         torch.autograd.set_detect_anomaly(True)
 
+        # This didn't fix the inplace bug:
         # obs = obs.clone().detach().requires_grad_(True)
+
+        # feeds the observation into the shared layers
         z = self.shared_layers(obs)
-        # print(z)
         action_logits = {}
+        # output of the shared layer is used to get logits from the
+        # 'choice' head
         action_logits['choice'] = self.policy_layers['choice'](z)
+        # which is used to get a choice from a Categorical distribution
         choice_distribution = Categorical(logits=action_logits['choice'])
         choice = choice_distribution.sample()
+        # the log prob is needed for training
         choice_log_prob = choice_distribution.log_prob(choice).item()
+        # having made the choice, the output of the shared layer is also 
+        # passed into the layers for each action, in sequence, generating
+        # the action logits
         for action in self.action_choices[choice.item()]:
             action_logits[action] = self.policy_layers[action](z)
+        # the critic layer gives the observation a value score
         value = self.value_layers(z)
         return choice, choice_log_prob, action_logits, value
   
 
 class PPOTrainer():
+    """Performs PPO training of ActorCriticNetwork"""
     def __init__(self,
                 actor_critic: ActorCriticNetwork,
                 ppo_clip_val=0.2,
@@ -166,13 +164,18 @@ class PPOTrainer():
                 policy_lr=3e-4,
                 value_lr=1e-2):
         self.actor_critic = actor_critic
+        # training updates are clipped within a range: a key feature of PPO
         self.ppo_clip_val = ppo_clip_val
+        # Trainer stops training once the target Kulback-Liebler
+        # Divergence is reached, or training has gone on for the max
+        # number of iterations
         self.target_kl_div = target_kl_div
         self.max_policy_train_iters = max_policy_train_iters
         self.value_train_iters = value_train_iters
         self.policy_params = {}
         self.policy_optims = {}
 
+        # all heads get Adam Optimsers
         value_params = list(self.actor_critic.shared_layers.parameters()) + \
             list(self.actor_critic.value_layers.parameters())
         self.value_optim = optim.Adam(value_params, lr=value_lr)
@@ -188,6 +191,26 @@ class PPOTrainer():
         self.actor_critic.device
 
     def train_policy(self, obs, acts, old_log_probs, gaes, which, actions, mask=None):
+        """Trains a single policy head, using the data from a given day (epoch)
+        
+        Parameters
+        ----------
+            obs: 
+                Observation
+            acts:
+                The  actions actually taken during the day 
+            old_log_probs:
+                The log probabilities of the day's actions
+            gaes:
+                Generalised Advantage Estimation is used to represent value
+            which (str):
+                Indicates which head is to be trained
+            actions:
+                Dict containing `Action` objects: these translate network 
+                outputs into actual behaviour, and contain useful 
+                information about an action, like the corresponding 'action
+                space', and which probability distributions are used
+        """
         for _ in range(self.max_policy_train_iters):
             # If a network is used at every step (like 'choice'), no mask needed
             obs, gaes = (obs[mask], gaes[mask]) if mask is not None else (obs, gaes)
@@ -199,22 +222,36 @@ class PPOTrainer():
             # Here, we calculate the new log probs, which is different
             # (simpler) for 'choice' than everything else
             if which == 'choice':
+                # a new choice based on the updated network params, and
+                # corresponding log probs
                 new_logits = self.actor_critic.choose(obs)
                 new_distro = Categorical(logits=new_logits) 
                 new_log_probs = new_distro.log_prob(acts)
             else:
+                #
                 new_logprobs_list = []
                 for ob1, ac1 in zip(obs, acts):
+                    # generate new logits
                     new_logits = self.actor_critic.policy(ob1, which)
+                    # An `Action` may use different parts of its input in
+                    # different ways, with different action subspaces
+                    # and using different distributions. This generates
+                    # a dict of the distributions, given the logits
                     new_distros = actions[which].logits_2_distros(new_logits)
+                    # this goes through the new distributions and calculates
+                    # the new log probabilities of the action-parts, based on
+                    # the updated network parameters
                     act_part_log_probs = tensorise_dict(OrderedDict({
                         k: d.log_prob(ac1[k]) for k, d in new_distros.items()
                     }), device=self.device)
+                    # the logprobs for the sub-actions are concatenated into
+                    # a single tensor
                     new_logprobs_list.append(logprobdict_2_tensor(act_part_log_probs))
+                # the log-probs for each action are then stacked into a 2-d tensor
                 new_log_probs = torch.stack(
                     new_logprobs_list, 
                     dim=0
-                ).to(self.device, dtype=torch.float64)
+                ).to(self.device, dtype=torch.float64) 
                 # Would this work? test later XXX XXX
                 # new_logits = self.actor_critic.policy(obs, which)
                 # new_distros = actions[which].logits_2_distros(new_logits)
@@ -224,30 +261,29 @@ class PPOTrainer():
             # 2-d arrays of matching size, assigned to the 
             # new_act = self.actor_critic.policy(obs)
 
+            # the policy ratio is calculted and clipped to stop
+            # the policy from changing too much in one epoch
             policy_ratio = torch.exp(new_log_probs - old_log_probs) # torch.exp(new_log_probs - old_log_probs)
             clipped_ratio = policy_ratio.clamp(
                 1 - self.ppo_clip_val, 1 + self.ppo_clip_val)
             
-            try:
-                if len(clipped_ratio.shape) > 1:
-                    gaes = gaes.expand(1, gaes.shape[0]).permute((1,0))
-                clipped_loss = clipped_ratio * gaes
-            except Exception as e:
-                print("Xx"*200)
-                print(f"{clipped_ratio=}")
-                print(f"{which=}")
-                print(f"{gaes=}")
-                print("xX"*200)
-                raise e
+            # there are multiple policy ratios per action, the
+            # gaes tensor needs to be reshaped to multiply correctely
+            if len(clipped_ratio.shape) > 1:
+                gaes = gaes.expand(1, gaes.shape[0]).permute((1,0))
+
+            # calculate policy lost
+            clipped_loss = clipped_ratio * gaes
             full_loss = policy_ratio * gaes
             policy_loss = -torch.min(full_loss, clipped_loss).mean()
 
+            # backpropagate
             policy_loss.backward()
             self.policy_optims[which].step()
 
             # If the new probability distro diverges too far from the old,
             # stop training and get new training data
-            kl_div = (old_log_probs - new_log_probs).mean() # (old_log_probs - new_log_probs).mean()
+            kl_div = (old_log_probs - new_log_probs).mean() 
             if kl_div >= self.target_kl_div:
                 break
 
