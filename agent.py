@@ -90,6 +90,7 @@ class Agent:
         try:
             choice, choice_log_prob, action_logits, val = self.nn(obs)
         except Exception as e:
+            # remove after debugging - prints & outputs diagnostic info
             from gymnasium.spaces import unflatten
             print(('A ' if obs[0].isnan().any() else 'B ')*100)
             print(list(obs[0]))
@@ -148,15 +149,7 @@ class Agent:
                 action_to_do[act] = training_instance[('act', act)] = action_part
                 training_instance[('log_prob', act)] = act_part_log_probs
 
-        
-        # # logits is shape (1, len(action_space)), we want (len(action_space), )
-        # act_raw = np.array(logits[0].detach())
-        # # ========
-        # # act_log_prob = act_distribution.log_prob(act).item()
-        # # XXX process act output for env.step(act), but for now:
-        # act = act_raw
 
-        # act, val = act.item(), val.item()
         # This is a tensor of size (1,1), we just want a float
         val = val.item()
         training_instance[('value', 'v')] = val
