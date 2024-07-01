@@ -87,6 +87,8 @@ class GPTreebank(TypeLabelledTreebank):
         self.episode_len = episode_len
         self.temp_coeff = temp_coeff
         self.pop = pop
+        if not self.pop:
+            print(': my dude, the population is set to zero :' * 40)
         self.elitism = elitism
         self.ping_freq = ping_freq
         self.best = None
@@ -160,14 +162,6 @@ class GPTreebank(TypeLabelledTreebank):
             self._best = None
             return
         best_tree = best_tree_with_data['tree']
-        self.crossover_rate
-        self.mutation_rate
-        self.mutation_sd
-        self.max_depth
-        self.max_size
-        self.temp_coeff
-        self.pop
-        self.elitism
         metadata = {k: v for k, v in best_tree_with_data.items() if k != 'tree'}
         metadata = {
             **metadata,
@@ -205,26 +199,12 @@ class GPTreebank(TypeLabelledTreebank):
         # Ignore any that exceed max size 
         # ?? XXX TODO maybe penalise this?
         bonus_trees = [t for t in bonus_trees if t is not None]
-        try:
-            bonus_trees = [t for t in bonus_trees if t.size() <= self.max_size]
-            bonus_trees = [t for t in bonus_trees if t.depth() <= self.max_depth]
-        except Exception as e:
-            print('F'*500)
-            for t in bonus_trees:
-                print(type(t))
-                print(t)
-            print('F'*500)
+        bonus_trees = [t for t in bonus_trees if t.size() <= self.max_size]
+        bonus_trees = [t for t in bonus_trees if t.depth() <= self.max_depth]
         foreign_ops = unions_for_all(*[
             get_operators(t) for t in bonus_trees
         ])
-        try:
-            foreign_ops = {op.name: op for op in foreign_ops}
-        except Exception as e:
-            print('[]'*50)
-            print(foreign_ops)
-            print(unions_for_all(foreign_ops))
-            print(']['*50)
-            raise e
+        foreign_ops = {op.name: op for op in foreign_ops}
         self.operators = {**self.operators, **foreign_ops}
         for t in bonus_trees:
             t.copy_out(self)
@@ -313,43 +293,33 @@ class GPTreebank(TypeLabelledTreebank):
             # for each tree of being copied in an individual copying
             # event
             # Temp try-except for debugging
-            try:
-                n = 0
-                for t in self.np_random.choice(
-                    old_gen, 
-                    p=normed_scores, # scores/np.sum(scores), 
-                    size=the_masses
-                ):
-                    # Note that making a copy automatically adds it to the
-                    # treebank, so there's no need to assign this 
-                    # print(f'Tree {n} of {the_masses}, copying {t}')
-                    n +=1
-                    t.copy(gp_copy=True) 
-            except Exception as e:
-                print('FA'+'HA'*49)
-                print(e)
-                print(old_gen) 
-                print(pd.DataFrame({'t': old_gen}).isna())
-                print(normed_scores) # scores/np.sum(scores), 
-                print(the_masses)
-                print('-'*100)
-                print(self.scoreboard)
-                print('='*100)
-                empty=self.scoreboard['tree'].isna()
-                print(empty)
-                print('-'*100)
-                print(empty.sum())
-                print('BWAA'+"HA"*48)
-                raise e
+            n = 0
+            for t in self.np_random.choice(
+                old_gen, 
+                p=normed_scores, # scores/np.sum(scores), 
+                size=the_masses
+            ):
+                # Note that making a copy automatically adds it to the
+                # treebank, so there's no need to assign this 
+                # print(f'Tree {n} of {the_masses}, copying {t}')
+                n +=1
+                t.copy(gp_copy=True) 
         # However, if they sum to exactly zero, that is practically
         # certainly because all the trees are NANing out - in which case
         # 1. print out deets, because that is a fucky outcome
         # 2. pick trees to GP-copy at random
         else:
             print(self.scoreboard['fitness'].fillna(0).sum())
-            print('H', self.pop-self.elitism)
+            print(f'Fitness sums to 0.0, size of the masses: is {the_masses}, ' +
+                f'the elite is {self.elitism}, the old gen is {len(old_gen)}'
+                )
+            scoreboard_dumpname = self.make_filename("dumptron9000", 'csv', '')
+            print(f"Dumping Scoreboard as '{scoreboard_dumpname}'")
+            self.scoreboard.to_csv(scoreboard_dumpname)
+            print(self.observatory)
             for t in self.np_random.choice(old_gen, size=the_masses):
                 t.copy(gp_copy=True) 
+            raise ValueError("Error in place temporarily, as this may be sensible behaviour in the context that causes it, IDK: but anyway, it's weird that fitness sums to 0 here, ind it should be investigated.")
         ###|##|#######################################
         ## |  | If final_best (the output of the run) exists, make sure it doesn't get deleted
         ###V##V#######################################

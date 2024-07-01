@@ -7,6 +7,8 @@ from gymnasium.spaces import flatten, flatten_space
 from action import Action
 from collections import OrderedDict
 from icecream import ic
+import pyarrow.parquet as pq
+import pyarrow as pa
 
 class Agent:
     def __init__(self, 
@@ -83,17 +85,36 @@ class Agent:
         # NN outputs: action_logits is raw NN output, a 1D tensor of floats.
         # choice is a simpler task as it's just a single Categorical, not a Dict
         obs = torch.tensor(
-            [self.obs], dtype=torch.float32, device=self.device
+            [self.obs], dtype=torch.float64, device=self.device
         )
         try:
             choice, choice_log_prob, action_logits, val = self.nn(obs)
         except Exception as e:
-            print('BLEBTH '*100)
+            from gymnasium.spaces import unflatten
+            print(('FFHHAAAAAAAACCCKK ' if obs[0].isnan().any() else 'BLEBTH ')*100)
             print(list(obs[0]))
+            print('-'*80)
+            print(self.ac._observation_space)
+            print('-'*80)
+            print(unflatten(self.ac._observation_space, obs[0].numpy()))
+            print('='*80)
+            randnum = self.rng.integers(1000000)
+            for i, gp in enumerate(self.ac.gptb_list):
+                if gp is not None:
+                    print('='*80)
+                    print(gp.scoreboard)
+                    shx, shy = gp.scoreboard.shape
+                    fname = f'scoreboard_dump_{randnum}_{i}_{shx}x{shy}.parquet'
+                    print(f'Dumping scoreboard {i} as {fname}, {shx} by {shy}')
+                    gp.scoreboard['tree'] = gp.scoreboard['tree'].apply(lambda x: f"{x}")
+                    gp.scoreboard.to_parquet(fname)
+                    print('='*80)
+            print('='*80)
+            print(gp.observatory)
             print('BRICKSH '*100)
             raise e
         # set the observaton, plus the act and obs for `choice`
-        training_instance = {('obs', 'v'): self.obs, ('choice', 'act'): choice, ('choice', 'log_prob'): choice_log_prob}
+        training_instance = {('obs', 'v'): self.obs, ('act', 'choice'): choice, ('log_prob', 'choice'): choice_log_prob}
         # separate action-representations for doing actions and training the 
         # NN. Tidying up so a single representation will do is a future task
         action_to_do = {}
@@ -125,8 +146,8 @@ class Agent:
                 #     })
                 # )
                 ########################################### 
-                action_to_do[act] = training_instance[(act, 'act')] = action_part
-                training_instance[(act, 'log_prob')] = act_part_log_probs
+                action_to_do[act] = training_instance[('act', act)] = action_part
+                training_instance[('log_prob', act)] = act_part_log_probs
 
         
         # # logits is shape (1, len(action_space)), we want (len(action_space), )
@@ -144,8 +165,10 @@ class Agent:
         next_obs, reward, done, _, _, _ = await self.ac.step(action_to_do)
 
         training_instance[('reward', 'v')] = reward
-
+        # print('*'*10, training_instance)
+        # print(self.training_buffer)
         self.training_buffer.loc[len(self.training_buffer)] = training_instance
+        # print(self.training_buffer)
 
         self.obs = next_obs
         self.day_reward += reward
@@ -162,10 +185,11 @@ class Agent:
 
     # run training loop
     def night(self, parquet_fname=None):
-        if parquet_fname:
-            self.training_buffer = pd.read_parquet(parquet_fname)
-        else:
-            self.training_buffer.to_parquet(self.ac.out_dir / 'pq')
+        # if parquet_fname:
+        #     self.training_buffer = pd.read_parquet(parquet_fname)
+        # else:
+        #     table = pa.Table.from_pandas(self.training_buffer)
+        #     pq.write_table(table, self.ac.out_dir / f'rollout_{self.name}_dump.parquet')
         permute_idxs = self.rng.permutation(len(self.training_buffer))
 
         # Policy data
@@ -174,12 +198,12 @@ class Agent:
         masks = {}
         obs = torch.tensor(
             self.training_buffer[('obs', 'v')][permute_idxs],
-            dtype=torch.float32, 
+            dtype=torch.float64, 
             device=self.device
         )
         gaes = torch.tensor(
             self.training_buffer[('value', 'v')][permute_idxs],
-            dtype=torch.float32, 
+            dtype=torch.float64, 
             device=self.device
         )
         print(acts)
@@ -190,14 +214,20 @@ class Agent:
             # Others may have a mixture of space-types and distributions.
             if pol_name == 'choice':
                 # Just convert acts and logprobs into nice 2-d tensors
-                acts[pol_name] = torch.tensor(
-                    self.training_buffer[('act', pol_name)][permute_idxs],
-                    dtype=torch.int32, 
-                    device=self.device
-                )
+                try:
+                    acts[pol_name] = torch.tensor(
+                        self.training_buffer[('act', pol_name)][permute_idxs],
+                        dtype=torch.int64, 
+                        device=self.device
+                    )
+                except Exception as e:
+                    print('jklol '*69)
+                    print(self.training_buffer[('act', pol_name)][permute_idxs])
+                    print('jklol '*69)
+                    raise e
                 act_log_probs[pol_name] = torch.tensor(
                     self.training_buffer[('log_prob', pol_name)][permute_idxs],
-                    dtype=torch.float32, 
+                    dtype=torch.float64, 
                     device=self.device
                 )
                 # no mask needed, as 'choice' is used at every step
@@ -212,26 +242,34 @@ class Agent:
                 # which requires being split between multiple Distributions. These should just be 
                 # assigned to device ready for training
                 act_dicts: pd.Series = self.training_buffer[('act', pol_name)][permute_idxs][masks[pol_name]]
-                act_dicts = act_dicts.apply(tensorise_dict)
+                act_dicts = act_dicts.apply(lambda x: tensorise_dict(x, device=self.device))
                 acts[pol_name] = act_dicts
                 # logprobs, on the other hand, are at the heart of the loss calculation, so
                 # these need to be turned into one big 1-d tensor, and then stacked into a 2-d
                 # tensor, which can be used for the actual training as a single computation
                 log_prob_dicts: pd.Series = self.training_buffer[('log_prob', pol_name)][permute_idxs][masks[pol_name]]
                 # A pd.Series (or 1-col DF?) of tensors
-                log_probs_vecs = log_prob_dicts.apply(logprobdict_2_tensor)
+                log_probs_vecs = log_prob_dicts.apply(logprobdict_2_tensor).to_list()
                 # which is now a 2-d tensor, as promised
-                act_log_probs[pol_name] = torch.tensor(
-                    log_probs_vecs,
-                    dtype=torch.float32, 
-                    device=self.device
-                )
+                try:
+                    act_log_probs[pol_name] = torch.stack(
+                        log_probs_vecs, 
+                        dim=0
+                    ).to(self.device, dtype=torch.float64)
+                except Exception as e:
+                    print('YQK '*100)
+                    print(f"{pol_name=}")
+                    print(f"{act_log_probs=}")
+                    print(f"{log_probs_vecs=}")
+                    print(f"{log_prob_dicts=}")
+                    print('EDI '*100)
+                    raise e
 
             
 
         # Value data
         returns = discount_rewards(self.training_buffer[('reward', 'v')])[permute_idxs]
-        returns = torch.tensor(returns, dtype=torch.float32, device=self.device)
+        returns = torch.tensor(returns, dtype=torch.float64, device=self.device)
 
         # Train model
         for name in self.policy_names:

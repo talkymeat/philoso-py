@@ -512,11 +512,6 @@ class TypeLabelledTreebank(Treebank):
                 tr.delete()
             e.treestr = treestr
             raise e
-        except Exception as e:
-            print(treestr)
-            print(str(e))
-            #tr.delete()
-            raise e
         return tr
 
 

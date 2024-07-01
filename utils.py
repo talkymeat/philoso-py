@@ -1,14 +1,18 @@
 import math
 from typing import Collection
 from collections.abc import MutableSet
-from icecream import ic
+# from icecream import ic
 import numpy as np
-from typing import Any, Callable, Sequence
+from typing import Any, Callable
 from functools import reduce
+import torch
 
 
 def scale_to_sum(arr: np.ndarray, _sum=1) -> np.ndarray:
     return arr/arr.sum() * _sum
+
+def aeq(a, b, eta=1e-6):
+    return abs(a-b) < eta
 
 class InsufficientPostgraduateFundingError(Exception):
     pass
@@ -199,6 +203,14 @@ def conjoin_tests(*tests: Callable[[Any|None], bool]):
         )
     return test_conjunction
 
+
+def _i(item):
+    if isinstance(item, torch.Tensor) and np.prod(item.shape)==1:
+        return item.item()
+    elif isinstance(item, np.ndarray) and np.prod(item.shape)==1:
+        return item.item()
+    else:
+        return item
 
 
 

@@ -7,27 +7,21 @@ from collections import OrderedDict
 from gp import GPTreebank
 from observatories import ObservatoryFactory
 from tree_factories import TreeFactory, CompositeTreeFactory
-from operators import Operator
 from model_time import ModelTime
 from repository import Archive, Publication
 from gp_fitness import SimpleGPScoreboardFactory
-from utils import scale_to_sum, InsufficientPostgraduateFundingError
-
+from utils import scale_to_sum, InsufficientPostgraduateFundingError, _i
+from guardrails import GuardrailManager
+from cuboid import Cuboid
 
 # might not be needed here, maybe perhaps
 import torch
 import numpy as np
 from gymnasium.spaces.utils import flatten, unflatten, flatten_space
-from gymnasium.spaces import Dict, Tuple, Discrete, Box, MultiBinary, MultiDiscrete, Space
+from gymnasium.spaces import Dict, Discrete, Box, MultiBinary, MultiDiscrete, Space
 from torch.distributions import Bernoulli, Categorical, Normal
 
-from icecream import ic
-
-def _i(item):
-    if isinstance(item, torch.Tensor) and np.prod(item.shape)==1:
-        return item.item()
-    else:
-        return item
+# from icecream import ic
 
 
 def scale_unit_to_range(val, min_, max_):
@@ -64,6 +58,7 @@ def space_2_distro(space: Space):
             'space_2_distro only takes fundamental Spaces, ' +
             f'not {type(space).__name__}'
         )
+
 
 class Action(ABC):
     def __init__(self, 
@@ -168,45 +163,20 @@ class Action(ABC):
         )
     
     def logits_2_distros(self, logits):
-        # for k_, distro_, sllogits_, shape_ in zip(
-        #         self.action_space.keys(),
-        #         self.distributions, 
-        #         self.slice_logits(logits),
-        #         self.logit_dims
-        #     ):
-            # if shape_:
-            #     print("XXXXXXXX "*10)
-            #     print(k_) 
-            #     print(distro_)
-            #     print(shape_)
-            #     print(logits)
-            #     print(logits.shape)
-            #     print(sllogits_)
-            #     print(sllogits_.shape)
-            #     print('_-_-Z-Z---============-----------')
-        try:
-            return OrderedDict({
-                k: distro(
-                    torch.reshape(sllogits, shape)
-                    if shape
-                    else sllogits
-                )
-                for k, distro, sllogits, shape
-                in zip(
-                    self.action_space.keys(),
-                    self.distributions, 
-                    self.slice_logits(logits),
-                    self.logit_dims
-                )
-            })
-        except Exception as e:
-            print('WH'+'Y'*98)
-            print(self.action_space.keys(),)
-            print(self.distributions) 
-            print(self.slice_logits(logits))
-            print(self.logit_dims)
-            print('WH'+'I'*96+'NE')
-            raise e
+        return OrderedDict({
+            k: distro(
+                torch.reshape(sllogits, shape)
+                if shape
+                else sllogits
+            )
+            for k, distro, sllogits, shape
+            in zip(
+                self.action_space.keys(),
+                self.distributions, 
+                self.slice_logits(logits),
+                self.logit_dims
+            )
+        })
         
 
 # GP should put hyperparam and obs param data in self.best, so that's available when it's called by storemem, etc
@@ -239,7 +209,10 @@ class GPNew(Action):
         self.gptb_list  = self.ac.gptb_list
         self.gptb_cts   = self.ac.gptb_cts
         self.gp_vars_out = self.ac.gp_vars_out
+        self.guardrails: GuardrailManager = self.ac.guardrail_manager
         self.sb_factory: SimpleGPScoreboardFactory = self.ac.sb_factory
+        # note that the defined fitness value always has a raw weight of 1
+        self.num_sb_weights: int = self.sb_factory.num_sb_weights - 1
         if CompositeTreeFactory not in tree_factory_classes:
             self.tf_options = tree_factory_classes
         else:
@@ -253,9 +226,19 @@ class GPNew(Action):
         self.t = time
         self.dv = dv 
         self.def_fitness = def_fitness
-        self.max_volume = max_volume
+        # XXX TODO make these size factors user-settable params (not less than 2,3,2 tho)
+        self.min_pop = 2
+        self.min_max_size = 3
+        self.min_ep_len = 2
+        self.size_factor_cuboid = Cuboid(
+            self.min_pop,
+            self.min_max_size,
+            self.min_ep_len,
+            max_volume
+        )
         self.theta = theta
         self.ping_freq = ping_freq
+        self.set_guardrails()
         # self.gp_best_vec_out = gp_best_vec_out
 
     @property
@@ -348,7 +331,7 @@ class GPNew(Action):
 #----#----#----#----#----#----#----#----#----#----#----#----#----#----#----#----
         gp_register_sp = Discrete(len(self.gptb_list)) 
         num_wobf_params = len(self.obs_fac.wobf_param_ranges)
-        box_len = 11 + num_wobf_params + (
+        box_len = 9 + self.num_sb_weights + num_wobf_params + (
             len(self.tf_options) if len(self.tf_options) > 1 else 0
         )
         long_box = Box(low=-np.inf, high=np.inf, shape=(box_len,))
@@ -357,40 +340,59 @@ class GPNew(Action):
             'long_box': long_box
         })
 
+    def set_guardrails(self):
+        self.guardrails.make('pop', min=self.min_pop, max=np.inf)
+        self.guardrails.make('max_size', min=self.min_max_size, max=np.inf)
+        self.guardrails.make('episode_len', min=self.min_ep_len, max=np.inf)
+        for n in range(self.num_sb_weights):
+            self.guardrails.make(f'sb_weight_{n}', min=-np.inf, max=np.inf)
+        self.guardrails.make('crossover_rate', min=0, max=1)
+        self.guardrails.make('mutation_rate', min=0, max=1)
+        self.guardrails.make('mutation_sd', min=-np.inf, max=np.inf)
+        self.guardrails.make('max_depth', min=1, max=np.inf)
+        self.guardrails.make('elitism', min=0, max=1)
+        self.guardrails.make('temp_coeff', min=0, max=np.inf)
+        self.obs_guardrail_names = []
+        for params in self.obs_fac.wobf_guardrail_params:
+            self.obs_guardrail_names.append(params['name'])
+            if '_no_make' not in params:
+                self.guardrails.make(**params)
+
     def process_action(self, 
         in_vals: OrderedDict[str, np.ndarray|int|float|bool]
     ):
-        
         gp_register = int(in_vals['gp_register'][0])
-        arr = (torch.tanh(in_vals['long_box'])[0] + 1)/2
-        try:
-            pop, max_size, episode_len = self.calculate_size_factors(arr[:3])
-        except Exception as e:
-            print("SFJHKJGKJGHSGKHJ"*8)
-            print(arr)
-            print("DJKSDKJJDGDJKGHKSHGKJSD"*8)
-            raise e
-        sb_weights = scale_to_sum(np.append(1.0, arr[3:5])) 
-        crossover_rate = arr[5] # no scaling
-        mutation_rate = arr[6]  # no scaling
-        mutation_sd = arr[7]    # no scaling
+        raws = in_vals['long_box'][0]
+        arr = (torch.tanh(raws) + 1)/2
+        pop, max_size, episode_len = self.size_factor_cuboid(*arr[:3])
+        pop = self.guardrails['pop'](raws[0], pop)
+        max_size = self.guardrails['max_size'](raws[1], max_size)
+        episode_len = self.guardrails['episode_len'](raws[2], episode_len)
+        # XXX TODO make this able to handle more weights
+        sb_weights = scale_to_sum(np.append(1.0, arr[3:3+self.num_sb_weights]))
+        for i, raw, cooked in zip(range(self.num_sb_weights), sb_weights, raws[3:3+self.num_sb_weights]):
+            self.guardrails[f'sb_weight_{i}'](raw, cooked)
+        crossover_rate = self.guardrails['crossover_rate'](raws[3+self.num_sb_weights], arr[3+self.num_sb_weights]) # no scaling
+        mutation_rate = self.guardrails['mutation_rate'](raws[4+self.num_sb_weights], arr[4+self.num_sb_weights])  # no scaling
+        mutation_sd = self.guardrails['mutation_rate'](raws[5+self.num_sb_weights], arr[5+self.num_sb_weights])    # no scaling
         min_max_depth = np.ceil(np.log2(max_size))
         max_max_depth = max_size/2
-        try:
-            max_depth = int(scale_unit_to_range(arr[8], min_max_depth, max_max_depth))
-        except Exception as e:
-            print('-'*80)
-            print(in_vals['long_box'])
-            print(torch.tanh(in_vals['long_box']))
-            print(arr[:3])
-            print(max_size)
-            print(np.log2(max_size))
-            print(arr[8], '>>', min_max_depth, '<<', max_max_depth)
-            raise e
-        elitism =  int(arr[9]*pop)
-        temp_coeff = arr[10]*2
-        obs_params = arr[11:11+len(self.obs_fac.wobf_param_ranges)]
-        obs_args = tuple([scale_unit_to_range(val, *bounds) for val, bounds in zip(obs_params, self.obs_fac.wobf_param_ranges)])
+        max_depth = int(scale_unit_to_range(arr[6+self.num_sb_weights], min_max_depth, max_max_depth))
+        max_depth = self.guardrails['max_depth'](raws[6+self.num_sb_weights], max_depth)
+        elitism =  int(self.guardrails['elitism'](raws[7+self.num_sb_weights], arr[7+self.num_sb_weights])*pop)
+        temp_coeff = self.guardrails['temp_coeff'](raws[8+self.num_sb_weights], arr[8+self.num_sb_weights])*2
+        obs_params = arr[
+            9+self.num_sb_weights:9+self.num_sb_weights+len(self.obs_fac.wobf_param_ranges)
+        ]
+        obs_params_raw = raws[
+            9+self.num_sb_weights:9+self.num_sb_weights+len(self.obs_fac.wobf_param_ranges)
+        ]
+        obs_args = [scale_unit_to_range(val, *bounds) for val, bounds in zip(obs_params, self.obs_fac.wobf_param_ranges)]
+        obs_args = tuple([
+            self.guardrails[gr_name](raw_param, obs_arg) 
+            for raw_param, obs_arg, gr_name 
+            in zip(obs_params_raw, obs_args, self.obs_guardrail_names)
+        ])
         tf_weights = arr[11+len(self.obs_fac.wobf_param_ranges):] if len(self.tf_options) > 1 else None
         
         tf_choices = None
@@ -422,23 +424,30 @@ class GPNew(Action):
             obs_args
         )
     
-    def calculate_size_factors(self, sz_f: np.ndarray):
-        """The formula to scale an array such that it's product is a specified
-        value (in this case `self.max_volume`, which approximately  defines the
-        number of nodes*timesteps in an action) is:
+    # def calculate_size_factors(self, sz_f: np.ndarray):
+    #     """The formula to scale an array such that it's product is a specified
+    #     value (in this case `self.max_volume`, which approximately  defines the
+    #     number of nodes*timesteps in an action) is:
 
-        scaling = [inverse product of the array * max_vol] to the root of the  
-            length of the array
-        new_arr = array * scaling
+    #     scaling = [inverse product of the array * max_vol] to the root of the  
+    #         length of the array
+    #     new_arr = array * scaling
 
-        Note since max tree size, tree population, and number of steps are all
-        integers, this may fall short, as casting np.float to int rounds using
-        `floor` 
-        """
-        # print("HJFGDJ " *60)
-        # print(sz_f)
-        # print("JDSJDD " *40)
-        return ((self.max_volume/sz_f.prod())**(1/len(sz_f)) * sz_f).int()
+    #     Note since max tree size, tree population, and number of steps are all
+    #     integers, this may fall short, as casting np.float to int rounds using
+    #     `floor` 
+    #     """
+    #     if self.yell_a_bunch:
+    #         print("HJFGDJ " *60)
+    #         print(f"{sz_f=}")
+    #         print(f"{self.max_volume=} / {sz_f.prod()=}")
+    #         print(f"{(self.max_volume/sz_f.prod())=}")
+    #         print(f"{(self.max_volume/sz_f.prod())=} ^ {(1/len(sz_f))=}")
+    #         print(f"{(self.max_volume/sz_f.prod())**(1/len(sz_f))=}")
+    #         print(f"{(self.max_volume/sz_f.prod())**(1/len(sz_f)) * sz_f=}")
+    #         print(f"{((self.max_volume/sz_f.prod())**(1/len(sz_f)) * sz_f).int()=}")
+    #         print("JDSJDD " *40)
+    #     return ((self.max_volume/sz_f.prod())**(1/len(sz_f)) * sz_f).int()
 
     def do(self, 
             gp_register: int, 
@@ -468,28 +477,44 @@ class GPNew(Action):
         if gp_register >= 0 and gp_register < len(self.gptb_list):
             self.gptb_cts[gp_register] += 1
             self.gptb_list[gp_register] = GPTreebank(
-                pop = _i(pop),
-                tree_factory=tree_factory,
-                observatory=observatory,
-                crossover_rate = _i(crossover_rate),
-                mutation_rate = _i(mutation_rate),
-                mutation_sd = _i(mutation_sd),
-                temp_coeff = _i(temp_coeff),
-                max_depth = _i(max_depth),
-                max_size = _i(max_size),
-                episode_len=_i(episode_len),
+                pop =         int(_i(pop))          ,
+                tree_factory=        tree_factory   ,
+                observatory=         observatory    ,
+                crossover_rate =  _i(crossover_rate),
+                mutation_rate =   _i(mutation_rate) ,
+                mutation_sd =     _i(mutation_sd)   ,
+                temp_coeff =      _i(temp_coeff)    ,
+                max_depth =   int(_i(max_depth))    ,
+                max_size =    int(_i(max_size))     ,
+                episode_len = int(_i(episode_len))  ,
                 # commented out params that aren't needed when pre-made scoreboard is passed
                 # best_outvals = self.best_outvals,
                 # expt_outvals = self.expt_outvals,
-                operators = tree_factory.op_set,
-                seed = self.rng,
-                _dir = self.out_dir / 'gp_out' / f"{gp_register}" / f"{self.gptb_cts[gp_register]}" / 'g0' / f"t{self.t}",
-                elitism = _i(elitism),
-                fitness = scoreboard,
-                ping_freq = self.ping_freq
+                operators =          tree_factory.op_set,
+                seed =               self.rng,
+                _dir =              (
+                                        self.out_dir     / 
+                                        'gp_out'         / 
+                                        f"{gp_register}" / 
+                                        f"{self.gptb_cts[
+                                            gp_register
+                                        ]}"              / 
+                                        'g0'             / 
+                                        f"t{self.t}"
+                                    ),
+                elitism =         _i(elitism),
+                fitness =            scoreboard,
+                ping_freq =          self.ping_freq
                 # dv = self.dv, 
                 # def_fitness = self.def_fitness,
             )
+            print(f"""Agent {self.ac.name} started a new GP at register {gp_register}:
+            {tf_choices=}, {tf_weights=},
+            {int(_i(pop))=}, {int(_i(max_size))=}, {int(_i(episode_len))=}, {int(_i(max_depth))=},
+            {_i(crossover_rate)=}, {_i(mutation_rate)=}, {_i(mutation_sd)=},
+            {_i(temp_coeff)=}, {_i(elitism)=},            
+            {sb_weights=},
+            {obs_args=}""")
             self.gptb_list[gp_register].set_up_run()
             self.gptb_list[gp_register].insert_trees(self.ac.mems_to_use)
             self.gptb_list[gp_register].continue_run()
@@ -576,16 +601,17 @@ class GPContinue(Action):
     ):
         # Some refactoring would be good: this would make a good
         # parent class to GPNew
-        arr = (torch.tanh(in_vals['misc_box'])[0] + 1)/2
+        raws = in_vals['misc_box'][0]
+        arr = (torch.tanh(raws) + 1)/2
         if self.gptb_list[in_vals['gp_register'].item()]:
             gp_register = in_vals['gp_register'].item()
-            crossover_rate = arr[0] # no scaling
-            mutation_rate = arr[1]  # no scaling
-            mutation_sd = arr[2]    # no scaling
+            crossover_rate = self.guardrails['crossover_rate'](raws[0], arr[0]) # no scaling
+            mutation_rate = self.guardrails['mutation_rate'](raws[1], arr[1])  # no scaling
+            mutation_sd = self.guardrails['mutation_sd'](raws[2], arr[2])  # no scaling
             elitism =  int(
-                arr[3].item()*self.gptb_list[gp_register].pop
+                _i(self.guardrails['elitism'](raws[3], arr[3]))*self.gptb_list[gp_register].pop
             ) if self.gptb_list[gp_register] else -1
-            temp_coeff = arr[4].item()*2
+            temp_coeff = _i(self.guardrails['temp_coeff'](raws[4], arr[4]))*2
         else:
             gp_register = -1
             crossover_rate = mutation_rate = mutation_sd = temp_coeff = 0.0
@@ -597,7 +623,6 @@ class GPContinue(Action):
             mutation_sd,
             temp_coeff,
             elitism,
-            #in_vals # DELETE THIS XXX XXX XXX XXX XXX
         )
 
     def __init__(self, 
@@ -608,11 +633,9 @@ class GPContinue(Action):
         super().__init__(controller)
         self.gptb_list = self.ac.gptb_list
         self.gptb_cts  = self.ac.gptb_cts
+        self.guardrails: GuardrailManager = self.ac.guardrail_manager
         self.out_dir   = out_dir if isinstance(out_dir, Path) else Path(out_dir)
         self.t         = time
-
-    # def __call__(self, tch: torch.tensor):
-    #     return super().__call__(tch)
 
     def do(self, 
             gp_register: int, 
@@ -621,12 +644,12 @@ class GPContinue(Action):
             mutation_sd,
             temp_coeff,
             elitism,
-            # valid: bool,
             *args, **kwargs
         ):
         if isinstance(gp_register, torch.Tensor):
             gp_register = gp_register.item()
         if gp_register == -1:
+            print(f'Agent {self.ac.name} Tried to continue GP in an empty slot')
             pass # do nothing if agent tries to use an empty slot
         elif gp_register >= 0 and gp_register < len(self.gptb_list):
             gp: GPTreebank = self.gptb_list[gp_register]
@@ -638,6 +661,10 @@ class GPContinue(Action):
                 gp.mutation_sd    = _i(mutation_sd)
                 gp.temp_coeff     = _i(temp_coeff)
                 gp.elitism        = _i(elitism) 
+                print(f"""Agent {self.ac.name} continued GP in slot {gp_register}:
+                {_i(crossover_rate)=} {_i(mutation_rate)=} {_i(mutation_sd)=}
+                {_i(temp_coeff)=} {_i(elitism)=} 
+                """)
                 gp.continue_run()
             # Note: no else block. If the NN asks to continue a non-existent GP, nothing happens
         else:
@@ -684,6 +711,7 @@ class UseMem(Action):
             *args, **kwargs
         ):
         self.ac.mems_to_use = [self.memory[table, row, 'tree'] for table, row in locations]
+        print(f"Agent {self.ac.name} will use the following from memory with GP: {self.ac.mems_to_use}")
 
 
 class StoreMem(Action):
@@ -745,14 +773,12 @@ class StoreMem(Action):
                 tree_data = self.gptb_list[gp_reg].best
                 if tree_data['tree'] is not None:
                     data = {k: v for k, v in tree_data['data'].items() if k in self.vars}
-                    try:
-                        self.memory.insert_tree(tree_data['tree'], journal=_i(mem_loc[0]), pos=_i(mem_loc[1]), **data)
-                    except Exception as e:
-                        print('LUB'+'DUB'*29)
-                        print(tree_data)
-                        print('>>>', data)
-                        print('DUB'+'WUB'*29)
-                        raise e
+                    self.memory.insert_tree(tree_data['tree'], journal=_i(mem_loc[0]), pos=_i(mem_loc[1]), **data)
+                    print(f'>>>> Agent {self.ac.name} remembered a tree with fitness {data['fitness']}')
+                else:
+                    print(f'>>>> Agent {self.ac.name} tried to remember a tree from a GP with no stored best')
+            else:
+                print(f'>>>> Agent {self.ac.name} tried to remember a tree from an empty GP slot')
             # no else, do nothing if it tries to pull from an empty slot
 
 class Publish(Action):
@@ -786,11 +812,17 @@ class Publish(Action):
         ):
         # Do nothing if an empty register is selected. nyaaaa
         # XXX in future, penalise this
+        # XXX aaaaalso - what about going from memory to journal?
         if self.gptb_list[gp_register]:
             tree_data = self.gptb_list[gp_register].best
             if tree_data['tree'] is not None:
                 data = {k: v for k, v in tree_data['data'].items() if k in self.vars}
                 self.repo.insert_tree(tree_data['tree'], self.ac.name, journal=journal_num, data=data)
+                print(f'>>>> Agent {self.ac.name} published a tree with fitness {data['fitness']} to journal {journal_num}')
+            else:
+                print(f'>>>> Agent {self.ac.name} tried to publish a tree from a GP with no stored best')
+        else:
+            print(f'>>>> Agent {self.ac.name} tried to publish a tree from an empty GP slot')
 
 class Read(Action):
     # publication numbers and addresses,
@@ -832,15 +864,8 @@ class Read(Action):
         
 
     def process_action(self, in_vals: OrderedDict[str, np.ndarray|int|float|bool]|np.ndarray[int|float]):
-        try:
-            mask            = in_vals['mask'][0].int()
-            mem_table_idxs  = in_vals['mem_table_idxs'][mask]
-        except Exception as e:
-            print("dsjfhsdkjfd"*6)
-            print(mask)
-            print('djfdjsdjksjsk'*11)
-            raise e
-        
+        mask            = in_vals['mask'][0].int()
+        mem_table_idxs  = in_vals['mem_table_idxs'][mask]
         mem_row_idxs    = in_vals['mem_row_idxs'][mask]
         repo_table_idxs = in_vals['repo_table_idxs'][mask]
         repo_row_idxs   = in_vals['repo_row_idxs'][mask]
@@ -855,23 +880,9 @@ class Read(Action):
         ):
         tree_data = [self.repo[*loc] for loc in journal_locs]
         for td, mem_loc in zip(tree_data, memory_locs):
-            # print('XXX'*40)
-            # print(td)
-            # print('XXX'*40)
             if td['tree'] is not None:
-                try:
-                    self.memory.insert_tree(td['tree'], journal=_i(mem_loc[0]), pos=_i(mem_loc[1]), **td[self.vars])
-                except Exception as e:
-                    print('&'*80)
-                    print('&'*80)
-                    print(self.vars)
-                    print(td[self.vars])
-                    if 'journal' in {**td[self.vars]}:
-                        print(f'N{"O"*97}ES')
-                    print(type(td))
-                    print('&'*80)
-                    print('&'*80)
-                    raise e
+                self.memory.insert_tree(td['tree'], journal=_i(mem_loc[0]), pos=_i(mem_loc[1]), **td[self.vars])
+                print(f'Agent {self.ac.name} read tree {td['tree']}')
 
 
 ##################################################
@@ -895,3 +906,12 @@ class Read(Action):
 #     ¢   reducing tree size                     #
 #     pass                                       #
 ##################################################
+
+##################################################
+# Stop reading and publishing duplicates         #
+#                                                #
+# Also, on reflection, better that `Publish`     #
+# take from GP.best rather than mem: prevents    #
+# plagiarism                                     #
+##################################################
+

@@ -6,7 +6,7 @@ from agent_controller import AgentController
 from agent import Agent
 from gp_fitness import SimpleGPScoreboardFactory
 from model_time import ModelTime
-from reward import Reward, Curiosity, Renoun
+from reward import Reward, Curiosity, Renoun, GuardrailCollisions
 from tree_funcs import sum_all
 # from ppo import ActorCriticNetwork, PPOTrainer
 
@@ -15,7 +15,7 @@ import asyncio
 from pathlib import Path
 from copy import copy
 
-from icecream import ic
+# from icecream import ic
 
 import numpy as np
 
@@ -84,10 +84,9 @@ class Model:
     async def get_rewards(self, name):
         while self.not_done:
             await asyncio.sleep(0.2)
-        reward_dict = self._reward_dict if self._reward_dict else sum_all(
-            *[reward() for reward in self.rewards]
-        )
-        return reward_dict[name]
+        if not self._reward_dict:
+            self._reward_dict = sum_all(*[reward() for reward in self.rewards])
+        return self._reward_dict[name]
 
 def model_from_json(json: str) -> Model:
     pass
@@ -115,14 +114,14 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
         "mutation_sd", "max_depth", "max_size", "temp_coeff", "pop", "elitism", 
         'obs_start', 'obs_stop', 'obs_num'
     ]
-    time = ic(ModelTime())
+    time = ModelTime()
     agent_names = {f'a{i}': i for i in range(n_agents)}
     pub = Publication(
         gp_vars_core + gp_vars_more, # cols: Sequence[str],
         10, # rows: int,
         time, # model_time: ModelTime,
         agent_names,
-        types = np.float32, # types: Sequence[dtype] | Mapping[str, dtype] | dtype | None = None,
+        types = np.float64, # types: Sequence[dtype] | Mapping[str, dtype] | dtype | None = None,
         tables = 2, # tables: int = 1,
         reward = 'ranked' # reward: PublicationRewardFunc | str | None = None,
         # DEFAULTS USED decay: float = 0.95, value: str = "fitness",
@@ -146,7 +145,7 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
                 out_dir, # out_dir: str|Path,
                 50, #record_obs_len, # int,
                 max_readings=3, # max_readings, # int = 5,
-                mem_col_types=np.float32, # Sequence[np.dtype]|Mapping[str, np.dtype]|np.dtype|None=None,
+                mem_col_types=np.float64, # Sequence[np.dtype]|Mapping[str, np.dtype]|np.dtype|None=None,
                 gp_vars_core=gp_vars_core,
                 gp_vars_more=gp_vars_more,
                 ping_freq=ping_freq
@@ -166,7 +165,7 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
         agents, #: Container[Agent],
         pub, # publications, #: Publication=None,
         sb_factory, #: SimpleGPScoreboardFactory=None,
-        ic(time), #: ModelTime=None
+        time, #: ModelTime=None
     )
     for agent in agents:
         agent.ac.model = model
@@ -180,9 +179,16 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
             model
         )
     )
+    model.add_reward(
+        GuardrailCollisions(
+            model
+        )
+    )
     return model
 
 
 if __name__ == "__main__":
-    model = example_model(seed=42, ping_freq=5)
-    model.run(100, 100)
+    model = example_model(seed=42, ping_freq=500)
+    model.run(100, 25)
+    # model.run(100, 100)
+    # model.run(2, 10_000) # 

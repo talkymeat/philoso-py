@@ -78,7 +78,8 @@ class GPObservation(Observation):
             shape=(
                 len(self.gptb_list),
                 len(self.gp_vars_out)
-            )
+            ),
+            dtype='float64'
         )
         gp_scoreboards = Box(
             low=-np.inf, 
@@ -87,7 +88,8 @@ class GPObservation(Observation):
                 len(self.gptb_list),
                 len(self.gp_vars_core), 
                 len(self.sb_statfuncs)
-            )
+            ),
+            dtype='float64'
         )
         gp_records = Box(
             low=-np.inf, 
@@ -96,7 +98,8 @@ class GPObservation(Observation):
                 len(self.gptb_list),
                 len(self.gp_vars_core), 
                 self.record_len
-            )
+            ),
+            dtype='float64'
         )
         return Tuple([gp_best_vals, gp_scoreboards, gp_records])
 
@@ -120,14 +123,14 @@ class GPObservation(Observation):
                 ) for best in bests
             ]), 
             nan=0.0
-        )
+        ).clip(np.finfo(np.float64).min/4.0, np.finfo(np.float64).max/4.0)
 
     def process_scoreboards(self, scoreboards):
         return np.array([
             (
                 [
                     (
-                        [f(sb[var]) for f in self.sb_statfuncs] 
+                        [f(sb[var][np.isfinite(sb[var])]) for f in self.sb_statfuncs] 
                         if var in sb 
                         else np.zeros(
                             len(self.sb_statfuncs), 
@@ -145,7 +148,7 @@ class GPObservation(Observation):
             ) 
             for sb 
             in scoreboards
-        ], dtype=np.float64)
+        ], dtype=np.float64).clip(np.finfo(np.float64).min/4.0, np.finfo(np.float64).max/4.0)
     
     def process_records(self, records: list[pd.DataFrame]):
         return np.array([
@@ -167,7 +170,7 @@ class GPObservation(Observation):
             )
             for rec 
             in records
-        ], dtype=np.float64)
+        ], dtype=np.float64).clip(np.finfo(np.float64).min/4.0, np.finfo(np.float64).max/4.0)
 
     def observe(self, *args, **kwargs) -> tuple:
         gp_best_vals = [(gp.best if gp else None) for gp in self.gptb_list]
@@ -191,11 +194,16 @@ class Remembering(Observation):
         MultiContinuous of tables x cols x rows, with zero-padding
         """
 #----#----#----#----#----#----#----#----#----#----#----#----#----#----#----#----
-        return Box(low=-np.inf, high=np.inf, shape=(
-            len(self.repo.tables),
-            self.repo.tables[0].shape[0],
-            len(self.gp_vars_core) # XXX XXX XXX maybe use more vars?
-        ))
+        return Box(
+            low=-np.inf, 
+            high=np.inf,
+            dtype='float64', 
+            shape=(
+                len(self.repo.tables),
+                self.repo.tables[0].shape[0],
+                len(self.gp_vars_core) # XXX XXX XXX maybe use more vars?
+            )
+        )
 
     def process_observation(self, repo) -> np.ndarray:
         return self.process_repo_data(repo)

@@ -3,9 +3,7 @@
 Original file is located at
     https://colab.research.google.com/drive/1MsRlEWRAk712AQPmoM9X9E6bNeHULRDb
 """
-# import matplotlib.pyplot as plt
-# import pandas as pd
-# import seaborn as sns
+
 import numpy as np
 from collections import OrderedDict
 
@@ -14,29 +12,37 @@ from torch import nn
 from torch import optim
 from torch.distributions.categorical import Categorical
 from gymnasium.spaces import Discrete
-#from agent_controller import AgentController
-# from world import SineWorld
-# from gp import GPTreebank
-# from tree_factories import TreeFactoryFactory, RandomPolynomialFactory
-# import gymnasium as gym
-# from gymnasium.spaces.utils import flatten, unflatten
 from icecream import ic
 
+# Since I'm using dictionaries to store outputs based on which
+# action head they related to, I need functions to convert
+# dicts of tensors to tensors
+
 def logprobdict_2_tensor(logprob_dict):
-    return torch.concatenate(list(logprob_dict.values()))
+    for k, v in logprob_dict.items():
+        if len(v.shape)==2 and v.shape[0]==1:
+            logprob_dict[k] = v[0]
+    try:
+        return torch.concatenate(list(logprob_dict.values()))
+    except Exception as e:
+        print('69'*69)
+        print(logprob_dict)
+        print({k: v.shape for k, v in logprob_dict.items()})
+        print('96'*69)
+        raise e
 
 def tensorise_dict(act_dict, device):
-    return OrderedDict({k: torch.tensor(t, device=device) for k, t in act_dict})
+    return OrderedDict({k: t if isinstance(t, torch.Tensor) else torch.tensor(t, device=device) for k, t in act_dict.items()})
 
-#sns.set()
-
-#DEVICE = "cpu"
 
 # Policy and value model
 class ActorCriticNetwork(nn.Module):
     def __init__(self, obs_space_size, action_space_sizes, device:str="cpu",):
         super().__init__() # manadatory
         self.policy_layers: dict[str, nn.Sequential] = {}
+
+        torch.autograd.set_detect_anomaly(True)
+
         # self.last_policy_networks = [] # ??? XXX
         self.action_choices = [
             ['gp_new'],
@@ -67,21 +73,21 @@ class ActorCriticNetwork(nn.Module):
         # ]
 
         self.shared_layers = nn.Sequential(
-            nn.Linear(obs_space_size, 64),
-            nn.ReLU(),
-            nn.Linear(64, 64),
-            nn.ReLU())
+            nn.Linear(obs_space_size, 64).double(),
+            nn.ReLU().double(),
+            nn.Linear(64, 64).double(),
+            nn.ReLU().double())
         
         self.policy_layers['choice'] = nn.Sequential(
-            nn.Linear(64, 64),
-            nn.ReLU(),
-            nn.Linear(64, self.action_choice_space.n))
+            nn.Linear(64, 64).double(),
+            nn.ReLU().double(),
+            nn.Linear(64, self.action_choice_space.n).double())
         
         for name, size in action_space_sizes.items():
             self.policy_layers[name] = nn.Sequential(
-                nn.Linear(64, 64),
-                nn.ReLU(),
-                nn.Linear(64, size))
+                nn.Linear(64, 64).double(),
+                nn.ReLU().double(),
+                nn.Linear(64, size).double())
         
         """# Also, 'gp_new'. XXX DELETE commented out code once AC is known to work
         # self.policy_networks['gp_continue'] = nn.Sequential(
@@ -115,9 +121,9 @@ class ActorCriticNetwork(nn.Module):
         #     nn.Linear(64, action_space_size))"""
         
         self.value_layers = nn.Sequential(
-            nn.Linear(64, 64),
-            nn.ReLU(),
-            nn.Linear(64, 1))
+            nn.Linear(64, 64).double(),
+            nn.ReLU().double(),
+            nn.Linear(64, 1).double())
 
     def value(self, obs):
         z = self.shared_layers(obs)
@@ -133,7 +139,12 @@ class ActorCriticNetwork(nn.Module):
         return action_logits
 
     def forward(self, obs): # mandatory
+
+        torch.autograd.set_detect_anomaly(True)
+
+        # obs = obs.clone().detach().requires_grad_(True)
         z = self.shared_layers(obs)
+        # print(z)
         action_logits = {}
         action_logits['choice'] = self.policy_layers['choice'](z)
         choice_distribution = Categorical(logits=action_logits['choice'])
@@ -162,7 +173,6 @@ class PPOTrainer():
         self.policy_params = {}
         self.policy_optims = {}
 
-
         value_params = list(self.actor_critic.shared_layers.parameters()) + \
             list(self.actor_critic.value_layers.parameters())
         self.value_optim = optim.Adam(value_params, lr=value_lr)
@@ -173,21 +183,23 @@ class PPOTrainer():
             ) + list(layers.parameters())
             self.policy_optims[k] = optim.Adam(self.policy_params[k], lr=policy_lr)
 
+    @property
+    def device(self):
+        self.actor_critic.device
 
     def train_policy(self, obs, acts, old_log_probs, gaes, which, actions, mask=None):
         for _ in range(self.max_policy_train_iters):
             # If a network is used at every step (like 'choice'), no mask needed
-            obs = obs[mask] if mask else obs
+            obs, gaes = (obs[mask], gaes[mask]) if mask is not None else (obs, gaes)
             # acts = acts[mask] < Not needed, masking done in Agent.night
             # old_log_probs = old_log_probs[mask] < likewise
-            gaes = gaes[mask] if mask else gaes
 
             self.policy_optims[which].zero_grad()
 
             # Here, we calculate the new log probs, which is different
             # (simpler) for 'choice' than everything else
             if which == 'choice':
-                new_logits = self.actor_critic.choice(obs)
+                new_logits = self.actor_critic.choose(obs)
                 new_distro = Categorical(logits=new_logits) 
                 new_log_probs = new_distro.log_prob(acts)
             else:
@@ -197,13 +209,12 @@ class PPOTrainer():
                     new_distros = actions[which].logits_2_distros(new_logits)
                     act_part_log_probs = tensorise_dict(OrderedDict({
                         k: d.log_prob(ac1[k]) for k, d in new_distros.items()
-                    }))
-                    new_logprobs_list.append(act_part_log_probs)
-                new_log_probs = torch.tensor(
-                    new_logprobs_list,
-                    dtype=torch.float32, 
-                    device=self.device
-                )
+                    }), device=self.device)
+                    new_logprobs_list.append(logprobdict_2_tensor(act_part_log_probs))
+                new_log_probs = torch.stack(
+                    new_logprobs_list, 
+                    dim=0
+                ).to(self.device, dtype=torch.float64)
                 # Would this work? test later XXX XXX
                 # new_logits = self.actor_critic.policy(obs, which)
                 # new_distros = actions[which].logits_2_distros(new_logits)
@@ -217,7 +228,17 @@ class PPOTrainer():
             clipped_ratio = policy_ratio.clamp(
                 1 - self.ppo_clip_val, 1 + self.ppo_clip_val)
             
-            clipped_loss = clipped_ratio * gaes
+            try:
+                if len(clipped_ratio.shape) > 1:
+                    gaes = gaes.expand(1, gaes.shape[0]).permute((1,0))
+                clipped_loss = clipped_ratio * gaes
+            except Exception as e:
+                print("Xx"*200)
+                print(f"{clipped_ratio=}")
+                print(f"{which=}")
+                print(f"{gaes=}")
+                print("xX"*200)
+                raise e
             full_loss = policy_ratio * gaes
             policy_loss = -torch.min(full_loss, clipped_loss).mean()
 
@@ -265,135 +286,3 @@ def calculate_gaes(rewards, values, gamma=0.99, decay=0.97):
 
     return np.array(gaes[::-1])
 
-
-# def rollout(model, env, max_steps=1000):
-#     """
-#     Performs a single rollout.
-#     Returns training data in the shape (n_steps, observation_shape)
-#     and the cumulative reward.
-#     """
-#     ### Create data storage
-#     train_data = pd.concat([
-#         pd.DataFrame(
-#             columns=pd.MultiIndex.from_product([
-#                 ['obs', 'value', 'reward'], 
-#                 ['v']
-#             ])
-#         ),
-#         pd.DataFrame(
-#             columns=pd.MultiIndex.from_product([
-#                 ['choice', 'gp', 'store_mem', 'use_mem', 'publish', 'read'], 
-#                 ['act', 'log_prob']
-#             ])
-#         )
-#     ], axis=1)
-#     obs, _ = env.reset() # XXX not sure I want this here
-#     # XXX but I do need to know 
-
-#     ep_reward = 0
-#     for _ in range(max_steps):
-#         choice, choice_log_prob, action_logits, val = model(torch.tensor(
-#             [obs], dtype=torch.float32, device=DEVICE
-#         ))
-#         training_instance = {('obs', 'v'): obs, ('choice', 'act'): choice, ('choice', 'log_prob'): choice_log_prob}
-#         action = {}
-#         for act, logits in action_logits:
-#             act_distribution = Categorical(logits=logits)
-#             action[act] = training_instance[(act, 'act')] = act_distribution.sample()
-#             training_instance[(act, 'log_prob')] = act_distribution.log_prob(act).item()
-
-        
-#         # logits is shape (1, len(action_space)), we want (len(action_space), )
-#         act_raw = np.array(logits[0].detach())
-#         # ========
-#         # act_log_prob = act_distribution.log_prob(act).item()
-#         # XXX process act output for env.step(act), but for now:
-#         act = act_raw
-
-#         # act, val = act.item(), val.item()
-#         # This is a tensor of size (1,1), we just want a float
-#         val = val.item()
-#         training_instance[('value', 'v')] = val
-
-#         next_obs, reward, done, _, __, ___ = env.step(action)
-
-#         training_instance[('reward', 'v')] = reward
-
-#         train_data.loc[len(train_data)] = training_instance
-
-#         obs = next_obs
-#         ep_reward += reward
-#         if done:
-#             break
-
-#     train_data = [np.asarray(x) for x in train_data]
-
-#     ### Do train data filtering
-#     train_data[3] = calculate_gaes(train_data[2], train_data[3])
-
-#     return train_data, ep_reward
-
-
-
-# if __name__ == "__main__":
-#     # env = gym.make('CartPole-v0')\
-#     env = AgentController(
-#         SineWorld(10.0, 100, 0.01, (1., 1., 0.), (0.01, 0.01, 0.005)),
-#         GPTreebank,
-#         fitness_measures = ['imse', 'size', 'depth'],
-#         tree_factory_factories=[TreeFactoryFactory(RandomPolynomialFactory)]
-#     )
-
-#     model = ActorCriticNetwork(env.observation_space.shape[0], env.action_space.shape[0])
-#     model = model.to(DEVICE)
-
-
-
-
-#     # Define training params
-#     n_episodes = 30 # 'days'
-#     print_freq = 20
-
-#     ppo = PPOTrainer(
-#         model,
-#         policy_lr = 3e-4,
-#         value_lr = 1e-3,
-#         target_kl_div = 0.02,
-#         max_policy_train_iters = 40,
-#         value_train_iters = 40)
-
-
-
-
-
-#     # Training loop <<==== NIGHT
-#     ep_rewards = []
-#     for episode_idx in range(n_episodes):
-#         # Perform rollout
-#         train_data, reward = rollout(model, env)
-#         ep_rewards.append(reward)
-
-#         # Shuffle
-#         permute_idxs = np.random.permutation(len(train_data[0]))
-
-#         # Policy data
-#         obs = torch.tensor(train_data[0][permute_idxs],
-#                             dtype=torch.float32, device=DEVICE)
-#         acts = torch.tensor(train_data[1][permute_idxs],
-#                             dtype=torch.int32, device=DEVICE)
-#         gaes = torch.tensor(train_data[3][permute_idxs],
-#                             dtype=torch.float32, device=DEVICE)
-#         act_2 = torch.tensor(train_data[4][permute_idxs],
-#                                     dtype=torch.float32, device=DEVICE) # was log_probs
-
-#         # Value data
-#         returns = discount_rewards(train_data[2])[permute_idxs]
-#         returns = torch.tensor(returns, dtype=torch.float32, device=DEVICE)
-
-#         # Train model
-#         ppo.train_policy(obs, acts, act_2, gaes) # act2 was log_probs
-#         ppo.train_value(obs, returns)
-
-#         if (episode_idx + 1) % print_freq == 0:
-#             print('Episode {} | Avg Reward {:.1f}'.format(
-#                 episode_idx + 1, np.mean(ep_rewards[-print_freq:])))

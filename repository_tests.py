@@ -3,6 +3,7 @@ from test_materials import AG, T0
 from model_time import ModelTime
 import numpy as np
 from icecream import ic
+from utils import aeq
 
 mt=ModelTime()
 
@@ -25,11 +26,6 @@ plos_one = Publication(
     value='goodness',
     reward='ranked'
 )
-
-# def aeq(a, b, eta=1e-6):
-#     return abs(ic(ic(a)-ic(b))) < eta
-def aeq(a, b, eta=1e-6):
-    return abs(a-b) < eta
 
 def main():
     agent_nos = [

@@ -136,17 +136,8 @@ class ScoreboardPipelineElement:
         # If it can't, `vec` should be false, and `apply` will be used to go row
         # by row 
         else:
-            try:
-                sb[self.out_key] = sb.apply(lambda row: self.fn(**row, **kwargs, **self.spem_kwargs), axis=1)
-            except Exception as e:
-                print('JESUS WAS A TERRORIST '*30)
-                print(self.out_key)
-                print(sb)
-                print('-'*100)
-                print(self)
-                print(sb.apply(lambda row: self.fn(**row, **kwargs, **self.spem_kwargs), axis=1))
-                print('JESUS WAS A TERRORIST '*30)
-                raise e
+            sb[self.out_key] = sb.apply(lambda row: self.fn(**row, **kwargs, **self.spem_kwargs), axis=1)
+
 
     def __str__(self):
         """Returns a string representation of the ScoreboardPipelineElement"""
@@ -448,15 +439,7 @@ def heat(raw_fitness: float, temp_coeff: float, **kwargs):
     else:
         # No need to compute the mean is temp_coeff is 0
         temp = 0.0
-    try:
-        return raw_fitness + temp
-    except Exception as e:
-        print('UW'*49+"U")
-        print(temp_coeff)
-        print(raw_fitness)
-        print(temp)
-        print('OW'*49+"O")
-        raise e
+    return raw_fitness + temp
 
 def from_tmp(varname: str, default=None):
     """ Outputs metadata attached to trees into a scoreboard column. 
@@ -517,13 +500,7 @@ def nan_zero(a: float, **kwargs):
 
 @scoreboard_pipeline_element(out_key='size')
 def size(tree: GPNonTerminal, **kwargs):
-    try:
-        return tree.size()
-    except Exception as e:
-        print("."*500)
-        print(tree)
-        print("."*500)
-        raise e
+    return tree.size()
 
 @scoreboard_pipeline_element(out_key='depth')
 def depth(tree: GPNonTerminal, **kwargs):
@@ -585,6 +562,10 @@ class SimpleGPScoreboardFactory:
         self.def_fitness = def_fitness
         self.best_outvals = best_outvals
         self.dv = dv
+    
+    @property
+    def num_sb_weights(self):
+        return 3
 
     def __call__(self, observatory: Observatory, temp_coeff, weights=None):
         self.observatory = observatory
@@ -613,10 +594,11 @@ class SimpleGPScoreboardFactory:
             def_2_fitness = f"ws_{self.def_fitness}_isize_idepth"
         else: 
             def_2_fitness = self.def_fitness
-        if temp_coeff:
-            pipeline     += [rename(def_2_fitness, 'raw_fitness'), heat, rename("fitness", 'pre_fitness_1')]
-        else:
-            pipeline     += [rename(def_2_fitness, 'pre_fitness_1')]
+        pipeline     += [rename(def_2_fitness, 'raw_fitness'), heat, rename("fitness", 'pre_fitness_1')]
+        # if temp_coeff: 
+        #     pipeline     += [rename(def_2_fitness, 'raw_fitness'), heat, rename("fitness", 'pre_fitness_1')]
+        # else:
+        #     pipeline     += [rename(def_2_fitness, 'pre_fitness_1')]
         pipeline         += [
                                 hasnans, 
                                 penalty, 
@@ -746,8 +728,7 @@ class GPScoreboard(pd.DataFrame):
             'wt_fitness': self.kwargs['weights'][0],
             'wt_size': self.kwargs['weights'][1],
             'wt_depth': self.kwargs['weights'][2]
-        } 
-    
+        }
 
     def _post_process_pipeline(self):
         final_cols, error = self._validate_pipeline()
@@ -901,14 +882,8 @@ class GPScoreboard(pd.DataFrame):
         dv = self.dv_obs_check(dv=dv, obs=obs)
         kwargs['ivs'] = next(self.obs)
         kwargs['target'] = self.obs.target[dv]
-        try:
-            for pipe_ele in self.pipeline:
-                pipe_ele(self, **{**self.kwargs, **kwargs})
-        except Exception as e:
-            print("',"*250)
-            print(self)
-            print("',"*250)
-            raise e
+        for pipe_ele in self.pipeline:
+            pipe_ele(self, **{**self.kwargs, **kwargs})
         return self
     
     def k_best(self, k: int, mark_4_del: bool=True, tree_only: bool=True):

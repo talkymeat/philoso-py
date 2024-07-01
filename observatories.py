@@ -766,12 +766,25 @@ class ObservatoryFactory(ABC):
     @abstractmethod
     def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
         pass
+
+    @property
+    @abstractmethod
+    def wobf_guardrail_params(self):
+        pass
     
 
 class SineWorldObservatoryFactory(ObservatoryFactory):
     @property
     def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
-        return self.world.range, self.world.range, (0, self.world.max_observation_size)
+        return self.world.range, self.world.range, (2, self.world.max_observation_size)
+
+    @property    
+    def wobf_guardrail_params(self):
+        return (
+            {'name': '_', '_no_make': None}, 
+            {'name': '_', '_no_make': None}, 
+            {'name': 'obs_len', 'min': 2, 'max': np.inf}
+        )
 
     def __call__(
             self, start: float, stop: float, num: int,  **kwargs: Any
@@ -824,6 +837,9 @@ class SineWorldObservatory:
         self.stop = stop
         self.num = num
         self.data = None
+
+    def __str__(self):
+        return f'SineWorldObservatory(ivs={self.ivs}, dvs={self.dvs}, start={self.start}, stop={self.stop}, num={self.num})'
 
     @property
     def iv(self):

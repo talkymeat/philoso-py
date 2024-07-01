@@ -9,6 +9,7 @@ from tree_factories import TreeFactory #, CompositeTreeFactory, TreeFactoryFacto
 from gp import GPTreebank
 from trees import Tree
 from observatories import ObservatoryFactory
+from guardrails import GuardrailManager
 # import operators as ops
 from dataclasses import dataclass
 from world import World
@@ -84,6 +85,7 @@ class AgentController(Env):
             # value_measures: list=None,
             # value_measure_weights: list[float]=None,
             device: str='cpu',
+            guardrail_base_penalty = 1.0,
             ping_freq=5,
             *args, **kwargs
         ):
@@ -109,10 +111,11 @@ class AgentController(Env):
         self.ping_freq = ping_freq
         self.short_term_mem_size = short_term_mem_size
         self.record_obs_len = record_obs_len
+        self.guardrail_manager = GuardrailManager(base_penalty=guardrail_base_penalty)
         self._mems_to_use = []
         # self.tree_factory_factories = tree_factory_factories
-        self.gp_vars_core = gp_vars_core if gp_vars_core else [
-            'mse', 'rmse', 'size', 'depth', 'raw_fitness', 'fitness', 'temp_coeff', 
+        self.gp_vars_core = gp_vars_core if gp_vars_core else [ 
+            'mse', 'rmse', 'size', 'depth', 'raw_fitness', 'fitness', 
         ]
         self.gp_vars_more = gp_vars_more if gp_vars_more else [
             'wt_fitness', 'wt_size', 'wt_depth', "crossover_rate", "mutation_rate", 
@@ -120,11 +123,20 @@ class AgentController(Env):
             'obs_start', 'obs_stop', 'obs_num'
         ]
         self.sb_statfuncs = sb_statfuncs if sb_statfuncs else [
-            lambda col: col.mean(),
-            lambda col: col.mode().mean(),
-            *[(lambda col: col.quantile(q)) for q in np.linspace(0.0, 1.0, 9)],
-            lambda col: col.std(),
-            lambda col: col.isna().sum()
+            # calculating std of a col of len 1 or 0 returns nan. The Guardrails
+            # on `action.GPNew` and `action.GPContinue` should prevent Scoreboards
+            # under this length, but filtering out infs and nans may result in 
+            # short cols
+            lambda col: col.mean() if len(col) > 0 else 0.0,
+            lambda col: col.mode().mean() if len(col) > 0 else 0.0,
+            # XXX TODO - there quantiles are acting weird
+            *[(lambda col: col.quantile(q) if len(col) > 0 else 0.0) for q in np.linspace(0.0, 1.0, 9)],
+            lambda col: col.std() if len(col) > 1 else 0.0,
+            # The `Observation` which uses these statfuncs ignores all `nan`,
+            # `inf`, and `-inf` values, so it is useful to also note how many
+            # of these values there are  
+            lambda col: col.isna().mean(),
+            lambda col: np.isinf(col).mean()
         ]
         # MEMORY SET UP
         self.memory = Archive(
@@ -187,22 +199,6 @@ class AgentController(Env):
         self._observation_space = Dict(
             {k: v.observation_space for k, v in self.observations.items()}
         )
-        # for k, v in self._observation_space.items():
-        #     ic(k, flatten_space(v).shape)
-        # ic(flatten_space(self._observation_space).shape)
-
-        # ------------------------------------
-        # self.max_actions = max_actions
-        # self.gp_steps = gp_steps
-        # self.last_result = {}
-        # self.num_actions = 0 # reset
-        # #self.operators = operators
-        # self.max_thinking_nodes = max_thinking_nodes
-        # # self.max_learnt_operators = max_learnt_operators
-        # self.max_knowledge_nodes = max_knowledge_nodes
-        # self.max_knowledge_trees = max_knowledge_trees
-        # self.max_max_size = max_max_size
-
 
 
     @property
@@ -315,14 +311,7 @@ class AgentController(Env):
     def mems_to_use(self, mems: Tree):
         mems = [mem for mem in mems if mem is not None]
         if len(mems) > self.short_term_mem_size:
-            try:
-                mems = mems[:self.short_term_mem_size]
-            except Exception as e:
-                print('A'*100)
-                for mem in mems:
-                    print(mem)
-                print('V'*100)
-                raise e
+            mems = mems[:self.short_term_mem_size]
         self._mems_to_use = mems
 
     # I think this needs to be async - must wait until all agents have acted before getting reward
@@ -347,119 +336,11 @@ class AgentController(Env):
         """
         print(f'Agent {self.name} will attempt {list(action.keys())} at time {self.t}')
         for act, params in action.items():
-            try:
-                self.actions[act](params)
-            except KeyError as e:
-                print('BB'+"A"*120+"BB")
-                print(action)
-                print(params)
-                print(self.actions[act].action_space)
-                print(self.actions[act].action_space.sample())
-                print(type(params))
-                print(self.actions[act])
-                print(e)
-                print('GG'+"A"*120+"HH")
-                import traceback
-                raise ValueError(("dddd " * 10) + f'Invalid action: {act}, not in {self.actions}, which made a KeyError, {e}\n' + "sdsssss " * 10)
+            self.actions[act](params)
         print(f'Agent {self.name} has done {list(action.keys())} at time {self.t}')
         self.model.mark_done(self.name)
         reward = await self.model.get_rewards(self.name)
-        ## figures out distribs needed for different parts of the action space. 
-        ## I don't think this is the right approach - use torch.distributions?
         observation = self.observe()
-        """for i, ele, lo, hi in zip(range(action.shape[0]), action, self.action_space.low, self.action_space.high):
-            if not np.isinf(hi) and not np.isinf(lo):
-                action[i] = lo+(((ele+1)/2)*(hi-lo))
-            elif np.isinf(hi) and not np.isinf(lo):
-                action[i] = lo+np.log(ele+2)
-            elif not np.isinf(hi) and np.isinf(lo):
-                action[i] = hi-np.log(ele+2)
-            else:
-                action[i] = ele*100
-            print(i, ele, lo, action[i], hi)
-        print('-=#=-'*18)
-        action = unflatten(self._action_space, action) # << also actions now only cover part of the action space
-        print(action)
-        observation = self._empty_obs()
-        gp_reward = 0
-        if (action['actions'][0] or True) and self.last_result:
-            print('@'*80)
-            if self.knowledge_table['size'].sum()+self.last_result['size']-self.knowledge_table.iloc[action['store_last']]['size'] <= self.max_knowledge_nodes:
-                self.last_result['tree'] = self.last_result['tree'].copy_out(self.knowledge_base)
-                self.last_result['exists'] = True
-                self.knowledge_table.iloc[action['store_last']] = self.last_result
-                self.last_result = {}
-        if (action['actions'][1] or True):
-            print('$')
-            gprh = action['gp_hyperparams']['ranged_hyperparams']
-            crossover_rate, mutation_rate, mutation_sd, max_size, max_depth, elitism = gprh
-            pop = self.max_thinking_nodes//max_size
-            print('max_think_nodes:', self.max_thinking_nodes)
-            print('max size:', max_size)
-            print('pop:', pop)
-            gp = self.gp_system(
-                crossover_rate=crossover_rate,
-                mutation_rate=mutation_rate,
-                mutation_sd=mutation_sd,
-                max_size=max_size,
-                max_depth=max_depth
-            )
-            observatory = self.world.act(action['observation_params'])
-            scoreboard = self.scoreboard_factory.act(
-                action['gp_hyperparams']['fitness_weights'],
-                observatory, 
-                max_size=max_size,
-                max_depth=max_depth,
-                dv=self.world.dv
-            )
-            tree_factories = [
-                f.act(p, treebank=gp) for f, p in zip(
-                    self.tree_factory_factories, 
-                    action['gp_hyperparams']['factory_params']
-                )
-            ]
-            if 'factory_weights' in action: # I think this goes away, actually
-                tree_factory = CompositeTreeFactory(tree_factories, action['gp_hyperparams']['factory_weights'], treebank=tb)
-            else:
-                tree_factory = tree_factories[0]
-            gp.operators = tree_factory.operators
-            record, best_scores, best_tree = gp.run( # ____________/____________________
-                tree_factory, # === === === === tree+factory __/_\/_____________________
-                observatory,  # === === === === Observatory _\/____/____________________
-                self.gp_steps, # == === === === steps __/________\/__Make this an action param later, leave for now
-                int(pop), # === === === === === pop __\/___/____________________________
-                self.world.dv, # == === === === dv ______\/_________________________/___
-                fitness=scoreboard, # = === === fitness, def_fitness, temp_coeff _\/__/_
-                elitism=int(elitism), # === === elitism ____________________________\/__
-                ping_freq=1
-            )
-            observation['gp_run'] = {}
-            for k in self.obs_measures:
-                observation['gp_run'][k] = np.array(record[k], dtype=self._observation_space['gp_run'][k].dtype) 
-            gp_reward = best_scores[self.gp_reward_measure]
-            for i, name in enumerate(self.world.action_param_names):
-                best_scores[name] = action['observation_params'][i]
-            best_scores['tree'] = best_tree.copy_out()
-            self.last_result = best_scores
-        knowledge_reward = self.knowledge_table[
-            self.knowledge_table['exists']][self.gp_reward_measure].mean()
-        knowledge_reward = 0 if np.isnan(knowledge_reward) else knowledge_reward
-        reward = gp_reward+knowledge_reward
-        observation['knowledge'] = {
-            k: np.array(col, dtype=self._observation_space['knowledge'][k].dtype) 
-            for k, col 
-            in self.knowledge_table.items() 
-            if k != 'tree'
-        }
-        self.knowledge_table.to_csv(f'knowledge_{self.num_actions}.csv')
-        print(
-            f"{self.num_actions}: knowledge score:\n{knowledge_reward}\n------\n" + 
-            f"thinking score:\n{gp_reward}\n-------\ntotal\n{reward}"
-        )
-        self.num_actions += 1
-        print("~~~"*20)
-        print(observation)
-        print("~~~"*40)"""
         return flatten(self._observation_space, observation), reward, False, False, {'asdf': 'asdf'}, False
 
 
@@ -471,204 +352,7 @@ class AgentController(Env):
         pass
 
 
-    #----#----#---20    #----#----#---40    #----#----#---60    #----#----#---80
-# class PhilosoPyAgent(PyEnvironment):
-#     """Note that `PhilosoPyAgent` is seen as an 'environment' by the
-#     `PhilosoPyRLAgent`, which is the RL subsystem of `PhilosoPyAgent`,
-#     in charge of higher-level decisions like when to make observations,
-#     run GP, publish results, etc.
-#     """
 
-#     @dataclass
-#     class GPMemory:
-#         observation_params: dict
-#         observations: list
-#         treebank: GPTreebank
-
-#     def __init__(
-#             self, 
-#             world: World,
-#             operators: list[ops.Operator],
-#             tree_factories: list[TreeFactory],
-#             name: str
-#         ):
-#         self.world = world
-#         self.name = name
-#         self.action_spec = [
-#             world.observation_params().replace(name='observation'),
-#             world.observation_params().replace(name='train_gp_static'),
-#             world.observation_params().replace(name='train_gp_live'),
-#             world.observation_params().replace(name='test_gp_predict'),
-#             BoundedArraySpec(name='publish_bet'), # don't implement until ready for multi-agent
-#             BoundedArraySpec(name='take_bet'), # don't implement until ready for multi-agent
-#             BoundedArraySpec(name='read_repo'), # don't implement until ready for multi-agent
-#             BoundedArraySpec(name='add_gp_result_to_knowledge'), 
-#             BoundedArraySpec(name='add_repo_result_to_knowledge'), # don't implement until ready for multi-agent
-#             BoundedArraySpec(name='prune_knowledge'),
-#             BoundedArraySpec(name='prune_records')
-#         ] #: tf_agents.typing.types.NestedTensorSpec,
-#         self.knowledge = GPTreebank(operators=operators)
-#         # structure this - maybe make a dataclass?
-#         self.records: list[PhilosoPyAgent.GPMemory] = []
-
-#     def time_step_spec(self):
-#         """Return time_step_spec."""
-#         pass
-
-#     def observation_spec(self):
-#         """Return observation_spec."""
-#         pass
-
-#     def action_spec(self):
-#         """Return action_spec."""
-#         return self.action_spec
-
-#     def _reset(self):
-#         """Return initial_time_step."""
-#         pass
-
-#     def _step(self, action):
-#         """Apply action and return new time_step."""
-#         pass
-
-# class PhilosoPyRLAgent(ppo_agent.PPOAgent):
-#     def __init__(
-#             self, 
-#             environment: PhilosoPyAgent
-#         ):
-#         first_step = environment.step()
-#         super(PhilosoPyRLAgent, self).__init__(
-#             time_step_spec = first_step, #: tf_agents.trajectories.TimeStep,
-#             action_spec = environment.action_spec()
-#             # optimizer = '???', #: Optional[types.Optimizer] = None,
-#             # actor_net = '???', #: Optional[tf_agents.networks.Network] = None,
-#             # value_net = '???' #: Optional[tf_agents.networks.Network] = None
-#         )
 
 print('OK')
 
-
-        # reminder="""
-        #     # 1: params for RUN_GP 
-        #     # 1.1: gp hyperparams
-        #     ---crossover_rate: float, [0, 1]
-        #     ---mutation_rate: float, [0, 1]
-        #     ---mutation_sd: float, [0, inf?]
-        #     ---temp_coeff: float, [0, inf]
-        #     ---max_depth: int, [1,100] user def
-        #     ---max_size: int, [1,1000] user def
-        #     ---tree_factory_weights: list[float], len=num factories, sum to 1
-        #     ---tree_copy_protocols_weights: list[float], len=num protocols, sum to 1
-        #     ---fitness_measure_weights: list[float], len=num measures, sum to 1
-        #     ---tree factory params
-        #     ------ laterparams for tree copy protocols (not needed with measures, I think)
-        #     # 1:2 observation params (from World, defined for SineWorld case only, for now)
-        #     ---start: float,
-        #     ---end: float,
-        #     ---n: int,
-        #     x_rand: bool
-        # """
-
-
-        # Things I chopped from AgentController.__init__
-        # self.tree_copy_protocols = tree_copy_protocols
-        # fm_bools = {
-        #     'use_imse': False,
-        #     'use_irmse': False, 
-        #     'use_isae': False, 
-        #     'use_size': False, 
-        #     'use_depth': False
-        # }
-        # self.fitness_measures = fitness_measures if fitness_measures else ['mse']
-        # for fm in self.fitness_measures:
-        #     if f'use_{fm}' not in fm_bools:
-        #         raise ValueError(
-        #             f"{fm} is not a valid fitness measure. Philoso.py's GP system" +
-        #             " cannot yet accommodate custom fitness measures"
-        #         )
-        #     fm_bools[f'use_{fm}'] = True
-        # # self.scoreboard_factory = SimpleGPScoreboardFactory(**fm_bools)
-        # max_max_size = min(self.max_thinking_nodes//20, self.max_max_size)
-        # max_max_depth = max_max_size//2
-        # self._action_space = Dict({
-        #     # For now, 0=DoNothing, 1=RunGP: will remove DoNothing, add more real action types later
-        #     'actions': MultiBinary(2),
-        #     # Store last result
-        #     'store_last': Discrete(self.max_knowledge_trees),
-        #     # GP hyperparameters 
-        #     'gp_hyperparams': Dict({
-        #         'ranged_hyperparams': Box(
-        #             low = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), # key below VVV
-        #             high = np.array([
-        #                     1.0,                 # crossover rate
-        #                     1.0,                 # mutation rate
-        #                     np.inf,              # mutation standard deviation
-        #                     float(max_max_size),  # max tree size
-        #                     float(max_max_depth),  # max tree depth
-        #                     1.0 # elitism (replace with tree copy protocols params)
-        #                 ], dtype = np.float32
-        #             )                 
-        #         ),
-        #         # control ops used in treefactories, if appropriate. get ops from
-        #         # factories
-        #         # "operators": MultiBinary(len(operators)), #+ max_learnt_operators),
-        #         "fitness_weights": self.scoreboard_factory.action_param_space,
-        #         **({"factory_weights": Box(
-        #             low=0.0, high=1.0, shape=(len(self.tree_factory_factories), ), dtype=np.float32
-        #         )} if len(self.tree_factory_factories)>1 else {}),
-        #         "factory_params": Tuple([
-        #             tree_fac.action_param_space for tree_fac in self.tree_factory_factories
-        #         ])
-        #     }),
-        #     'observation_params': self.world.action_param_space
-        # })
-        # measures = (
-        #     ['raw_fitness'] 
-        #     if len(self.fitness_measures)==1 
-        #     else [fm for fm in self.fitness_measures if fm not in ['size', 'depth']]
-        # ) 
-        # self.obs_measures = ['size', 'depth'] + measures + ['hasnans', 'penalty', 'survive', 'fitness']
-        # self.knowledge_base = self.gp_system(
-        #     max_depth=self.max_knowledge_nodes,
-        #     max_size=self.max_knowledge_nodes, # XXX Operators
-        # )
-        # self.knowledge_table = pd.DataFrame(
-        #     columns=['tree', 'exists']+self.obs_measures+self.world.action_param_names,
-        #     index=range(self.max_knowledge_trees)
-        # ).fillna(0).astype({
-        #     'tree': 'object', 'exists': bool, 'size': 'int16', 'depth': 'int16',
-        #     **{k: 'float32' for k in (measures + ['hasnans', 'penalty', 'survive', 'fitness'])},
-        #     **{k: 'int16' for k in self.world.action_param_names}
-        # })
-        # sh = (self.gp_steps,)
-        # gp_result_observation_space = Dict({
-        #     'size': Box(low=0, high=max_max_size, shape=sh, dtype=np.int16),
-        #     'depth': Box(low=0, high=max_max_depth, shape=sh, dtype=np.int16),
-        #     **{k: Box(low=0.0, high=np.inf, shape=sh) for k in measures},
-        #     'hasnans': Box(low=0.0, high=1.0, shape=sh),
-        #     'penalty': Box(low=0.0, high=np.inf, shape=sh),
-        #     'survive': Box(low=0.0, high=1.0, shape=sh),
-        #     'fitness': Box(low=0.0, high=np.inf, shape=sh)
-        # })
-        # knowledge_observation_space = Dict({
-        #     'exists': MultiBinary(self.max_knowledge_trees),
-        #     **{k: Box(
-        #         low=v.low[:self.max_knowledge_trees], 
-        #         high=v.high[:self.max_knowledge_trees], 
-        #         dtype=v.dtype
-        #     ) for k, v in gp_result_observation_space.items()},
-        #     **{k: Box(
-        #         low=low, 
-        #         high=high, 
-        #         shape=(self.max_knowledge_trees,), 
-        #         dtype=self.world.action_param_space.dtype
-        #     ) for k, low, high in zip(
-        #         self.world.action_param_names,
-        #         self.world.action_param_space.low,
-        #         self.world.action_param_space.high
-        #     )}
-        # })
-        # self._observation_space = Dict({
-        #     'gp_run': gp_result_observation_space,
-        #     'knowledge': knowledge_observation_space
-        # })

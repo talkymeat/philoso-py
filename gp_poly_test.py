@@ -88,7 +88,7 @@ def uniform_iv_func(iv_min: float, iv_max: float):
 
 def target_poly_func(var: str, *vars: str, order: int, const_min: float, const_max: float):
     return RandomPolynomialFactory(
-        params = np.array([order, const_min, const_min], dtype=np.float32),
+        params = np.array([order, const_min, const_min], dtype=np.float64),
         treebank = GPTreebank(operators=OPSET)
     )(*(var,)+vars)
 
@@ -215,7 +215,7 @@ def gp_func_test(
             ["size", "depth", 'time']
     ]):
     rpf = RandomPolynomialFactory(
-        params = np.array([order, coeff_min, coeff_max], dtype=np.float32),
+        params = np.array([order, coeff_min, coeff_max], dtype=np.float64),
         # treebank = gp
     )
     gp = GPTreebank(
