@@ -91,7 +91,7 @@ class Agent:
             choice, choice_log_prob, action_logits, val = self.nn(obs)
         except Exception as e:
             from gymnasium.spaces import unflatten
-            print(('FFHHAAAAAAAACCCKK ' if obs[0].isnan().any() else 'BLEBTH ')*100)
+            print(('A ' if obs[0].isnan().any() else 'B ')*100)
             print(list(obs[0]))
             print('-'*80)
             print(self.ac._observation_space)
@@ -110,7 +110,7 @@ class Agent:
                     gp.scoreboard.to_parquet(fname)
                     print('='*80)
             print('='*80)
-            print('BRICKSH '*100)
+            print('Z '*100)
             raise e
         # set the observaton, plus the act and obs for `choice`
         training_instance = {('obs', 'v'): self.obs, ('act', 'choice'): choice, ('log_prob', 'choice'): choice_log_prob}
@@ -213,17 +213,11 @@ class Agent:
             # Others may have a mixture of space-types and distributions.
             if pol_name == 'choice':
                 # Just convert acts and logprobs into nice 2-d tensors
-                try:
-                    acts[pol_name] = torch.tensor(
-                        self.training_buffer[('act', pol_name)][permute_idxs],
-                        dtype=torch.int64, 
-                        device=self.device
-                    )
-                except Exception as e:
-                    print('jklol '*69)
-                    print(self.training_buffer[('act', pol_name)][permute_idxs])
-                    print('jklol '*69)
-                    raise e
+                acts[pol_name] = torch.tensor(
+                    self.training_buffer[('act', pol_name)][permute_idxs],
+                    dtype=torch.int64, 
+                    device=self.device
+                )
                 act_log_probs[pol_name] = torch.tensor(
                     self.training_buffer[('log_prob', pol_name)][permute_idxs],
                     dtype=torch.float64, 
@@ -250,22 +244,12 @@ class Agent:
                 # A pd.Series (or 1-col DF?) of tensors
                 log_probs_vecs = log_prob_dicts.apply(logprobdict_2_tensor).to_list()
                 # which is now a 2-d tensor, as promised
-                try:
-                    if log_probs_vecs:
-                        act_log_probs[pol_name] = torch.stack(
-                            log_probs_vecs, 
-                            dim=0
-                        ).to(self.device, dtype=torch.float64)
-                except Exception as e:
-                    print('YQK '*100)
-                    print(f"{pol_name=}")
-                    print(f"{act_log_probs=}")
-                    print(f"{log_probs_vecs=}")
-                    print(f"{log_prob_dicts=}")
-                    print('EDI '*100)
-                    raise e
-
-            
+                if log_probs_vecs:
+                    act_log_probs[pol_name] = torch.stack(
+                        log_probs_vecs, 
+                        dim=0
+                    ).to(self.device, dtype=torch.float64)
+                
 
         # Value data
         returns = discount_rewards(self.training_buffer[('reward', 'v')])[permute_idxs]
