@@ -163,7 +163,7 @@ class Agent:
         # print(self.training_buffer)
 
         self.obs = next_obs
-        self.day_reward += reward
+        self.day_reward = self.day_reward + reward
         self.done = done
 
     # post-processing of rollout
