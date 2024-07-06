@@ -15,7 +15,6 @@ from utils import scale_to_sum, InsufficientPostgraduateFundingError, _i
 from guardrails import GuardrailManager
 from cuboid import Cuboid
 
-# might not be needed here, maybe perhaps
 import torch
 import numpy as np
 from gymnasium.spaces.utils import flatten, unflatten, flatten_space
