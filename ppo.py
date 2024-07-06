@@ -11,7 +11,7 @@ import torch
 from torch import nn
 from torch import optim
 from torch.distributions.categorical import Categorical
-from gymnasium.spaces import Discrete
+from gymnasium.spaces import Discrete, flatten_space
 from icecream import ic
 
 # Since I'm using dictionaries to store outputs based on which
@@ -25,12 +25,27 @@ def logprobdict_2_tensor(logprob_dict):
             logprob_dict[k] = v[0]
     return torch.concatenate(list(logprob_dict.values()))
     
-def tensorise_dict(act_dict, device):
+def tensorise_dict(act_dict, device=None):
     """Converts a dict with string keys and list-like, array-like 
     or tensor-like values into an OrderedDict of Tensors
     """
-    return OrderedDict({k: t if isinstance(t, torch.Tensor) else torch.tensor(t, device=device) for k, t in act_dict.items()})
+    return OrderedDict({k: t if isinstance(t, torch.Tensor) else ic(torch.tensor(t, device=device)) for k, t in act_dict.items()})
 
+def series_2_logprob_tensor(acts, key, distro):
+    raw_tensor = torch.stack(list(
+        acts.apply(lambda _dic: _dic[key])
+    )) 
+    if raw_tensor.dim()==2 and raw_tensor.shape[1]==1:
+        return distro.log_prob(raw_tensor.t()).t()
+    elif raw_tensor.dim()==3 and raw_tensor.shape[1]==1:
+        return distro.log_prob(raw_tensor.permute([1,0,2])[0])
+    else:
+        ic(raw_tensor)
+        raise ValueError(
+            "series_2_logprob_tensor con handle only Series of " +
+            "tensor-valued dicts, with values of 1 or 2 dims, where " +
+            f"t.shape[0]==1. This had tensors with shape {acts[0][key].shape}"
+        )
 
 # Policy and value model
 class ActorCriticNetwork(nn.Module):
@@ -42,10 +57,11 @@ class ActorCriticNetwork(nn.Module):
     head(s) corresponding to the chosen action(s) to set the parameters 
     for the action
     """
-    def __init__(self, obs_space_size, action_space_sizes, device:str="cpu",):
+    def __init__(self, obs_space_size, actions, device:str="cpu",):
         super().__init__() # manadatory
         # dict for action heads
         self.policy_layers: dict[str, nn.Sequential] = {}
+        self.policy_heads: dict[tuple[str], nn.Linear] = {}
 
         # needed to find this bug! :\
         torch.autograd.set_detect_anomaly(True)
@@ -66,7 +82,6 @@ class ActorCriticNetwork(nn.Module):
         # The following is an alternative scheme for actions options, in which 
         # `read_to_gp` adds trees directly to the treebank for a gp
         # self.action_choices = [
-        #     [],
         #     ['gp'],
         #     ['gp_continue'],
         #     ['gp', 'use_mem'],
@@ -83,9 +98,9 @@ class ActorCriticNetwork(nn.Module):
         # chared with the value (critic) head, the choice head,
         # and all action heads
         self.shared_layers = nn.Sequential(
-            nn.Linear(obs_space_size, 64).double(),
+            nn.Linear(obs_space_size, 65).double(),
             nn.ReLU().double(), 
-            nn.Linear(64, 64).double(), 
+            nn.Linear(65, 64).double(), # <<== this one is confirmed to be the problem
             nn.ReLU().double()) 
         
         # choice head
@@ -95,17 +110,22 @@ class ActorCriticNetwork(nn.Module):
             nn.Linear(64, self.action_choice_space.n).double()) 
         
         # action heads
-        for name, size in action_space_sizes.items():
+        for name, action in actions.items():
             self.policy_layers[name] = nn.Sequential(
                 nn.Linear(64, 64).double(),
-                nn.ReLU().double(),
-                nn.Linear(64, size).double())
+                nn.ReLU().double()
+            )
+            head_dict = {}
+            for head_name, sub_space in action.action_space.items():
+                size = flatten_space(sub_space).shape[0]
+                head_dict[head_name] = nn.Linear(64, size).double()
+            self.policy_heads[name] = head_dict
         
         # value (critic) head
         self.value_layers = nn.Sequential(
-            nn.Linear(64, 64).double(),  # DOUBLE
-            nn.ReLU().double(), # DOUBLE
-            nn.Linear(64, 1).double()) # DOUBLE
+            nn.Linear(64, 64).double(),  
+            nn.ReLU().double(),
+            nn.Linear(64, 1).double()) 
 
     def value(self, obs):
         z = self.shared_layers(obs)
@@ -113,11 +133,20 @@ class ActorCriticNetwork(nn.Module):
         return value
         
     def choose(self, obs):
-        return self.policy(obs, 'choice')
+        z = self.shared_layers(obs)
+        choice_logits = self.policy_layers['choice'](z)
+        return choice_logits
         
     def policy(self, obs, choice):
-        z = self.shared_layers(obs)
-        action_logits = self.policy_layers[choice](z)
+        z_0 = self.shared_layers(obs)
+        z_1 = self.policy_layers[choice](z_0)
+        action_logits = {k: head(z_1) for k, head in self.policy_heads.items()}
+        return action_logits
+    
+    def sub_policy(self, obs, choice, head_name):
+        z_0 = self.shared_layers(obs)
+        z_1 = self.policy_layers[choice](z_0)
+        action_logits = self.policy_heads[choice][head_name](z_1)
         return action_logits
 
     def forward(self, obs): # mandatory
@@ -133,11 +162,11 @@ class ActorCriticNetwork(nn.Module):
         # obs = obs.clone().detach().requires_grad_(True)
 
         # feeds the observation into the shared layers
-        z = self.shared_layers(obs)
+        z_0 = self.shared_layers(obs)
         action_logits = {}
         # output of the shared layer is used to get logits from the
         # 'choice' head
-        action_logits['choice'] = self.policy_layers['choice'](z)
+        action_logits['choice'] = self.policy_layers['choice'](z_0)
         # which is used to get a choice from a Categorical distribution
         choice_distribution = Categorical(logits=action_logits['choice'])
         choice = choice_distribution.sample()
@@ -147,9 +176,15 @@ class ActorCriticNetwork(nn.Module):
         # passed into the layers for each action, in sequence, generating
         # the action logits
         for action in self.action_choices[choice.item()]:
-            action_logits[action] = self.policy_layers[action](z)
+            # action_logits[action] = self.policy_layers[action](z_0)
+            z_1 = self.policy_layers[action](z_0)
+            action_logits[action] = {
+                k: head(z_1) 
+                for k, head 
+                in self.policy_heads[action].items()
+            }
         # the critic layer gives the observation a value score
-        value = self.value_layers(z)
+        value = self.value_layers(z_0)
         return choice, choice_log_prob, action_logits, value
   
 
@@ -180,11 +215,27 @@ class PPOTrainer():
             list(self.actor_critic.value_layers.parameters())
         self.value_optim = optim.Adam(value_params, lr=value_lr)
 
+        self.policy_params['choice'] = list(
+            self.actor_critic.shared_layers.parameters()
+        ) + list(self.actor_critic.policy_layers['choice'].parameters())
         for k, layers in self.actor_critic.policy_layers.items():
-            self.policy_params[k] = list(
-                self.actor_critic.shared_layers.parameters()
-            ) + list(layers.parameters())
-            self.policy_optims[k] = optim.Adam(self.policy_params[k], lr=policy_lr)
+            if k in self.actor_critic.policy_heads:
+                for kk, head in self.actor_critic.policy_heads[k].items():
+                    self.policy_params[(k, kk)] = list(
+                        self.actor_critic.shared_layers.parameters()
+                    ) + list(
+                        layers.parameters()
+                    ) + list(
+                        head.parameters()
+                    )
+            else:
+                self.policy_params[k] = list(
+                    self.actor_critic.shared_layers.parameters()
+                ) + list(
+                    layers.parameters()
+                )
+        for k, params_ in self.policy_params.items():
+            self.policy_optims[k] = optim.Adam(params_, lr=policy_lr)
 
     @property
     def device(self):
@@ -226,36 +277,13 @@ class PPOTrainer():
                 # corresponding log probs
                 new_logits = self.actor_critic.choose(obs)
                 new_distro = Categorical(logits=new_logits) 
-                new_log_probs = new_distro.log_prob(acts)
+                # new_log_probs = new_distro.log_prob(acts)
             else:
-                #
-                new_logprobs_list = []
-                for ob1, ac1 in zip(obs, acts):
-                    # generate new logits
-                    new_logits = self.actor_critic.policy(ob1, which)
-                    # An `Action` may use different parts of its input in
-                    # different ways, with different action subspaces
-                    # and using different distributions. This generates
-                    # a dict of the distributions, given the logits
-                    new_distros = actions[which].logits_2_distros(new_logits)
-                    # this goes through the new distributions and calculates
-                    # the new log probabilities of the action-parts, based on
-                    # the updated network parameters
-                    act_part_log_probs = tensorise_dict(OrderedDict({
-                        k: d.log_prob(ac1[k]) for k, d in new_distros.items()
-                    }), device=self.device)
-                    # the logprobs for the sub-actions are concatenated into
-                    # a single tensor
-                    new_logprobs_list.append(logprobdict_2_tensor(act_part_log_probs))
-                # the log-probs for each action are then stacked into a 2-d tensor
-                new_log_probs = torch.stack(
-                    new_logprobs_list, 
-                    dim=0
-                ).to(self.device, dtype=torch.float64) 
-                # Would this work? test later XXX XXX
-                # new_logits = self.actor_critic.policy(obs, which)
-                # new_distros = actions[which].logits_2_distros(new_logits)
-                # But for now, do what I know will work :|
+                # for the action parameters, we train one head at a time
+                new_logits = self.actor_critic.sub_policy(obs, *which)
+                new_distro = actions.distributions[which[1]](new_logits)
+            new_log_probs = new_distro.log_prob(acts) 
+            
 
             # So at this point the old and new logprobs are both
             # 2-d arrays of matching size, assigned to the 
@@ -263,7 +291,8 @@ class PPOTrainer():
 
             # the policy ratio is calculted and clipped to stop
             # the policy from changing too much in one epoch
-            policy_ratio = torch.exp(new_log_probs - old_log_probs) # torch.exp(new_log_probs - old_log_probs)
+
+            policy_ratio = torch.exp(new_log_probs - old_log_probs) 
             clipped_ratio = policy_ratio.clamp(
                 1 - self.ppo_clip_val, 1 + self.ppo_clip_val)
             

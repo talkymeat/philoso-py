@@ -8,7 +8,6 @@ from gp_fitness import SimpleGPScoreboardFactory
 from model_time import ModelTime
 from reward import Reward, Curiosity, Renoun, GuardrailCollisions
 from tree_funcs import sum_all
-# from ppo import ActorCriticNetwork, PPOTrainer
 
 from typing import Container
 import asyncio
@@ -57,7 +56,7 @@ class Model:
     async def day(self, steps):
         print('Good morning!')
         for agent in self.agents:
-            agent.morning_routine()
+            agent.morning_routine(steps)
         print('Oh, what a lovely day')
         for _ in range(steps):
             self.not_done = self.agent_name_set.copy()
@@ -150,8 +149,6 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
                 gp_vars_more=gp_vars_more,
                 ping_freq=ping_freq
             ), # AgentController
-            # PPOTrainer(), # PPOTrainer
-            # ActorCriticNetwork(), #nn ActorCriticNetwork
             dancing_chaos_at_the_heart_of_the_world # rng
         ) for i in range(n_agents)
     ]
@@ -189,6 +186,6 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
 
 if __name__ == "__main__":
     model = example_model(seed=42, ping_freq=500)
-    model.run(100, 25)
+    model.run(100, 15)
     # model.run(100, 100)
     # model.run(2, 10_000) # 

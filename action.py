@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Sequence
 from collections import OrderedDict
+from functools import cached_property
 
 from gp import GPTreebank
 from observatories import ObservatoryFactory
@@ -85,6 +86,7 @@ class Action(ABC):
     def do(self, *args, **kwargs):
         pass
 
+    # DEPRECATED
     @property
     def logit_slicers(self) -> list[slice]:
         # subspace sizes prepended with 0
@@ -94,11 +96,14 @@ class Action(ABC):
         # slice objects to divide the logits according to their destined subspace
         return [slice(sspw0[i], sspw0[i+1]) for i in range(len(sspw0)-1)]
     
-    @property
+    @cached_property
     def distributions(self):
-        return [space_2_distro(ss) for ss in self.action_space.values()]
+        return {k: space_2_distro(ss) for k, ss in self.action_space.items()}
     
+    # DEPRECATED
     def slice_logits(self, logits):
+        if len(self.logit_slicers)==1:
+            return logits
         if len(logits.shape)==1:
             return [logits[s] for s in self.logit_slicers]
         else:
@@ -110,20 +115,27 @@ class Action(ABC):
                     dims.append(i)
             if len(dims)==1:
                 slicers = [
-                        [
-                            (s if i==dims[0] else slice(None)) 
-                            for i 
-                            in range(len(logits.shape))
-                        ] 
-                        for s 
-                        in self.logit_slicers
-                    ]
+                    [
+                        (s if i==dims[0] else slice(None)) 
+                        for i 
+                        in range(len(logits.shape))
+                    ] 
+                    for s 
+                    in self.logit_slicers
+                ]
                 return [logits[s] for s in slicers]
             else:
-                ValueError(
-                    f'slice_logits cannot slice arrays with more than one '+
-                    f' significant (greater than 1) dimension: {logits}'
-                )
+                slicers = [
+                    ([slice(None)]*(len(logits.shape)-1))+[s]
+                    for s 
+                    in self.logit_slicers
+                ]
+                return [logits[s] for s in slicers]
+                
+                # ValueError(
+                #     f'slice_logits cannot slice arrays with more than one '+
+                #     f' significant (greater than 1) dimension: {logits}'
+                # )
     
     @property
     def logit_dims(self):
@@ -134,7 +146,7 @@ class Action(ABC):
                     dims[i] = (len(sp.nvec), sp.nvec[0])
                 else:
                     raise InsufficientPostgraduateFundingError(
-                        "Handling MultiDiscretes of unequal order is a good " +
+                        "Handling MultiDiscretes of unequal order would be a good " +
                         "and useful piece of functionality, but it isn't " +
                         "needed for to make the models for Xan's MSc work. If " +
                         "wish to see this functionality implemented, kindly " +
@@ -143,6 +155,7 @@ class Action(ABC):
                     )
         return dims
     
+    # DEPRECATED
     def logits_2_sample(self, logits):
         return flatten(
             self.action_space,
@@ -162,7 +175,8 @@ class Action(ABC):
             })
         )
     
-    def logits_2_distros(self, logits):
+    # DEPRECATED
+    def logits_2_distros_old(self, logits):
         return OrderedDict({
             k: distro(
                 torch.reshape(sllogits, shape)
@@ -176,6 +190,13 @@ class Action(ABC):
                 self.slice_logits(logits),
                 self.logit_dims
             )
+        })
+    
+    def logits_2_distros(self, logits: dict):
+        return OrderedDict({
+            sub_name: self.distributions[sub_name](sub_logits)
+            for sub_name, sub_logits
+            in logits.items()
         })
         
 
@@ -191,16 +212,12 @@ class GPNew(Action):
             controller,
             obs_factory: ObservatoryFactory,
             tree_factory_classes: list[type[TreeFactory]],
-            # operators: list[Operator],
             rng: np.random.Generator,
-            # best_outvals: str|list[str],
-            # expt_outvals: str|list[str],
             out_dir: str|Path,
             time: ModelTime,
             dv: str, 
             def_fitness: str,
             max_volume: int,
-            # gp_best_vec_out: list[str],
             theta: float = 0.05,
             ping_freq=5
 
@@ -219,9 +236,6 @@ class GPNew(Action):
             raise ValueError("CompositeTreeFactory cannot be included in tree_factory options")
         self.obs_fac = obs_factory
         self.rng = rng
-        # self.best_outvals = best_outvals
-        # self.expt_outvals = expt_outvals
-        # self.operator_set = operators
         self.out_dir = out_dir if isinstance(out_dir, Path) else Path(out_dir)
         self.t = time
         self.dv = dv 
@@ -328,7 +342,6 @@ class GPNew(Action):
             should be respected. This may clamp the `order` of the random 
             polynomial factory
         """
-#----#----#----#----#----#----#----#----#----#----#----#----#----#----#----#----
         gp_register_sp = Discrete(len(self.gptb_list)) 
         num_wobf_params = len(self.obs_fac.wobf_param_ranges)
         box_len = 9 + self.num_sb_weights + num_wobf_params + (

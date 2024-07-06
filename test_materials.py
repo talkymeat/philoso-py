@@ -8,7 +8,7 @@ from gp_fitness import SimpleGPScoreboardFactory
 from repository import Archive, Publication
 import numpy as np
 from model_time import ModelTime
-
+from guardrails import GuardrailManager
 
 
 class DummyAgent:
@@ -64,6 +64,7 @@ class DummyController:
         self.sb_factory = SimpleGPScoreboardFactory(self.gp_vars_core, 'x')
         self.memory = MEM
         self.repository = PLOS1
+        self.guardrail_manager = GuardrailManager()
 
 
 DTF = DummyTreeFactory()

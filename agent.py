@@ -7,14 +7,18 @@ from gymnasium.spaces import flatten, flatten_space
 from action import Action
 from collections import OrderedDict
 from icecream import ic
+from typing import Sequence
 import pyarrow.parquet as pq
 import pyarrow as pa
+
+def filter_and_stack(ser: pd.Series, permute: Sequence[int], mask: Sequence[bool]):
+    filtered = ser[permute][mask]
+    acts: torch.Tensor = torch.stack(tuple(filtered))
+    return acts
 
 class Agent:
     def __init__(self, 
         ac:AgentController, # remember, ac is a gymnasium.env
-        # trainer:PPOTrainer, 
-        # nn:ActorCriticNetwork,
         rng:np.random.Generator,
         device:str="cpu",
     ):
@@ -38,24 +42,38 @@ class Agent:
         self.ac.make_observations()
         self.nn = ActorCriticNetwork( # put a factory class here, from param
             flatten_space(self.ac.observation_space).shape[0],
-            {k: flatten_space(sp).shape[0] for k, sp in self.ac.action_space.items()}
+            self.ac.actions
+            # {k: flatten_space(sp).shape[0] for k, sp in self.ac.action_space.items()}
         )
         self.nn.to(self.device)
-        self.policy_names = list(self.nn.policy_layers.keys())
-        self.training_buffer = pd.concat([
-            pd.DataFrame(
-                columns=pd.MultiIndex.from_product([
-                    ['obs', 'value', 'reward'], 
-                    ['v']
-                ])
-            ),
-            pd.DataFrame(
-                columns=pd.MultiIndex.from_product([
-                    ['act', 'log_prob'],
-                    self.policy_names
-                ])
-            )
-        ], axis=1)
+        # Set up the training buffer with a multi-index
+        self.policy_names = [('choice')]
+        for k, head in self.nn.policy_heads.items():
+            self.policy_names += [(k, kk) for kk in head.keys()]
+        # +list(self.nn.policy_layers.keys())
+        self.training_buffer_keys = [
+            'obs', 'value', 'reward', ('act', 'choice'), ('log_prob', 'choice')
+        ] + [
+            (a_lp, *polname)
+            for a_lp 
+            in ['act', 'log_prob']
+            for polname
+            in self.policy_names
+        ]
+        # self.training_buffer = pd.concat([
+        #     pd.DataFrame(
+        #         columns=pd.MultiIndex.from_product([
+        #             ['obs', 'value', 'reward'], 
+        #             ['v']
+        #         ])
+        #     ),
+        #     pd.DataFrame(
+        #         columns=pd.MultiIndex.from_product([
+        #             ['act', 'log_prob'],
+        #             self.policy_names
+        #         ])
+        #     )
+        # ], axis=1)
         self.trainer = PPOTrainer(
             self.nn,
             ppo_clip_val=ppo_clip_val,
@@ -74,11 +92,14 @@ class Agent:
         return self.ac.name
 
     # Set-up for rollout
-    def morning_routine(self):
+    def morning_routine(self, steps):
         self.obs, _ = self.ac.reset(self.rng.bit_generator.seed_seq.entropy)
-        self.training_buffer = self.training_buffer.iloc[0:0]
+        self.training_buffer = pd.DataFrame({
+            k: [None]*steps for k in self.training_buffer_keys
+        })
         self.day_reward = 0
         self.done = False
+        self.steps_done = 0
 
     # one action: a day is a loop of these
     async def day_step(self):
@@ -114,15 +135,19 @@ class Agent:
             print('Z '*100)
             raise e
         # set the observaton, plus the act and obs for `choice`
-        training_instance = {('obs', 'v'): self.obs, ('act', 'choice'): choice, ('log_prob', 'choice'): choice_log_prob}
+        training_instance = {
+            ('obs'): self.obs, 
+            ('act', 'choice'): choice, 
+            ('log_prob', 'choice'): choice_log_prob
+        }
         # separate action-representations for doing actions and training the 
         # NN. Tidying up so a single representation will do is a future task
-        action_to_do = {}
+        action_to_do = OrderedDict()
         for act, logits in action_logits.items(): 
             if act=='choice':
                 # 'choice' is guaranteed to be simple - just
                 # a single Discrete space, using a Categorical distro,
-                # so we'll handle it separately here
+                # so we'll handle it separately elsewhere
                 pass
             else:
                 # Converts the logits to a dict of Distributions
@@ -135,36 +160,41 @@ class Agent:
                 act_part_log_probs = OrderedDict({
                     k: d.log_prob(action_part[k]) for k, d in act_distros.items()
                 })
-                # I thought this was needed for generating behaviour, but actually no,
-                # `Actions` are now programmed to handle dicts of samples, so this
-                # gets commented out
-                ########################################### 
-                # action_to_do[act] = flatten(
-                #     self.actions[act].action_space,
-                #     OrderedDict({
-                #         k: samp.numpy() for k, samp in action_part
-                #     })
-                # )
-                ########################################### 
-                action_to_do[act] = training_instance[('act', act)] = action_part
-                training_instance[('log_prob', act)] = act_part_log_probs
+
+                action_to_do[act] = action_part
+                for k, action_subpart in action_part.items():
+                    training_instance[('act', act, k)] = action_subpart
+                    training_instance[('log_prob', act, k)] = act_part_log_probs[k]
 
 
         # This is a tensor of size (1,1), we just want a float
         val = val.item()
-        training_instance[('value', 'v')] = val
+        training_instance[('value')] = val
 
         next_obs, reward, done, _, _, _ = await self.ac.step(action_to_do)
 
-        training_instance[('reward', 'v')] = reward
+        training_instance[('reward')] = reward
         # print('*'*10, training_instance)
         # print(self.training_buffer)
-        self.training_buffer.loc[len(self.training_buffer)] = training_instance
+        ##### self.training_buffer.loc[len(self.training_buffer)] = training_instance
+        # This (the 3 lines below) is janky and stupid and I hate it, but the 
+        # line commented out above triggers torch to try to convert the tensors
+        # to numpy arrays, which then errors because they have requires_grad=True
+        for k, v in training_instance.items():
+            try:
+                self.training_buffer[k][self.steps_done] = v
+            except Exception as e:
+                print('g'*500)
+                print(f'{i=}, {k=}')
+                print(self.training_buffer)
+                print(self.training_buffer_keys)
+                print('f'*500)
         # print(self.training_buffer)
 
         self.obs = next_obs
         self.day_reward = self.day_reward + reward
         self.done = done
+        self.steps_done += 1
 
     # post-processing of rollout
     def evening_routine(self):
@@ -172,7 +202,7 @@ class Agent:
 
         # XXX TODO XXX XXX make sure these are the right columns
         ### Do train data filtering
-        self.training_buffer[('reward', 'v')] = calculate_gaes(self.training_buffer[('value', 'v')], self.training_buffer[('reward', 'v')])
+        self.training_buffer['reward'] = calculate_gaes(self.training_buffer['value'], self.training_buffer[('reward')])
         self.day_rewards.append(self.day_reward)
 
     # run training loop
@@ -189,16 +219,15 @@ class Agent:
         act_log_probs = {}
         masks = {}
         obs = torch.tensor(
-            self.training_buffer[('obs', 'v')][permute_idxs],
+            self.training_buffer[('obs')][permute_idxs],
             dtype=torch.float64, 
             device=self.device
         )
         gaes = torch.tensor(
-            self.training_buffer[('value', 'v')][permute_idxs],
+            self.training_buffer[('value')][permute_idxs],
             dtype=torch.float64, 
             device=self.device
         )
-        print(acts)
         for pol_name in self.policy_names:
             # Slightly different cases depending on whether the policy
             # is 'choice' or something else, as 'choice' is a simple
@@ -207,12 +236,12 @@ class Agent:
             if pol_name == 'choice':
                 # Just convert acts and logprobs into nice 2-d tensors
                 acts[pol_name] = torch.tensor(
-                    self.training_buffer[('act', pol_name)][permute_idxs],
+                    list(self.training_buffer[('act', pol_name)][permute_idxs]),
                     dtype=torch.int64, 
                     device=self.device
                 )
                 act_log_probs[pol_name] = torch.tensor(
-                    self.training_buffer[('log_prob', pol_name)][permute_idxs],
+                    list(self.training_buffer[('log_prob', pol_name)][permute_idxs]),
                     dtype=torch.float64, 
                     device=self.device
                 )
@@ -223,35 +252,52 @@ class Agent:
                 # train_policy, because it's needed to filter obs, reward, etc, as these are
                 # needs for each policy area, with a different mask on. Also, note each mask is
                 # generated from an already permuted DF
-                masks[pol_name] = ~(self.training_buffer[('log_prob', pol_name)][permute_idxs].isna())
+                masks[pol_name] = ~(self.training_buffer[('log_prob', *pol_name)][permute_idxs].isna())
                 # keeping acts as dicts makes sense, as the act must be used to make new log_probs,
                 # which requires being split between multiple Distributions. These should just be 
                 # assigned to device ready for training
-                act_dicts: pd.Series = self.training_buffer[('act', pol_name)][permute_idxs][masks[pol_name]]
-                act_dicts = act_dicts.apply(lambda x: tensorise_dict(x, device=self.device))
-                acts[pol_name] = act_dicts
-                # logprobs, on the other hand, are at the heart of the loss calculation, so
-                # these need to be turned into one big 1-d tensor, and then stacked into a 2-d
-                # tensor, which can be used for the actual training as a single computation
-                log_prob_dicts: pd.Series = self.training_buffer[('log_prob', pol_name)][permute_idxs][masks[pol_name]]
-                # A pd.Series (or 1-col DF?) of tensors
-                log_probs_vecs = log_prob_dicts.apply(logprobdict_2_tensor).to_list()
-                # which is now a 2-d tensor, as promised
-                if log_probs_vecs:
-                    act_log_probs[pol_name] = torch.stack(
-                        log_probs_vecs, 
-                        dim=0
-                    ).to(self.device, dtype=torch.float64)
+                
+                acts[pol_name] = filter_and_stack(
+                    self.training_buffer[('act', *pol_name)], 
+                    permute_idxs, 
+                    masks[pol_name]
+                ) # .to(self.device, dtype=torch.float64) XXX ???
+                act_log_probs[pol_name] = filter_and_stack(
+                    self.training_buffer[('log_prob', *pol_name)], 
+                    permute_idxs, 
+                    masks[pol_name]
+                ) # .to(self.device, dtype=torch.float64) XXX ???
+                # act_dicts: pd.Series = self.training_buffer[('act', *pol_name)][permute_idxs][masks[pol_name]]
+                # act_dicts = act_dicts.apply(lambda x: tensorise_dict(x, device=self.device))
+                # acts[pol_name] = act_dicts
+                # # logprobs, on the other hand, are at the heart of the loss calculation, so
+                # # these need to be turned into one big 1-d tensor, and then stacked into a 2-d
+                # # tensor, which can be used for the actual training as a single computation
+                # log_prob_dicts: pd.Series = self.training_buffer[('log_prob', *pol_name)][permute_idxs][masks[pol_name]]
+                # # A pd.Series (or 1-col DF?) of tensors
+                # log_probs_vecs = log_prob_dicts.apply(logprobdict_2_tensor).to_list()
+                # # which is now a 2-d tensor, as promised
+                # if log_probs_vecs:
+                #     act_log_probs[pol_name] = torch.stack(
+                #         log_probs_vecs, 
+                #         dim=0
+                #     ).to(self.device, dtype=torch.float64)
                 
 
         # Value data
-        returns = discount_rewards(self.training_buffer[('reward', 'v')])[permute_idxs]
+        returns = discount_rewards(self.training_buffer[('reward')])[permute_idxs]
         returns = torch.tensor(returns, dtype=torch.float64, device=self.device)
 
         # Train model
         for name in self.policy_names:
-            self.trainer.train_policy(
-                obs, acts[name], act_log_probs[name], gaes, name, self.actions, mask=masks[name]
-            )
+            if name in acts:
+                self.trainer.train_policy(
+                    obs, 
+                    acts[name], 
+                    act_log_probs[name], 
+                    gaes, 
+                    name, 
+                    None if name == 'choice' else self.actions[name[0]], 
+                    mask=masks[name]
+                )
         self.trainer.train_value(obs, returns)
-
