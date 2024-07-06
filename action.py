@@ -28,12 +28,6 @@ from torch.distributions import Bernoulli, Categorical, Normal
 def scale_unit_to_range(val, min_, max_):
     return min_ + (val * (max_ - min_))
 
-# def catag(logits):
-#     print(f'~c{"="*50}8')
-#     print(logits)
-#     print(f'8{"="*50}o~')
-#     return Categorical(logits=logits)
-
 def space_2_distro(space: Space):
     if isinstance(space, Discrete):
         # return catag
@@ -85,10 +79,6 @@ class Action(ABC):
     @abstractmethod
     def do(self, *args, **kwargs):
         pass
-
-    # DEPRECATED
-    @property
-    def logit_slicers(self) -> list[slice]:
         # subspace sizes prepended with 0
         sspw0 = np.cumsum([0] + [
             flatten_space(ss).shape[0] for ss in self.action_space.values()
@@ -99,38 +89,36 @@ class Action(ABC):
     @cached_property
     def distributions(self):
         return {k: space_2_distro(ss) for k, ss in self.action_space.items()}
-    
-    # DEPRECATED
-    def slice_logits(self, logits):
-        if len(self.logit_slicers)==1:
-            return logits
-        if len(logits.shape)==1:
-            return [logits[s] for s in self.logit_slicers]
-        else:
-            dims = []
-            for i, dim in enumerate(logits.shape):
-                if dim==0:
-                    raise ValueError(f'Oh no, an empty tensor, {logits}')
-                if dim>1:
-                    dims.append(i)
-            if len(dims)==1:
-                slicers = [
-                    [
-                        (s if i==dims[0] else slice(None)) 
-                        for i 
-                        in range(len(logits.shape))
-                    ] 
-                    for s 
-                    in self.logit_slicers
-                ]
-                return [logits[s] for s in slicers]
-            else:
-                slicers = [
-                    ([slice(None)]*(len(logits.shape)-1))+[s]
-                    for s 
-                    in self.logit_slicers
-                ]
-                return [logits[s] for s in slicers]
+        pass
+        # if len(self.logit_slicers)==1:
+        #     return logits
+        # if len(logits.shape)==1:
+        #     return [logits[s] for s in self.logit_slicers]
+        # else:
+        #     dims = []
+        #     for i, dim in enumerate(logits.shape):
+        #         if dim==0:
+        #             raise ValueError(f'Oh no, an empty tensor, {logits}')
+        #         if dim>1:
+        #             dims.append(i)
+        #     if len(dims)==1:
+        #         slicers = [
+        #             [
+        #                 (s if i==dims[0] else slice(None)) 
+        #                 for i 
+        #                 in range(len(logits.shape))
+        #             ] 
+        #             for s 
+        #             in self.logit_slicers
+        #         ]
+        #         return [logits[s] for s in slicers]
+        #     else:
+        #         slicers = [
+        #             ([slice(None)]*(len(logits.shape)-1))+[s]
+        #             for s 
+        #             in self.logit_slicers
+        #         ]
+        #         return [logits[s] for s in slicers]
                 
                 # ValueError(
                 #     f'slice_logits cannot slice arrays with more than one '+
@@ -154,29 +142,6 @@ class Action(ABC):
                         "right on it."
                     )
         return dims
-    
-    # DEPRECATED
-    def logits_2_sample(self, logits):
-        return flatten(
-            self.action_space,
-            OrderedDict({
-                k: distro(
-                    torch.reshape(sllogits, shape)
-                    if shape
-                    else sllogits
-                ).sample().numpy()
-                for k, distro, sllogits, shape
-                in zip(
-                    self.action_space.keys(),
-                    self.distributions, 
-                    self.slice_logits(logits),
-                    self.logit_dims
-                )
-            })
-        )
-    
-    # DEPRECATED
-    def logits_2_distros_old(self, logits):
         return OrderedDict({
             k: distro(
                 torch.reshape(sllogits, shape)

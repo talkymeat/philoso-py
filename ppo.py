@@ -14,38 +14,6 @@ from torch.distributions.categorical import Categorical
 from gymnasium.spaces import Discrete, flatten_space
 from icecream import ic
 
-# Since I'm using dictionaries to store outputs based on which
-# action head they related to, I need functions to convert
-# dicts of tensors to tensors
-
-def logprobdict_2_tensor(logprob_dict):
-    """Joins all the Tensors in an OrderedDict of Tensors into one Tensor"""
-    for k, v in logprob_dict.items():
-        if len(v.shape)==2 and v.shape[0]==1:
-            logprob_dict[k] = v[0]
-    return torch.concatenate(list(logprob_dict.values()))
-    
-def tensorise_dict(act_dict, device=None):
-    """Converts a dict with string keys and list-like, array-like 
-    or tensor-like values into an OrderedDict of Tensors
-    """
-    return OrderedDict({k: t if isinstance(t, torch.Tensor) else ic(torch.tensor(t, device=device)) for k, t in act_dict.items()})
-
-def series_2_logprob_tensor(acts, key, distro):
-    raw_tensor = torch.stack(list(
-        acts.apply(lambda _dic: _dic[key])
-    )) 
-    if raw_tensor.dim()==2 and raw_tensor.shape[1]==1:
-        return distro.log_prob(raw_tensor.t()).t()
-    elif raw_tensor.dim()==3 and raw_tensor.shape[1]==1:
-        return distro.log_prob(raw_tensor.permute([1,0,2])[0])
-    else:
-        ic(raw_tensor)
-        raise ValueError(
-            "series_2_logprob_tensor con handle only Series of " +
-            "tensor-valued dicts, with values of 1 or 2 dims, where " +
-            f"t.shape[0]==1. This had tensors with shape {acts[0][key].shape}"
-        )
 
 # Policy and value model
 class ActorCriticNetwork(nn.Module):
