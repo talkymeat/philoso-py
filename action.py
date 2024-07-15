@@ -21,8 +21,10 @@ from gymnasium.spaces.utils import flatten, unflatten, flatten_space
 from gymnasium.spaces import Dict, Discrete, Box, MultiBinary, MultiDiscrete, Space
 from torch.distributions import Bernoulli, Categorical, Normal
 
-# from icecream import ic
+from icecream import ic
 
+def min_dim(t: torch.Tensor) -> int:
+    return len([d for d in t.shape if d > 1])
 
 def scale_unit_to_range(val, min_, max_):
     return min_ + (val * (max_ - min_))
@@ -33,7 +35,12 @@ def space_2_distro(space: Space):
         return lambda logits: Categorical(logits=logits)
     elif isinstance(space, MultiDiscrete):
         if np.all(space.nvec==space.nvec[0]):
-            return lambda logits: Categorical(logits=torch.reshape(logits, (len(space.nvec), space.nvec[0])))
+            return lambda logits: Categorical(
+                logits=torch.reshape(
+                    logits, 
+                    (*logits.shape[:-1], len(space.nvec), space.nvec[0]) if min_dim(logits)>1 else (len(space.nvec), space.nvec[0])
+                )
+            )
         else:
             raise InsufficientPostgraduateFundingError(
                 "Handling MultiDiscretes of unequal order is a good " +
@@ -195,7 +202,7 @@ class GPNew(Action):
         # note that the defined fitness value always has a raw weight of 1
         self.num_sb_weights: int = self.sb_factory.num_sb_weights - 1
         if CompositeTreeFactory not in tree_factory_classes:
-            self.tf_options = tree_factory_classes
+            self.tf_options = ic(tree_factory_classes)
         else:
             raise ValueError("CompositeTreeFactory cannot be included in tree_factory options")
         self.obs_fac = obs_factory
@@ -401,31 +408,6 @@ class GPNew(Action):
             obs_args
         )
     
-    # def calculate_size_factors(self, sz_f: np.ndarray):
-    #     """The formula to scale an array such that it's product is a specified
-    #     value (in this case `self.max_volume`, which approximately  defines the
-    #     number of nodes*timesteps in an action) is:
-
-    #     scaling = [inverse product of the array * max_vol] to the root of the  
-    #         length of the array
-    #     new_arr = array * scaling
-
-    #     Note since max tree size, tree population, and number of steps are all
-    #     integers, this may fall short, as casting np.float to int rounds using
-    #     `floor` 
-    #     """
-    #     if self.yell_a_bunch:
-    #         print("HJFGDJ " *60)
-    #         print(f"{sz_f=}")
-    #         print(f"{self.max_volume=} / {sz_f.prod()=}")
-    #         print(f"{(self.max_volume/sz_f.prod())=}")
-    #         print(f"{(self.max_volume/sz_f.prod())=} ^ {(1/len(sz_f))=}")
-    #         print(f"{(self.max_volume/sz_f.prod())**(1/len(sz_f))=}")
-    #         print(f"{(self.max_volume/sz_f.prod())**(1/len(sz_f)) * sz_f=}")
-    #         print(f"{((self.max_volume/sz_f.prod())**(1/len(sz_f)) * sz_f).int()=}")
-    #         print("JDSJDD " *40)
-    #     return ((self.max_volume/sz_f.prod())**(1/len(sz_f)) * sz_f).int()
-
     def do(self, 
             gp_register: int, 
             tf_choices: list[int], 
@@ -464,9 +446,6 @@ class GPNew(Action):
                 max_depth =   int(_i(max_depth))    ,
                 max_size =    int(_i(max_size))     ,
                 episode_len = int(_i(episode_len))  ,
-                # commented out params that aren't needed when pre-made scoreboard is passed
-                # best_outvals = self.best_outvals,
-                # expt_outvals = self.expt_outvals,
                 operators =          tree_factory.op_set,
                 seed =               self.rng,
                 _dir =              (
@@ -565,7 +544,6 @@ class GPContinue(Action):
         XXX TODO: it might be nice to allow this to also adjust scoreboard 
         weights XXX
         """
-#----#----#----#----#----#----#----#----#----#----#----#----#----#----#----#----
         gp_register_sp = Discrete(len(self.gptb_list)) 
         misc_box       = Box(low=0.0, high=1.0, shape=(5,))
         return Dict({
@@ -838,11 +816,16 @@ class Read(Action):
             'repo_table_idxs': repo_table_idxs,
             'repo_row_idxs': repo_row_idxs
         })
-        
 
     def process_action(self, in_vals: OrderedDict[str, np.ndarray|int|float|bool]|np.ndarray[int|float]):
         mask            = in_vals['mask'][0].int()
-        mem_table_idxs  = in_vals['mem_table_idxs'][mask]
+        try:
+            mem_table_idxs  = in_vals['mem_table_idxs'][mask]
+        except Exception as e:
+            print('F'*300)
+            print(in_vals['mem_table_idxs'])
+            print(mask)
+            raise e
         mem_row_idxs    = in_vals['mem_row_idxs'][mask]
         repo_table_idxs = in_vals['repo_table_idxs'][mask]
         repo_row_idxs   = in_vals['repo_row_idxs'][mask]

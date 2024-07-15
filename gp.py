@@ -3,7 +3,7 @@ from gp_trees import GPTerminal, GPNonTerminal
 from gp_fitness import *
 import pandas as pd
 import numpy as np
-from icecream import ic
+# from icecream import ic
 from copy import copy
 from typing import Sequence # Union, List, Callable, Mapping, 
 from observatories import *
@@ -112,10 +112,10 @@ class GPTreebank(TypeLabelledTreebank):
         # If a scoreboard is provided in kwargs, use it << but wait XXX, does the scoreboard come preloaded with an observatory?
         if fitness is not None:
             self.scoreboard = fitness
-        # Otherwise, configure one
-        else:
+            # Otherwise, configure one
             # Make a dict to use for kwargs. The temperature coefficient and
             # observatory are always going to be needed
+        else:
             sb_kwargs = {
                 "temp_coeff": self.temp_coeff,
                 "obs": observatory,
@@ -213,10 +213,7 @@ class GPTreebank(TypeLabelledTreebank):
             self,
             to_graph: Collection[str] = None
         ) -> tuple[dict[str, list], dict, GPNonTerminal]:
-        """Sets up a genetic programming run and runs it for a specified number 
-        of steps
-        
-        TODO: separate this into two steps - _setup and _run 
+        """Sets up a genetic programming run.
         """
         # make base filename for saving data. This means the filename will record
         # when the run started, not when the file was saved. It also means pickle
@@ -255,18 +252,8 @@ class GPTreebank(TypeLabelledTreebank):
         return self._last_step()
 
     def _run_step(self):
-        #     self, 
-        #     # scoreboard: GPScoreboard, 
-        #     # expt_outvals: list[str],
-        #     # n: int,
-        #     # steps: int,
-        #     # elitism: int,
-        #     # pop: int,
-        #     # record: pd.DataFrame,
-        #     # grapher: Grapher = None
-        # )-> tuple[pd.DataFrame, dict]:
         """A single evolutionary step for GP"""
-
+        
         # First, get an array of all the trees (root nodes only)
         # (right now it's float-rooted nodes only ,but may change this later)
         old_gen = self.get_all_root_nodes()[float].array()

@@ -5,8 +5,6 @@ Original file is located at
 """
 
 import numpy as np
-
-from copy import deepcopy
 from collections import OrderedDict
 
 import torch
@@ -82,13 +80,13 @@ class ActorCriticNetwork(nn.Module):
         # action heads
         for name, action in actions.items():
             self.policy_layers[name] = nn.Sequential(
-                nn.Linear(64, 67).double(),
+                nn.Linear(64, 64).double(),
                 nn.ReLU().double()
             )
             head_dict = {}
             for head_name, sub_space in action.action_space.items():
                 size = flatten_space(sub_space).shape[0]
-                head_dict[head_name] = nn.Linear(67, size).double()
+                head_dict[head_name] = nn.Linear(64, size).double()
             self.policy_heads[name] = head_dict
         
         # value (critic) head
@@ -162,7 +160,6 @@ class PPOTrainer():
     """Performs PPO training of ActorCriticNetwork"""
     def __init__(self,
                 actor_critic: ActorCriticNetwork,
-                np_random: np.random.Generator,
                 ppo_clip_val=0.2,
                 target_kl_div=0.01,
                 max_policy_train_iters=80,
@@ -178,28 +175,41 @@ class PPOTrainer():
         self.target_kl_div = target_kl_div
         self.max_policy_train_iters = max_policy_train_iters
         self.value_train_iters = value_train_iters
-        self.np_random = np_random
+        self.policy_params = {}
+        self.policy_optims = {}
 
         # all heads get Adam Optimsers
         value_params = list(self.actor_critic.shared_layers.parameters()) + \
             list(self.actor_critic.value_layers.parameters())
         self.value_optim = optim.Adam(value_params, lr=value_lr)
 
-        self.policy_params = list(self.actor_critic.shared_layers.parameters())
+        self.policy_params['choice'] = list(
+            self.actor_critic.shared_layers.parameters()
+        ) + list(self.actor_critic.policy_layers['choice'].parameters())
         for k, layers in self.actor_critic.policy_layers.items():
-            self.policy_params += list(layers.parameters())
             if k in self.actor_critic.policy_heads:
                 for kk, head in self.actor_critic.policy_heads[k].items():
-                    self.policy_params += list(head.parameters())
+                    self.policy_params[(k, kk)] = list(
+                        self.actor_critic.shared_layers.parameters()
+                    ) + list(
+                        layers.parameters()
+                    ) + list(
+                        head.parameters()
+                    )
             else:
-                self.policy_params += list(layers.parameters())
-        self.policy_optim = optim.Adam(self.policy_params, lr=policy_lr)
+                self.policy_params[k] = list(
+                    self.actor_critic.shared_layers.parameters()
+                ) + list(
+                    layers.parameters()
+                )
+        for k, params_ in self.policy_params.items():
+            self.policy_optims[k] = optim.Adam(params_, lr=policy_lr)
 
     @property
     def device(self):
         self.actor_critic.device
 
-    def train_policy(self, obses, acts, old_log_probs, gaeses, pol_names, actions):
+    def train_policy(self, obs, acts, old_log_probs, gaes, which, actions, mask=None):
         """Trains a single policy head, using the data from a given day (epoch)
         
         Parameters
@@ -207,7 +217,7 @@ class PPOTrainer():
             obs: 
                 Observation
             acts:
-                The actions actually taken during the day 
+                The  actions actually taken during the day 
             old_log_probs:
                 The log probabilities of the day's actions
             gaes:
@@ -220,67 +230,61 @@ class PPOTrainer():
                 information about an action, like the corresponding 'action
                 space', and which probability distributions are used
         """
-        pol_names = list(acts.keys())
+        # If a network is used at every step (like 'choice'), no mask needed
+        obs, gaes = (obs[mask], gaes[mask]) if mask is not None else (obs, gaes)
         for _ in range(self.max_policy_train_iters):
-            print(f'Training round {_}:', pol_names)
-            if not pol_names:
-                break
-            self.policy_optim.zero_grad()
-            new_log_probs = {}
-            # self.np_random.shuffle(pol_names)
-            policy_loss = None
-            for name in pol_names:
-                # Here, we calculate the new log probs, which is different
-                # (simpler) for 'choice' than everything else
-                if name == 'choice':
-                    # a new choice based on the updated network params, and
-                    # corresponding log probs
-                    new_logits = self.actor_critic.choose(obses[name].clone().detach()) # 1
-                    new_distro = Categorical(logits=new_logits) 
-                    # new_log_probs = new_distro.log_prob(acts)
-                else:
-                    # for the action parameters, we train one head at a time
-                    new_logits = self.actor_critic.sub_policy(obses[name].clone().detach(), *name) # 1
-                    new_distro = actions[name[0]].distributions[name[1]](new_logits)
-                new_log_probs[name] = new_distro.log_prob(acts[name]) 
-                # So at this point the old and new logprobs are both
-                # 2-d arrays of matching size, assigned to the 
-                # new_act = self.actor_critic.policy(obs)
-
-                # the policy ratio is calculted and clipped to stop
-                # the policy from changing too much in one epoch
-
-                policy_ratio = torch.exp(new_log_probs[name] - old_log_probs[name].clone().detach()) #3
-                clipped_ratio = policy_ratio.clamp(
-                    1 - self.ppo_clip_val, 1 + self.ppo_clip_val)
             
-                # there are multiple policy ratios per action, the
-                # gaes tensor needs to be reshaped to multiply correctely
-                if len(clipped_ratio.shape) > 1 and gaeses[name].dim()==1:
-                    gaeses[name] = gaeses[name].expand(1, gaeses[name].shape[0]).permute((1,0))
-                    
-                # calculate policy lost
-                gaes = gaeses[name].detach() # 2
-                clipped_loss = clipped_ratio * gaes # 2
-                full_loss = policy_ratio * gaes # 2
-                if policy_loss is None:
-                    policy_loss = -torch.min(full_loss, clipped_loss).mean()
-                else:
-                    policy_loss -= torch.min(full_loss, clipped_loss).mean()
+            # acts = acts[mask] < Not needed, masking done in Agent.night
+            # old_log_probs = old_log_probs[mask] < likewise
+            obs = obs.clone().detach()
+
+            self.policy_optims[which].zero_grad()
+
+            # Here, we calculate the new log probs, which is different
+            # (simpler) for 'choice' than everything else
+            if which == 'choice':
+                # a new choice based on the updated network params, and
+                # corresponding log probs
+                new_logits = self.actor_critic.choose(obs)
+                new_distro = Categorical(logits=new_logits) 
+                # new_log_probs = new_distro.log_prob(acts)
+            else:
+                # for the action parameters, we train one head at a time
+                new_logits = self.actor_critic.sub_policy(obs, *which)
+                new_distro = actions.distributions[which[1]](new_logits)
+            new_log_probs = new_distro.log_prob(acts) 
             
-            # backpropagate *once* for the overall loss
+
+            # So at this point the old and new logprobs are both
+            # 2-d arrays of matching size, assigned to the 
+            # new_act = self.actor_critic.policy(obs)
+
+            # the policy ratio is calculted and clipped to stop
+            # the policy from changing too much in one epoch
+
+            policy_ratio = torch.exp(new_log_probs - old_log_probs) 
+            clipped_ratio = policy_ratio.clamp(
+                1 - self.ppo_clip_val, 1 + self.ppo_clip_val)
+            
+            # there are multiple policy ratios per action, the
+            # gaes tensor needs to be reshaped to multiply correctely
+            if len(clipped_ratio.shape) > 1:
+                gaes = gaes.expand(1, gaes.shape[0]).permute((1,0))
+
+            # calculate policy lost
+            clipped_loss = clipped_ratio * gaes
+            full_loss = policy_ratio * gaes
+            policy_loss = -torch.min(full_loss, clipped_loss).mean()
+
+            # backpropagate
             policy_loss.backward()
-            
-            # and optimise
-            self.policy_optim.step()
-            new_pol_names = []
-            for name in pol_names:
-                # If the new probability distro diverges too far from the old,
-                # stop training and get new training data
-                kl_div = (new_log_probs[name] - old_log_probs[name]).mean() 
-                if kl_div < self.target_kl_div:
-                    new_pol_names.append(name)
-            pol_names = new_pol_names
+            self.policy_optims[which].step()
+
+            # If the new probability distro diverges too far from the old,
+            # stop training and get new training data
+            kl_div = (old_log_probs - new_log_probs).mean() 
+            if kl_div >= self.target_kl_div:
+                break
 
     def train_value(self, obs, returns):
         for _ in range(self.value_train_iters):
@@ -316,4 +320,3 @@ def calculate_gaes(rewards, values, gamma=0.99, decay=0.97):
         gaes.append(deltas[i] + decay * gamma * gaes[-1])
 
     return np.array(gaes[::-1])
-

@@ -185,7 +185,7 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
 
 
 if __name__ == "__main__":
-    model = example_model(seed=42, ping_freq=500)
+    model = example_model(seed=42, ping_freq=1)
     model.run(100, 15)
     # model.run(100, 100)
     # model.run(2, 10_000) # 

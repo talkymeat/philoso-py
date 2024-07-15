@@ -107,6 +107,8 @@ class AgentController(Env):
         self.short_term_mem_size = short_term_mem_size
         self.record_obs_len = record_obs_len
         self.guardrail_manager = GuardrailManager(base_penalty=guardrail_base_penalty)
+        self.meta = {}
+        self.tmp = {}
         self._mems_to_use = []
         # self.tree_factory_factories = tree_factory_factories
         self.gp_vars_core = gp_vars_core if gp_vars_core else [ 

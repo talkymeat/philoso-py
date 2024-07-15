@@ -17,6 +17,8 @@ from gymnasium.spaces import Box
 from tree_funcs import get_operators
 from operators import Operator
 
+# from icecream import ic
+
 T = TypeVar('T')
 Var:   TypeAlias = tuple[type, str]
 Const: TypeAlias = tuple[type[T], Callable[[], T]]
@@ -158,9 +160,18 @@ class RandomPolynomialFactory(TreeFactory):
             self,
             params: np.ndarray|None=None,
             treebank: Treebank = None,
-            seed: int|list[int]|None = None # XXX get rid of this default
+            seed: int|list[int]|None = None, # XXX get rid of this default
+            max_size: int = None,
+            max_depth: int = None
         ):
         self.seed = seed
+        self.order_map = {}
+        if max_size is not None and max_size < 1:
+            raise ValueError(f'max_size must be 1 or greater: {max_size} is not a valid value')
+        if max_depth is not None and max_depth < 1:
+            raise ValueError(f'max_depth must be 1 or greater: {max_depth} is not a valid value')
+        self.max_size = max_size
+        self.max_depth = max_depth
         if params is not None:
             self.order = int(params[0])
             self.const_min = params[1]
@@ -184,6 +195,9 @@ class RandomPolynomialFactory(TreeFactory):
         }
         if treebank:
             self.treebank.operators = self.operators
+
+    def effective_order(self, num_vars: int):
+        return self.order_map.get(num_vars, self.order)
     
     @property
     def tf_params(self):
@@ -397,6 +411,8 @@ class RandomPolynomialFactory(TreeFactory):
         self.treebank = treebank
         self.T = treebank.T
         self.N = treebank.N
+        self.max_size = treebank.max_size
+        self.max_depth = treebank.max_depth
 
     def __call__(
             self, 
@@ -453,7 +469,7 @@ class RandomPolynomialFactory(TreeFactory):
             coefficients = {}
         # `_poly_terms` generates the terms of the polynomial, as a tuple of 
         # tuples, where the member tuples each represent a term.
-        for term in self._poly_terms(vars, self.order):
+        for term in self._poly_terms(vars, self.effective_order(len(vars))):
             # The coefficient for a term is either the coefficient specified in 
             # `coefficients`, or, if the corresponding key is not found, a
             # uniformly distributed random value between `const_min` and 
@@ -491,7 +507,15 @@ class RandomPolynomialFactory(TreeFactory):
             elif coeff:
                 term_subtrees.append(self._binarise_tree('PROD', var_pows, initial=treebank.T(self.treebank, float, float(coeff)), nt=treebank.N))
         # Finally, the terms are combined in a binary tree with 'SUM'
-        return self._binarise_tree('SUM', term_subtrees, nt=treebank.N)
+        out_tree = self._binarise_tree('SUM', term_subtrees, nt=treebank.N)
+        if (self.max_size is None) and (self.max_depth is None):
+            return out_tree
+        elif (out_tree.size() <= self.max_size) and (out_tree.depth() <= self.max_depth):
+            return out_tree
+        elif self.effective_order(len(vars))==0:
+            return out_tree
+        self.order_map[len(vars)] = self.effective_order(len(vars)) - 1
+        return self(*vars, treebank=treebank, coefficients=coefficients)
     
     @property
     def prefix(self):

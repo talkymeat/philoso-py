@@ -76,7 +76,6 @@ class Agent:
         # ], axis=1)
         self.trainer = PPOTrainer(
             self.nn,
-            self.rng,
             ppo_clip_val=ppo_clip_val,
             target_kl_div=target_kl_div,
             max_policy_train_iters=max_policy_train_iters,
@@ -109,8 +108,32 @@ class Agent:
         obs = torch.tensor(
             [self.obs], dtype=torch.float64, device=self.device
         )
-        choice, choice_log_prob, action_logits, val = self.nn(obs)
-
+        try:
+            choice, choice_log_prob, action_logits, val = self.nn(obs)
+        except Exception as e:
+            # remove after debugging - prints & outputs diagnostic info
+            from gymnasium.spaces import unflatten
+            print(('A ' if obs[0].isnan().any() else 'B ')*100)
+            print(list(obs[0]))
+            print('-'*80)
+            print(self.ac._observation_space)
+            print('-'*80)
+            print(unflatten(self.ac._observation_space, obs[0].numpy()))
+            print('='*80)
+            randnum = self.rng.integers(1000000)
+            for i, gp in enumerate(self.ac.gptb_list):
+                if gp is not None:
+                    print('='*80)
+                    print(gp.scoreboard)
+                    shx, shy = gp.scoreboard.shape
+                    fname = f'scoreboard_dump_{randnum}_{i}_{shx}x{shy}.parquet'
+                    print(f'Dumping scoreboard {i} as {fname}, {shx} by {shy}')
+                    gp.scoreboard['tree'] = gp.scoreboard['tree'].apply(lambda x: f"{x}")
+                    gp.scoreboard.to_parquet(fname)
+                    print('='*80)
+            print('='*80)
+            print('Z '*100)
+            raise e
         # set the observaton, plus the act and obs for `choice`
         training_instance = {
             ('obs'): self.obs, 
@@ -151,12 +174,22 @@ class Agent:
         next_obs, reward, done, _, _, _ = await self.ac.step(action_to_do)
 
         training_instance[('reward')] = reward
+        # print('*'*10, training_instance)
+        # print(self.training_buffer)
         ##### self.training_buffer.loc[len(self.training_buffer)] = training_instance
         # This (the 3 lines below) is janky and stupid and I hate it, but the 
         # line commented out above triggers torch to try to convert the tensors
         # to numpy arrays, which then errors because they have requires_grad=True
         for k, v in training_instance.items():
-            self.training_buffer[k][self.steps_done] = v
+            try:
+                self.training_buffer[k][self.steps_done] = v
+            except Exception as e:
+                print('g'*500)
+                print(f'{i=}, {k=}')
+                print(self.training_buffer)
+                print(self.training_buffer_keys)
+                print('f'*500)
+        # print(self.training_buffer)
 
         self.obs = next_obs
         self.day_reward = self.day_reward + reward
@@ -184,14 +217,13 @@ class Agent:
         # Policy data
         acts = {}
         act_log_probs = {}
-        obses = {}
-        gaeses = {}
-        obs_full = torch.tensor(
+        masks = {}
+        obs = torch.tensor(
             self.training_buffer[('obs')][permute_idxs],
             dtype=torch.float64, 
             device=self.device
         )
-        gaes_full = torch.tensor(
+        gaes = torch.tensor(
             self.training_buffer[('value')][permute_idxs],
             dtype=torch.float64, 
             device=self.device
@@ -201,6 +233,7 @@ class Agent:
             # is 'choice' or something else, as 'choice' is a simple
             # single Discrete space, using a Categorical distribution.
             # Others may have a mixture of space-types and distributions.
+            print(f'Preprocessing {pol_name}')
             if pol_name == 'choice':
                 # Just convert acts and logprobs into nice 2-d tensors
                 acts[pol_name] = torch.tensor(
@@ -214,44 +247,62 @@ class Agent:
                     device=self.device
                 )
                 # no mask needed, as 'choice' is used at every step
-                # masks[pol_name] = None
-                obses[pol_name] = obs_full
-                gaeses[pol_name] = gaes_full
+                masks[pol_name] = None
             else:
                 # we can filter acts and logprobs here, but the mask must also be passed to
                 # train_policy, because it's needed to filter obs, reward, etc, as these are
                 # needs for each policy area, with a different mask on. Also, note each mask is
                 # generated from an already permuted DF
-                mask = ~(self.training_buffer[('log_prob', *pol_name)][permute_idxs].isna())
-                if not sum(mask):
-                    continue
+                masks[pol_name] = ~(self.training_buffer[('log_prob', *pol_name)][permute_idxs].isna())
                 # keeping acts as dicts makes sense, as the act must be used to make new log_probs,
                 # which requires being split between multiple Distributions. These should just be 
                 # assigned to device ready for training
-                acts[pol_name] = filter_and_stack(
-                    self.training_buffer[('act', *pol_name)], 
-                    permute_idxs, 
-                    mask
-                ) # .to(self.device, dtype=torch.float64) XXX ???
+                try:
+                    acts[pol_name] = filter_and_stack(
+                        self.training_buffer[('act', *pol_name)], 
+                        permute_idxs, 
+                        masks[pol_name]
+                    ) # .to(self.device, dtype=torch.float64) XXX ???
+                except:
+                    print('AHHH! FUCK!!!')
+                    print(self.training_buffer[('act', *pol_name)])
                 act_log_probs[pol_name] = filter_and_stack(
                     self.training_buffer[('log_prob', *pol_name)], 
                     permute_idxs, 
-                    mask
+                    masks[pol_name]
                 ) # .to(self.device, dtype=torch.float64) XXX ???
-                obses[pol_name] = obs_full[mask]
-                gaeses[pol_name] = gaes_full[mask]
+                # act_dicts: pd.Series = self.training_buffer[('act', *pol_name)][permute_idxs][masks[pol_name]]
+                # act_dicts = act_dicts.apply(lambda x: tensorise_dict(x, device=self.device))
+                # acts[pol_name] = act_dicts
+                # # logprobs, on the other hand, are at the heart of the loss calculation, so
+                # # these need to be turned into one big 1-d tensor, and then stacked into a 2-d
+                # # tensor, which can be used for the actual training as a single computation
+                # log_prob_dicts: pd.Series = self.training_buffer[('log_prob', *pol_name)][permute_idxs][masks[pol_name]]
+                # # A pd.Series (or 1-col DF?) of tensors
+                # log_probs_vecs = log_prob_dicts.apply(logprobdict_2_tensor).to_list()
+                # # which is now a 2-d tensor, as promised
+                # if log_probs_vecs:
+                #     act_log_probs[pol_name] = torch.stack(
+                #         log_probs_vecs, 
+                #         dim=0
+                #     ).to(self.device, dtype=torch.float64)
                 
+
         # Value data
         returns = discount_rewards(self.training_buffer[('reward')])[permute_idxs]
         returns = torch.tensor(returns, dtype=torch.float64, device=self.device)
 
         # Train model
-        self.trainer.train_policy(
-            obses, 
-            acts, 
-            act_log_probs, 
-            gaeses, 
-            self.policy_names, 
-            self.actions,
-        )
-        self.trainer.train_value(obs_full, returns)
+        for name in self.policy_names:
+            if name in acts:
+                print('Training ', name)
+                self.trainer.train_policy(
+                    obs, 
+                    acts[name], 
+                    act_log_probs[name], 
+                    gaes, 
+                    name, 
+                    None if name == 'choice' else self.actions[name[0]], 
+                    mask=masks[name]
+                )
+        self.trainer.train_value(obs, returns)
