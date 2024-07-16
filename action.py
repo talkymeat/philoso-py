@@ -844,6 +844,20 @@ class Read(Action):
                 self.memory.insert_tree(td['tree'], journal=_i(mem_loc[0]), pos=_i(mem_loc[1]), **td[self.vars])
                 print(f'Agent {self.ac.name} read tree {td['tree']}')
 
+class PunchSelfInFace(Action):
+    def __init__(self, controller) -> None:
+        super().__init__(controller)
+    
+    @property
+    def action_space(self) -> Space:
+        return Dict({'twice': Discrete(2)})
+
+    def process_action(self, in_vals: OrderedDict):
+        twice = in_vals['twice'].bool()
+        return twice
+
+    def do(self, twice, *args, **kwargs):
+        self.ac.tmp['punches'] = -1000 * (1 + twice)
 
 ##################################################
 # an extra action that would be good (later):    #

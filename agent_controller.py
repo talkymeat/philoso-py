@@ -180,6 +180,7 @@ class AgentController(Env):
                                            max_readings=self.max_readings,
                                            vars=self.gp_vars_out
                                         )
+        self.actions["punch_self"]  = PunchSelfInFace(self)
         self._action_space = Dict(
             {k: v.action_space for k, v in self.actions.items()}
         )
@@ -250,6 +251,7 @@ class AgentController(Env):
         """
         # Initialize the RNG if the seed is manually passed
         super().reset(seed=seed)
+        self.tmp = {}
         if self.model is None:
             raise AttributeError('An AgentController must be assigned to a philoso_py.Model to run')
         # print(f'Seed: {self.np_random.bit_generator.seed_seq.entropy}')

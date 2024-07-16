@@ -14,6 +14,12 @@ def _print(*args, **kwargs):
         print(*args, **kwargs)
 
 class Reward(ABC):
+    @classmethod
+    @property
+    @abstractmethod
+    def NAME(cls):
+        raise NotImplementedError
+
     def __init__(self, 
             model,
             *args
@@ -24,6 +30,8 @@ class Reward(ABC):
         return self.process_reward(self.get_reward_data())
 
     def process_reward(self, rewards, *args) -> MDict[str, float]:
+        _print(f'{self.NAME} rewards:')
+        _print(rewards)
         return MDict(rewards)
 
     @abstractmethod
@@ -78,6 +86,7 @@ class Curiosity(Reward):
     >>> aeq(model.rewards[0]()['a0'], 0.25)
     True
     """
+    NAME = 'Curiosity'
 
     def __init__(self, 
             model,
@@ -91,15 +100,9 @@ class Curiosity(Reward):
         self.best_mean_fitness_dict = {k: 0.0 for k in self.agents.keys()}
         self.def_fitness = def_fitness
         self.first_finding_bonus = first_finding_bonus
-
-    def process_reward(self, rewards) -> MDict[str, float]: #after debugging delete, use super
-        _print('Curiosity rewards:')
-        _print(rewards)
-        return MDict(rewards)
     
     def get_reward_data(self):
         return {nm: self.agent_reward_data(a) for nm, a in self.agents.items()}
-
 
     def agent_reward_data(self, agent):
         # if len(agent.ac.memory)==0:
@@ -136,7 +139,7 @@ class Renoun(Reward):
     ...     'mutation_rate': 0.3, 'wt_fitness': 1.0, 'max_size': 55, 'raw_fitness': 0.9, 
     ...     'temp_coeff': 0.5, 'size': 13, 'obs_start':9.9, 'obs_num': 100, 'elitism':0.1}
     """
-
+    NAME = 'Renoun'
 
     def __init__(self, 
             model,
@@ -144,16 +147,13 @@ class Renoun(Reward):
         ) -> None:
         super().__init__(model)
 
-    def process_reward(self, rewards) -> MDict[str, float]:
-        _print('Renoun rewards:')
-        _print(rewards)
-        return rewards
-
     def get_reward_data(self):
         return self.model.publications.rewards()
 
 
 class GuardrailCollisions(Reward):
+    NAME = 'Guardrails'
+
     def __init__(self, 
             model,
             *args
@@ -161,14 +161,23 @@ class GuardrailCollisions(Reward):
         super().__init__(model)
         #self.agent_names: dict[str, int] = self.model.agent_names
         self.agent_gms: dict[str, 'GuardrailManager'] = {a.name: a.ac.guardrail_manager for a in self.model.agents}
-        
-    def process_reward(self, rewards) -> MDict[str, float]: #after debugging delete, use super
-        _print('Guardrail rewards:')
-        _print(rewards)
-        return MDict(rewards)
     
     def get_reward_data(self):
         return {nm: _i(gm.reward) for nm, gm in self.agent_gms.items()}
+
+
+class Punches(Reward):
+    NAME = 'Punches'
+
+    def __init__(self, 
+            model,
+            *args
+        ) -> None:
+        super().__init__(model)
+        #self.agent_names: dict[str, int] = self.model.agent_names
+    
+    def get_reward_data(self):
+        return {nm: _i(ag.tmp['punches']) for nm, ag in self.model.agents.items()}
 
 def main():
     import doctest
