@@ -2,11 +2,12 @@ from repository import Publication
 from world import World, SineWorld
 from observatories import SineWorldObservatoryFactory
 from tree_factories import RandomPolynomialFactory
+from ppo import ActorCriticNetworkTanh, ActorCriticNetwork
 from agent_controller import AgentController
 from agent import Agent
 from gp_fitness import SimpleGPScoreboardFactory
 from model_time import ModelTime
-from reward import Reward, Curiosity, Renoun, GuardrailCollisions
+from reward import Reward, Curiosity, Renoun, GuardrailCollisions, Punches
 from tree_funcs import sum_all
 
 from typing import Container
@@ -17,6 +18,7 @@ from copy import copy
 # from icecream import ic
 
 import numpy as np
+import pandas as pd
 
 class Model:
     def __init__(self,
@@ -27,7 +29,7 @@ class Model:
         sb_factory: SimpleGPScoreboardFactory=None,
         #rewards: list[Reward]=None,
         time: ModelTime=None,
-        ping_freq=1
+        ping_freq=10
     ):
         self.world = world
         self.agents: Container[Agent] = agents
@@ -44,7 +46,7 @@ class Model:
     def add_reward(self, rew: Reward):
         self.rewards.append(rew)
 
-    def run(self, days, steps_per_day, state_file:str=None): 
+    def run(self, days, steps_per_day, state_file:str=None, prefix=''): 
         if not self.rewards:
             raise AttributeError("model has no agent rewards")
         if state_file: # loading state a nice thing for later
@@ -52,6 +54,19 @@ class Model:
         for _ in range(days):
             asyncio.run(self.day(steps_per_day))
             self.night()
+        for r in self.rewards:
+            r.record.to_parquet(f'{prefix}{r.NAME}_record.parquet')
+        for i, table in enumerate(self.publications.tables):
+            table['tree'] = table['tree'].apply(lambda x: f"{x}")
+            table.to_parquet(f'{prefix}publication_{i}_end.parquet')
+        for agent in self.agents:
+            for i, table in enumerate(agent.ac.memory.tables):
+                table['tree'] = table['tree'].apply(lambda x: f"{x}")
+                table.to_parquet(f'{prefix}{agent.name}_mem_{i}.parquet')
+        pd.DataFrame({
+            agent.name: agent.day_rewards for agent in self.agents
+        }).to_parquet(f'{prefix}day_rewards.parquet')
+
 
     async def day(self, steps):
         print('Good morning!')
@@ -122,7 +137,8 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
         agent_names,
         types = np.float64, # types: Sequence[dtype] | Mapping[str, dtype] | dtype | None = None,
         tables = 2, # tables: int = 1,
-        reward = 'ranked' # reward: PublicationRewardFunc | str | None = None,
+        reward = 'ranked', # reward: PublicationRewardFunc | str | None = None,
+        value = 'irmse'
         # DEFAULTS USED decay: float = 0.95, value: str = "fitness",
     )
     agents = [
@@ -147,9 +163,11 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
                 mem_col_types=np.float64, # Sequence[np.dtype]|Mapping[str, np.dtype]|np.dtype|None=None,
                 gp_vars_core=gp_vars_core,
                 gp_vars_more=gp_vars_more,
-                ping_freq=ping_freq
+                ping_freq=ping_freq,
+                value='irmse'
             ), # AgentController
-            dancing_chaos_at_the_heart_of_the_world # rng
+            dancing_chaos_at_the_heart_of_the_world, # rng
+            network_class = ActorCriticNetworkTanh
         ) for i in range(n_agents)
     ]
     # Note, this must be done after all agents have been made,
@@ -181,11 +199,18 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
             model
         )
     )
+    model.add_reward(
+        Punches(
+            model
+        )
+    )
     return model
 
 
 if __name__ == "__main__":
-    model = example_model(seed=42, ping_freq=1)
-    model.run(100, 15)
+    model = example_model(seed=42, ping_freq=10)
+    model.run(50,100, prefix='b_')
+    # model.run(40, 100)
     # model.run(100, 100)
-    # model.run(2, 10_000) # 
+    # model.run(2, 10_000)
+    # model.run(days, steps_per_day) # 

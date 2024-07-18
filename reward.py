@@ -4,7 +4,7 @@ from icecream import ic
 from utils import _i
 
 import numpy as np
-
+import pandas as pd
 
 
 DEBUG = True
@@ -14,7 +14,6 @@ def _print(*args, **kwargs):
         print(*args, **kwargs)
 
 class Reward(ABC):
-    @classmethod
     @property
     @abstractmethod
     def NAME(cls):
@@ -25,6 +24,10 @@ class Reward(ABC):
             *args
         ) -> None:
         self.model = model
+        self.record = pd.DataFrame({
+            f'{ag.name}__{self.NAME}': []
+            for ag in self.model.agents
+        })
 
     def __call__(self) -> MDict[str, float]:
         return self.process_reward(self.get_reward_data())
@@ -32,6 +35,10 @@ class Reward(ABC):
     def process_reward(self, rewards, *args) -> MDict[str, float]:
         _print(f'{self.NAME} rewards:')
         _print(rewards)
+        self.record.loc[len(self.record)] = {
+            f'{k}__{self.NAME}': v
+            for k, v in rewards.items()
+        }
         return MDict(rewards)
 
     @abstractmethod
@@ -177,7 +184,7 @@ class Punches(Reward):
         #self.agent_names: dict[str, int] = self.model.agent_names
     
     def get_reward_data(self):
-        return {nm: _i(ag.tmp['punches']) for nm, ag in self.model.agents.items()}
+        return {ag.name: _i(ag.ac.tmp.get('punches', 0)) for ag in self.model.agents}
 
 def main():
     import doctest

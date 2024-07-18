@@ -18,7 +18,7 @@ from gymnasium.spaces.utils import flatten, flatten_space #, unflatten
 from gp_fitness import SimpleGPScoreboardFactory
 from repository import Archive, Publication
 from model_time import ModelTime
-from action import Action, GPNew, GPContinue, UseMem, StoreMem, Publish, Read
+from action import Action, GPNew, GPContinue, UseMem, StoreMem, Publish, Read, PunchSelfInFace
 from observation import Observation, GPObservation, Remembering, LitReview
 
 from icecream import ic
@@ -180,10 +180,14 @@ class AgentController(Env):
                                            max_readings=self.max_readings,
                                            vars=self.gp_vars_out
                                         )
-        self.actions["punch_self"]  = PunchSelfInFace(self)
+        self.actions['punch_self']  = PunchSelfInFace(self)
         self._action_space = Dict(
             {k: v.action_space for k, v in self.actions.items()}
         )
+
+    # def add_action(self, action: Action, name:str):
+    #     self.actions[name] = action
+    #     self._action_space[name] = action.action_space 
 
     # OBSERVATIONS
     def make_observations(self):
@@ -256,20 +260,6 @@ class AgentController(Env):
             raise AttributeError('An AgentController must be assigned to a philoso_py.Model to run')
         # print(f'Seed: {self.np_random.bit_generator.seed_seq.entropy}')
         self.world.seed = self.np_random
-        # for tff in self.tree_factory_factories:
-        #     tff.seed = self.np_random
-        
-        # It is hardwired here that the default reward measure is imse, 
-        # unless it is not calculated, then irmse, failing that isae
-        # for fm in ['imse', 'irmse', 'isae']:
-        #     if fm in self.fitness_measures:
-        #         self.gp_reward_measure = fm
-        #         break
-        # else:
-            # raise ValueError(
-            #     f"Invalid value for fitness_measures {self.fitness_measures}: " +
-            #     "at least one of 'imse', 'irmse', and 'isae' must be included" 
-            # )
         return flatten(self._observation_space, self.observe()), {}
     
     def observe(self):
@@ -306,6 +296,7 @@ class AgentController(Env):
             done (bool) 
                 - (Deprecated) A boolean value for if the episode has ended. Always false
         """
+        self.tmp = {}
         print(f'Agent {self.name} will attempt {list(action.keys())} at time {self.t}')
         for act, params in action.items():
             self.actions[act](params)
@@ -313,6 +304,11 @@ class AgentController(Env):
         self.model.mark_done(self.name)
         reward = await self.model.get_rewards(self.name)
         observation = self.observe()
+        # DEBUGGING XXX
+        if np.isnan(flatten(self._observation_space, observation)).any():
+            print('FFFFg'*100)
+            print(observation)
+        # DEBUGGING XXX
         return flatten(self._observation_space, observation), reward, False, False, {'asdf': 'asdf'}, False
 
 

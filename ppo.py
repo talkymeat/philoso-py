@@ -45,7 +45,8 @@ class ActorCriticNetwork(nn.Module):
             ['use_mem', 'gp_continue'], 
             ['store_mem'],
             ['publish'],
-            ['read']
+            ['read'],
+            ['punch_self']
         ]
         self.action_choice_space = Discrete(len(self.action_choices))
         self.device = device
@@ -67,10 +68,13 @@ class ActorCriticNetwork(nn.Module):
 
         # chared with the value (critic) head, the choice head,
         # and all action heads
+        self.make_layers(obs_space_size, actions)
+
+    def make_layers(self, obs_space_size, actions):
         self.shared_layers = nn.Sequential(
-            nn.Linear(obs_space_size, 65).double(),
+            nn.Linear(obs_space_size, 64).double(),
             nn.ReLU().double(), 
-            nn.Linear(65, 64).double(), # <<== this one is confirmed to be the problem
+            nn.Linear(64, 64).double(), 
             nn.ReLU().double()) 
         
         # choice head
@@ -82,13 +86,13 @@ class ActorCriticNetwork(nn.Module):
         # action heads
         for name, action in actions.items():
             self.policy_layers[name] = nn.Sequential(
-                nn.Linear(64, 67).double(),
+                nn.Linear(64, 64).double(),
                 nn.ReLU().double()
             )
             head_dict = {}
             for head_name, sub_space in action.action_space.items():
                 size = flatten_space(sub_space).shape[0]
-                head_dict[head_name] = nn.Linear(67, size).double()
+                head_dict[head_name] = nn.Linear(64, size).double()
             self.policy_heads[name] = head_dict
         
         # value (critic) head
@@ -138,7 +142,14 @@ class ActorCriticNetwork(nn.Module):
         # 'choice' head
         action_logits['choice'] = self.policy_layers['choice'](z_0)
         # which is used to get a choice from a Categorical distribution
-        choice_distribution = Categorical(logits=action_logits['choice'])
+        try:
+            choice_distribution = Categorical(logits=action_logits['choice'])
+        except Exception as e:
+            print(('sz'*50)+('SZ'*50)+('sz'*50))
+            print(obs)
+            print('='*120)
+            print(z_0)
+            print(('sz'*50)+('SZ'*50)+('sz'*50))
         choice = choice_distribution.sample()
         # the log prob is needed for training
         choice_log_prob = choice_distribution.log_prob(choice).item()
@@ -157,6 +168,48 @@ class ActorCriticNetwork(nn.Module):
         value = self.value_layers(z_0)
         return choice, choice_log_prob, action_logits, value
   
+
+# Policy and value model
+class ActorCriticNetworkTanh(ActorCriticNetwork):
+    """Multi headed actor-critic ntwork for philoso.py Agents: the 
+    agents choose from multiple possible actions and each action also
+    has a set of action parameters. When the agents acts, it first
+    uses the 'choice' head to choose which actions to perform (a *choice*
+    consists of a sequence of one or more *actions*) and then uses the
+    head(s) corresponding to the chosen action(s) to set the parameters 
+    for the action
+    """
+
+    def make_layers(self, obs_space_size, actions):
+        self.shared_layers = nn.Sequential(
+            nn.Linear(obs_space_size, 64).double(),
+            nn.Tanh().double(), 
+            nn.Linear(64, 64).double(), 
+            nn.Tanh().double()) 
+        
+        # choice head
+        self.policy_layers['choice'] = nn.Sequential(
+            nn.Linear(64, 64).double(), 
+            nn.Tanh().double(), 
+            nn.Linear(64, self.action_choice_space.n).double()) 
+        
+        # action heads
+        for name, action in actions.items():
+            self.policy_layers[name] = nn.Sequential(
+                nn.Linear(64, 64).double(),
+                nn.Tanh().double()
+            )
+            head_dict = {}
+            for head_name, sub_space in action.action_space.items():
+                size = flatten_space(sub_space).shape[0]
+                head_dict[head_name] = nn.Linear(64, size).double()
+            self.policy_heads[name] = head_dict
+        
+        # value (critic) head
+        self.value_layers = nn.Sequential(
+            nn.Linear(64, 64).double(),  
+            nn.Tanh().double(),
+            nn.Linear(64, 1).double()) 
 
 class PPOTrainer():
     """Performs PPO training of ActorCriticNetwork"""

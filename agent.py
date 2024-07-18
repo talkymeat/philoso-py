@@ -21,6 +21,7 @@ class Agent:
         ac:AgentController, # remember, ac is a gymnasium.env
         rng:np.random.Generator,
         device:str="cpu",
+        network_class:type[ActorCriticNetwork]=ActorCriticNetwork
     ):
         self.rng=rng
         self.device = device
@@ -28,6 +29,7 @@ class Agent:
         self.day_rewards = []
         # This df gets wiped at the start of each rollout
         self.ac = ac
+        self.net_class=network_class
 
     def make_networks(self,
                 ppo_clip_val=0.2,
@@ -40,7 +42,7 @@ class Agent:
         self.ac.make_actions()
         self.actions: dict[Action] = self.ac.actions
         self.ac.make_observations()
-        self.nn = ActorCriticNetwork( # put a factory class here, from param
+        self.nn = self.net_class( # put a factory class here, from param
             flatten_space(self.ac.observation_space).shape[0],
             self.ac.actions
             # {k: flatten_space(sp).shape[0] for k, sp in self.ac.action_space.items()}
@@ -60,20 +62,6 @@ class Agent:
             for polname
             in self.policy_names
         ]
-        # self.training_buffer = pd.concat([
-        #     pd.DataFrame(
-        #         columns=pd.MultiIndex.from_product([
-        #             ['obs', 'value', 'reward'], 
-        #             ['v']
-        #         ])
-        #     ),
-        #     pd.DataFrame(
-        #         columns=pd.MultiIndex.from_product([
-        #             ['act', 'log_prob'],
-        #             self.policy_names
-        #         ])
-        #     )
-        # ], axis=1)
         self.trainer = PPOTrainer(
             self.nn,
             self.rng,
@@ -240,7 +228,7 @@ class Agent:
                 ) # .to(self.device, dtype=torch.float64) XXX ???
                 obses[pol_name] = obs_full[mask]
                 gaeses[pol_name] = gaes_full[mask]
-                
+
         # Value data
         returns = discount_rewards(self.training_buffer[('reward')])[permute_idxs]
         returns = torch.tensor(returns, dtype=torch.float64, device=self.device)

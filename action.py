@@ -202,7 +202,7 @@ class GPNew(Action):
         # note that the defined fitness value always has a raw weight of 1
         self.num_sb_weights: int = self.sb_factory.num_sb_weights - 1
         if CompositeTreeFactory not in tree_factory_classes:
-            self.tf_options = ic(tree_factory_classes)
+            self.tf_options = tree_factory_classes
         else:
             raise ValueError("CompositeTreeFactory cannot be included in tree_factory options")
         self.obs_fac = obs_factory

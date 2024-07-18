@@ -319,19 +319,19 @@ class TanhGuardrail:
         if raw not in TANH_ZONE:
             aberrance = raw - self.raw_interval
             reward = abs(aberrance) + self.base_penalty
-            self.gm._reward -= reward
+            self.gm._reward -= np.log(reward)
             return max(self.interval.min, cooked) if aberrance < 0 else min(cooked, self.interval.max)
         if cooked not in self.interval:
             aberrance = cooked - self.interval
             if aberrance < 0:
                 self.raw_interval.min = max(self.raw_interval.min, raw)
                 reward = abs(raw - self.raw_interval) + self.base_penalty
-                self.gm._reward -= reward
+                self.gm._reward -= np.log(reward)
                 return self.interval.min
             else:
                 self.raw_interval.max = min(self.raw_interval.max, raw)
                 reward = abs(raw - self.raw_interval) + self.base_penalty
-                self.gm._reward -= reward
+                self.gm._reward -= np.log(reward)
                 return self.interval.max
         return cooked
             
