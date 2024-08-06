@@ -269,6 +269,12 @@ class Tree(ABC):
     def apply(self, func, *args, top_down=False, **kwargs) -> None:
         pass
 
+    def meta_set_recursive(self, **metadata):
+        self.metadata = {**self.metadata, **metadata}
+
+    def meta_tmp_set_recursive(self, **metadata):
+        self.tmp = {**self.tmp, **metadata}
+
 
 
 class NonTerminal(Tree):
@@ -775,8 +781,8 @@ class NonTerminal(Tree):
             e.update(str(self), position[0])
             raise e from None
 
-    def findall(self, test):
-        return list(filter(test, DFBU(self)))
+    def findall(self, test, trees_only=False):
+        return list(filter(test, DFBU(self, trees_only=trees_only)))
 
     def contains_true(self, test):
         tour = DFBU(self)
@@ -1922,6 +1928,16 @@ class NonTerminal(Tree):
         if not top_down:
             self_val = map_non_terminal(self, *args, **kwargs)
         return reduce_func(self_val, *child_vals, **kwargs)
+
+    def meta_set_recursive(self, **metadata):
+        super().meta_set_recursive(**metadata)
+        for c in self:
+            c.meta_set_recursive(**metadata)
+
+    def meta_tmp_set_recursive(self, **metadata):
+        super().meta_tmp_set_recursive(**metadata)
+        for c in self:
+            c.meta_tmp_set_recursive(**metadata)
 
 
 

@@ -1,7 +1,7 @@
 import math
 from typing import Collection
 from collections.abc import MutableSet
-# from icecream import ic
+from icecream import ic
 import numpy as np
 from typing import Any, Callable
 from functools import reduce
@@ -109,6 +109,9 @@ class IDSet(MutableSet):
     
     def add(self, elem):
         self._dict[_id(elem)] = elem
+
+    def __sub__(self, elem):
+        return IDSet([v for v in self._dict.values() if id(v)!=id(elem)])
     
     def discard(self, other):
         """Removes `other` from the `IDSet`

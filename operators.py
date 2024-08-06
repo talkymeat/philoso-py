@@ -9,8 +9,6 @@ from utils import disjoin_tests, conjoin_tests
 from icecream import ic
 import warnings
 
-# from icecream import ic
-
 import re
 
 np.seterr(all='ignore')

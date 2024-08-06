@@ -113,13 +113,38 @@ class DepthFirstBottomUp(TreeIter):
     ([bool]False)
     ([bool]<OR>([bool]<NOT>([bool]<EQ>([int]0)([int]1)))([bool]False))
     ([bool]<AND>([bool]<EQ>([float]<SQ>([int]6))([float]))([bool]<OR>([bool]<NOT>([bool]<EQ>([int]0)([int]1)))([bool]False)))
+    >>> gpt2 = tlt.tree("([bool]<AND>([bool]<EQ>([float]<SQ>([int]666))([float]<PROD>([int]9)([float]<SUM>([float]2.5)([float]1.5))))([bool]<OR>([bool]<NOT>([bool]<EQ>([int]0)([int]1)))([bool]False)))")
+    >>> it2 = DepthFirstBottomUp(gpt2, trees_only=True)
+    >>> has_next = True
+    >>> while has_next:
+    ...     try:
+    ...         nxt = next(it2)
+    ...         print(nxt)
+    ...     except StopIteration:
+    ...         has_next = False
+    ([int]666)
+    ([float]<SQ>([int]666))
+    ([int]9)
+    ([float]2.5)
+    ([float]1.5)
+    ([float]<SUM>([float]2.5)([float]1.5))
+    ([float]<PROD>([int]9)([float]<SUM>([float]2.5)([float]1.5)))
+    ([bool]<EQ>([float]<SQ>([int]666))([float]<PROD>([int]9)([float]<SUM>([float]2.5)([float]1.5))))
+    ([int]0)
+    ([int]1)
+    ([bool]<EQ>([int]0)([int]1))
+    ([bool]<NOT>([bool]<EQ>([int]0)([int]1)))
+    ([bool]False)
+    ([bool]<OR>([bool]<NOT>([bool]<EQ>([int]0)([int]1)))([bool]False))
+    ([bool]<AND>([bool]<EQ>([float]<SQ>([int]666))([float]<PROD>([int]9)([float]<SUM>([float]2.5)([float]1.5))))([bool]<OR>([bool]<NOT>([bool]<EQ>([int]0)([int]1)))([bool]False)))
     """
-    def __init__(self, tree):
+    def __init__(self, tree, trees_only=False):
         super().__init__(tree)
+        self.trees_only = trees_only
         if is_tree(self._tree) and len(self._tree):
             # DFBU works recursively: a DFBU iterator for a tree works by
             # creating DFBUs for each of its children
-            self.it = DepthFirstBottomUp(self._tree[self._pos])
+            self.it = DepthFirstBottomUp(self._tree[self._pos], trees_only=self.trees_only)
         else:
             # Unless self._tree is a leafnode
             self.it = None
@@ -136,7 +161,7 @@ class DepthFirstBottomUp(TreeIter):
                     # (incrementing the position attribute to indicate this)
                     self._pos += 1
                     # ... make a DFBU for that node ...
-                    self.it = DepthFirstBottomUp(self._tree[self._pos])
+                    self.it = DepthFirstBottomUp(self._tree[self._pos], trees_only=self.trees_only)
                     # ... and call next on *that*
                     return next(self)
                 # ... unless self has exhausted DFBU iterators on *all* its
@@ -152,7 +177,7 @@ class DepthFirstBottomUp(TreeIter):
                 else:
                     # ... and then you're done
                     raise StopIteration
-        elif not self._pos:
+        elif not self._pos and not self.trees_only:
             # Alternatively, self._tree may be a leaf, in which case DFBU just
             # returns self._tree *once*, then Stops Iteration. self._pos is used
             # to tell if next has been called - if 0, it hasn't, so increment it

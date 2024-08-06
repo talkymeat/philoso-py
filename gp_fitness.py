@@ -450,10 +450,10 @@ def from_tmp(varname: str, default=None):
         Penalty: Trees receive penalties during processing for things like  
             OverflowErrorsand ZeroDivisionErrors. Penalties are applied by 
             dividing the tree's fitness, so the default 'no penalty' value 
-            is zero
-        Kill: A tree may also be flagged as generating problems, and to be
-            removed from the population. For example, this may be done if
-            the tree .generates excessive NaN outputs
+            is one
+        Survive: A tree may also be flagged as generating problems, and to be
+            removed from the population. For example, survive=False if
+            the tree generates excessive NaN outputs
         Hasnans: Indicates that the tree generated NaNs
     """
     @scoreboard_pipeline_element(out_key=varname)
@@ -493,6 +493,11 @@ def multiply(a: float, b: float, **kwargs):
     I wrote this one to apply penalties to trees, but do whatever with it.
     """
     return a*b
+
+@flexi_pipeline_element()
+def scale(a: float, **kwargs):
+    """multiplies one column by the observation sd"""
+    return a*kwargs['obs_sd']
 
 @flexi_pipeline_element()
 def nan_zero(a: float, **kwargs):
@@ -576,37 +581,39 @@ class SimpleGPScoreboardFactory:
             "obs": self.observatory,
             "weights": _weights
         }
-        pipeline          = [clear(except_for='tree'), size, depth]
+        pipeline          = [   clear(except_for='tree'), 
+                                size, 
+                                depth]
         match self.def_fitness:
             case 'imse':
-                pipeline += [mse]
+                pipeline += [   mse]
             case 'irmse':
-                pipeline += [mse, rmse]
+                pipeline += [   mse, 
+                                rmse]
             case 'isae':
-                pipeline += [sae]
-        pipeline         += [safe_inv(self.def_fitness[1:])]
+                pipeline += [   sae]
+        pipeline         += [   safe_inv(self.def_fitness[1:]),
+                                scale(self.def_fitness, out_key='value')]
         if weights is not None:
-            pipeline     += [
-                                safe_inv('size'), 
+            pipeline     += [   safe_inv('size'), 
                                 safe_inv('depth'), 
-                                weighted_sum(self.def_fitness, 'isize', 'idepth')
-                            ]
+                                weighted_sum(self.def_fitness, 'isize', 'idepth')]
             def_2_fitness = f"ws_{self.def_fitness}_isize_idepth"
         else: 
             def_2_fitness = self.def_fitness
-        pipeline     += [rename(def_2_fitness, 'raw_fitness'), heat, rename("fitness", 'pre_fitness_1')]
+        pipeline         += [   rename(def_2_fitness, 'raw_fitness'), 
+                                heat, 
+                                rename("fitness", 'pre_fitness_1')]
         # if temp_coeff: 
         #     pipeline     += [rename(def_2_fitness, 'raw_fitness'), heat, rename("fitness", 'pre_fitness_1')]
         # else:
         #     pipeline     += [rename(def_2_fitness, 'pre_fitness_1')]
-        pipeline         += [
-                                hasnans, 
+        pipeline         += [   hasnans, 
                                 penalty, 
                                 divide('pre_fitness_1', 'penalty', out_key='pre_fitness_2'),
                                 survive, 
                                 multiply('pre_fitness_2', 'survive', out_key='pre_fitness_3'),
-                                nan_zero('pre_fitness_3', out_key='fitness'),  
-                            ]
+                                nan_zero('pre_fitness_3', out_key='fitness')]
         def_outputs = collect(self.best_outvals, list) if self.best_outvals else None
         dv = self.dv # XXX JAAAAAANK
         for arg, val in (
@@ -882,6 +889,7 @@ class GPScoreboard(pd.DataFrame):
         dv = self.dv_obs_check(dv=dv, obs=obs)
         kwargs['ivs'] = next(self.obs)
         kwargs['target'] = self.obs.target[dv]
+        kwargs['obs_sd'] = np.std(kwargs['target'])
         for pipe_ele in self.pipeline:
             pipe_ele(self, **{**self.kwargs, **kwargs})
         return self
@@ -955,8 +963,6 @@ class GPScoreboard(pd.DataFrame):
         best = self.nlargest(k, 'fitness')
         if tree_only:
             best = best['tree']
-        # else:
-        #     ic(best)
         if mark_4_del:
             self['tree'].apply(lambda t: t.tmp.__setitem__('to_delete', True))
             best.apply(lambda t: t.tmp.__setitem__('to_delete', False))
@@ -989,7 +995,7 @@ class GPScoreboard(pd.DataFrame):
         >>> from observatories import StaticObservatory
         >>> from test_materials import DummyTreeFactory
         >>> op = [ops.PROD, ops.EQ, ops.TERN_FLOAT, ops.GT]
-        >>> gp = GPTreebank(operators = op, temp_coeff=0.5, tree_factory=DummyTreeFactory)
+        >>> gp = GPTreebank(operators = op, temp_coeff=0.5, tree_factory=DummyTreeFactory())
         >>> iv = [0., 2., 4., 6., 8.,]
         >>> dv0 = [0., 0., 0., 0., 0.]
         >>> dv1 = [0., 10., 20., 30., 40.]
@@ -1008,24 +1014,24 @@ class GPScoreboard(pd.DataFrame):
         >>> obs0 = StaticObservatory('x', 'y0', sources=df, obs_len=5)
         >>> obs1 = StaticObservatory('x', 'y1', sources=df, obs_len=5)
         >>> obs2 = StaticObservatory('x', 'y', sources=df2, obs_len=129)
-        >>> gps0 = GPScoreboard(sae, mse, rmse, safe_inv('mse'), safe_inv('rmse'), rename('irmse', 'raw_fitness'), heat, obs=obs0, temp_coeff=1.0)
+        >>> gps0 = GPScoreboard(sae, mse, rmse, safe_inv('mse'), safe_inv('rmse'), scale('irmse', out_key='value'), rename('irmse', 'raw_fitness'), heat, obs=obs0, temp_coeff=1.0)
         >>> gps0(t)[list(gps0.columns)[1:]]
-            sae     mse       rmse      imse  raw_fitness   fitness
-        0   4.0    24.0   4.898979  0.040000     0.169521  0.227852
-        1  12.0   216.0  14.696938  0.004608     0.063707  0.122038
-        2  20.0   600.0  24.494897  0.001664     0.039224  0.097555
-        3  28.0  1176.0  34.292856  0.000850     0.028334  0.086666
-        4  36.0  1944.0  44.090815  0.000514     0.022177  0.080509
-        5  36.0  1296.0  36.000000  0.000771     0.027027  0.085359
-        >>> gps1 = GPScoreboard(sae, mse, rmse, safe_inv('mse'), safe_inv('rmse'), rename('irmse', 'raw_fitness'), heat, obs=obs1, temp_coeff=1.0)
+            sae     mse       rmse      imse  raw_fitness  value   fitness
+        0   4.0    24.0   4.898979  0.040000     0.169521    0.0  0.227852
+        1  12.0   216.0  14.696938  0.004608     0.063707    0.0  0.122038
+        2  20.0   600.0  24.494897  0.001664     0.039224    0.0  0.097555
+        3  28.0  1176.0  34.292856  0.000850     0.028334    0.0  0.086666
+        4  36.0  1944.0  44.090815  0.000514     0.022177    0.0  0.080509
+        5  36.0  1296.0  36.000000  0.000771     0.027027    0.0  0.085359
+        >>> gps1 = GPScoreboard(sae, mse, rmse, safe_inv('mse'), safe_inv('rmse'), scale('irmse', out_key='value'), rename('irmse', 'raw_fitness'), heat, obs=obs1, temp_coeff=1.0)
         >>> gps1(t)[list(gps1.columns)[1:]]
-            sae    mse       rmse      imse  raw_fitness   fitness
-        0  16.0  384.0  19.595918  0.002597     0.048553  0.269730
-        1   8.0   96.0   9.797959  0.010309     0.092610  0.313787
-        2   0.0    0.0   0.000000  1.000000     1.000000  1.221177
-        3   8.0   96.0   9.797959  0.010309     0.092610  0.313787
-        4  16.0  384.0  19.595918  0.002597     0.048553  0.269730
-        5  17.6  456.0  21.354157  0.002188     0.044734  0.265911
+            sae    mse       rmse      imse  raw_fitness      value   fitness
+        0  16.0  384.0  19.595918  0.002597     0.048553   0.686648  0.269730
+        1   8.0   96.0   9.797959  0.010309     0.092610   1.309705  0.313787
+        2   0.0    0.0   0.000000  1.000000     1.000000  14.142136  1.221177
+        3   8.0   96.0   9.797959  0.010309     0.092610   1.309705  0.313787
+        4  16.0  384.0  19.595918  0.002597     0.048553   0.686648  0.269730
+        5  17.6  456.0  21.354157  0.002188     0.044734   0.632640  0.265911
         >>> gps0.winner('mse')
         {'mse': 24.0}
         >>> best0 = gps0.winner(except_for = 'mse')
@@ -1034,7 +1040,7 @@ class GPScoreboard(pd.DataFrame):
         >>> best0['tree']
         '([float]<PROD>([float]$x)([int]1))'
         >>> best0.keys()
-        dict_keys(['tree', 'sae', 'rmse', 'imse', 'raw_fitness', 'fitness'])
+        dict_keys(['tree', 'sae', 'rmse', 'imse', 'raw_fitness', 'value', 'fitness'])
         >>> best1 = gps1.winner()
         >>> best1['mse']
         0.0
@@ -1137,166 +1143,6 @@ class GPScoreboard(pd.DataFrame):
         )-> dict:
         return self(trees, **kwargs).winner(*cols, **kwargs)
 
-# class SimpleScoreboardFactory(Actionable):
-#     """Generates scoreboards for RL-generated GP runs
-
-#     >>> import operators as ops
-#     >>> from gp import GPTreebank
-#     >>> from observatories import StaticObservatory
-#     >>> from test_materials import DummyTreeFactory
-#     >>> op = [ops.PROD, ops.EQ, ops.TERN_FLOAT, ops.GT]
-#     >>> gp = GPTreebank(operators = op, temp_coeff=0.5, tree_factory=DummyTreeFactory())
-#     >>> iv = [0., 2., 4., 6., 8.,]
-#     >>> dv0 = [0., 0., 0., 0., 0.]
-#     >>> dv1 = [0., 10., 20., 30., 40.]
-#     >>> df = pd.DataFrame({'x': iv, 'y0': dv0, 'y1': dv1})
-#     >>> t = [
-#     ...     gp.tree("([float]<PROD>([float]$x)([int]1))"),
-#     ...     gp.tree("([float]<PROD>([float]$x)([int]3))"),
-#     ...     gp.tree("([float]<PROD>([float]$x)([int]5))"),
-#     ...     gp.tree("([float]<PROD>([float]$x)([int]7))"),
-#     ...     gp.tree("([float]<PROD>([float]$x)([int]9))"),
-#     ...     gp.tree("([float]<PROD>([float]6.)([int]6))")
-#     ... ]
-#     >>> obs0 = StaticObservatory('x', 'y0', sources=df, obs_len=5)
-#     >>> obs1 = StaticObservatory('x', 'y1', sources=df, obs_len=5)
-#     >>> ssf = SimpleScoreboardFactory(use_irmse=True)
-#     >>> params = np.array([0.5, 1., 2., 3., 0.04, 0.05], dtype=np.float32) 
-#     >>> sb0 = ssf.act(params, obs0, max_size=20, max_depth=8, best_outvals='fitness', dv='y')
-#     >>> cols = list(sb0(t).columns) #[list(sb0.columns)[1:]]
-#     >>> (cols[:7])
-#     ['tree', 'size', 'depth', 'mse', 'imse', 'rmse', 'irmse']
-#     >>> cols[7:13]
-#     ['sae', 'isae', 'n_minus_size', 'n_minus_depth', 'raw_fitness', 'pre_fitness_1']
-#     >>> cols[13:]
-#     ['hasnans', 'penalty', 'pre_fitness_2', 'survive', 'pre_fitness_3', 'fitness']
-#     >>> sb0[cols[1:7]]
-#        size  depth     mse      imse       rmse     irmse
-#     0     3      2    24.0  0.040000   4.898979  0.169521
-#     1     3      2   216.0  0.004608  14.696938  0.063707
-#     2     3      2   600.0  0.001664  24.494897  0.039224
-#     3     3      2  1176.0  0.000850  34.292856  0.028334
-#     4     3      2  1944.0  0.000514  44.090815  0.022177
-#     5     3      2  1296.0  0.000771  36.000000  0.027027
-#     >>> sb0[cols[7:13]]
-#         sae      isae  n_minus_size  n_minus_depth  raw_fitness  pre_fitness_1
-#     0   4.0  0.200000            17              6     1.959042       2.614677
-#     1  12.0  0.076923            17              6     1.342791       1.998426
-#     2  20.0  0.047619            17              6     1.202968       1.858603
-#     3  28.0  0.034483            17              6     1.140967       1.796602
-#     4  36.0  0.027027            17              6     1.105950       1.761585
-#     5  36.0  0.027027            17              6     1.115906       1.771541
-#     >>> sb0[cols[13:]]
-#        hasnans  penalty  pre_fitness_2  survive  pre_fitness_3   fitness
-#     0    False        1       2.614677     True       2.614677  2.614677
-#     1    False        1       1.998426     True       1.998426  1.998426
-#     2    False        1       1.858603     True       1.858603  1.858603
-#     3    False        1       1.796602     True       1.796602  1.796602
-#     4    False        1       1.761585     True       1.761585  1.761585
-#     5    False        1       1.771541     True       1.771541  1.771541
-#     """
-#     def __init__(self, 
-#             use_irmse: bool=False,
-#             use_imse: bool=True,
-#             use_isae: bool=True,
-#             use_size: bool=True,
-#             use_depth: bool=True,
-#             # other_measures: dict[str, ScoreboardPipelineElement]=None, XXX later
-#             # use_others: dict[str, bool]=None
-#         ):
-#         self.use_imse = use_imse
-#         self.use_irmse = use_irmse
-#         self.use_isae = use_isae
-#         self.use_size = use_size
-#         self.use_depth = use_depth
-#         self.fitness_factors = []
-#         num_measures = sum(
-#             [
-#                 self.use_irmse, self.use_imse, self.use_isae, 
-#                 self.use_size, self.use_depth
-#             ] # + list(use_others.values())
-#         )
-#         self.pipeline_setup = [clear(except_for='tree'), size, depth]
-#         if self.use_imse or self.use_irmse:
-#             self.pipeline_setup += [mse] 
-#             if self.use_imse:
-#                 self.pipeline_setup += [safe_inv('mse')]
-#                 self.fitness_factors += ['imse']
-#             if self.use_irmse:
-#                 self.pipeline_setup += [rmse, safe_inv('rmse')]
-#                 self.fitness_factors += ['irmse']
-#         if self.use_isae:
-#             self.pipeline_setup += [sae, safe_inv('sae')]
-#             self.fitness_factors += ['isae']
-#         self.pipeline_post = [
-#             hasnans,
-#             penalty, 
-#             divide('pre_fitness_1', 'penalty', out_key='pre_fitness_2'),
-#             survive, 
-#             multiply('pre_fitness_2', 'survive', out_key='pre_fitness_3'),
-#             nan_zero('pre_fitness_3', out_key='fitness'),  
-#         ]
-#         if num_measures == 0:
-#             raise ValueError('Scoreboard uses no fitness measures at all!')
-#         elif num_measures == 1:
-#             num_measures = 0
-#         self._act_param_space = Box(              # First term is temp_coeff, the rest are 
-#             low=np.array([0.0]*(num_measures+1), dtype=np.float32),           # weights on fitness measures: however,
-#             high=np.array([np.inf] + ([1.0]*num_measures), dtype=np.float32), # if only one measure is used no weights
-#             dtype=np.float32)                     # are needed
-
-#     def act(self, 
-#             params: np.ndarray, 
-#             observatory: Observatory, 
-#             max_size: int=0, 
-#             max_depth: int=0,
-#             best_outvals: str|list[str]=None,
-#             dv: str=None
-#         ):
-#         sb_kwargs = {
-#             "temp_coeff": params[0],
-#             "obs": observatory,
-#         }
-#         def_outputs = collect(best_outvals, list) if best_outvals else None
-#         for arg, val in (
-#             ('def_outputs', def_outputs), 
-#             ('dv', dv), 
-#         ):
-#             val = eval(arg)
-#             if val:
-#                 sb_kwargs[arg] = val 
-#         fitness_factors = []
-#         pipeline = []
-#         if self.use_size:
-#             if max_size:
-#                 pipeline += [n_minus('size', n=max_size)]
-#                 fitness_factors += ['n_minus_size']
-#             else:
-#                 pipeline += [safe_inv('size')]
-#                 fitness_factors += ['isize']
-#         if self.use_depth:
-#             if max_depth:
-#                 pipeline += [n_minus('depth', n=max_depth)]
-#                 fitness_factors += ['n_minus_depth']
-#             else:
-#                 pipeline += [safe_inv('depth')]
-#                 fitness_factors += ['idepth']
-#         if len(fitness_factors) > 1:
-#             pipeline += [weighted_sum(
-#                 *(self.fitness_factors+fitness_factors), 
-#                 weights=params[1:]
-#             )]
-#             def_fitness = 'ws_' + ('_'.join(self.fitness_factors + fitness_factors))
-#         else:
-#             def_fitness = fitness_factors[0]
-#         pipeline += [
-#             rename(def_fitness, 'raw_fitness'), 
-#             heat, 
-#             rename("fitness", 'pre_fitness_1')
-#         ]
-#         return GPScoreboard(
-#             *self.pipeline_setup+pipeline+self.pipeline_post, **sb_kwargs
-#         )
     
 
 def main():

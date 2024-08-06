@@ -17,7 +17,7 @@ from gymnasium.spaces import Box
 from tree_funcs import get_operators
 from operators import Operator
 
-# from icecream import ic
+from icecream import ic
 
 T = TypeVar('T')
 Var:   TypeAlias = tuple[type, str]
@@ -178,8 +178,8 @@ class RandomPolynomialFactory(TreeFactory):
             self.const_max = params[2]
         else:
             self.order = 3
-            self.const_min = -1.0
-            self.const_max = 1.0
+            self.const_min = -0.05
+            self.const_max = 0.05
         if self.const_min > self.const_max:
             self.const_min, self.const_max = self.const_max, self.const_min
         if treebank:
@@ -514,6 +514,7 @@ class RandomPolynomialFactory(TreeFactory):
             return out_tree
         elif self.effective_order(len(vars))==0:
             return out_tree
+        out_tree.delete()
         self.order_map[len(vars)] = self.effective_order(len(vars)) - 1
         return self(*vars, treebank=treebank, coefficients=coefficients)
     

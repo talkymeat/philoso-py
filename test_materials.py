@@ -1,7 +1,7 @@
+from icecream import ic
 from gp import GPTreebank
 import operators as ops
 from functools import reduce
-from icecream import ic
 from tree_factories import TestTreeFactory
 from gp_poly_test import EXAMPLE_POLY_OBS_FAC as POF
 from gp_fitness import SimpleGPScoreboardFactory
@@ -66,7 +66,6 @@ class DummyController:
         self.repository = PLOS1
         self.guardrail_manager = GuardrailManager()
 
-
 DTF = DummyTreeFactory()
 DC = DummyController()
 GP = GPTreebank(operators=[ops.SUM, ops.PROD, ops.SQ, ops.CUBE, ops.POW], tree_factory=DummyTreeFactory())
@@ -78,6 +77,11 @@ T4 = GP.tree('([int]13)')
 T5 = GP.tree('([float]<SUM>([float]<SQ>([float]<SUM>([float]<SQ>([int]17))([float]<SUM>([float]<PROD>([int]3)([int]19))([int]2))))([float]<SUM>([float]<PROD>([int]3)([int]23))([int]2)))')
 TF = TestTreeFactory(T0)
 
+GP2 = GPTreebank(tree_factory=DummyTreeFactory(), mutation_rate=0.2, mutation_sd=1.0, crossover_rate=0.5, max_depth=10, max_size=50)
+T6  = GP2.tree('([tuple]([int]8)([float]14.0)([complex]35.0+19.0j)([bool]True))')
+T7  = GP2.tree('([tuple]([int]-1)([float]1.0)([complex]10.0+1.0j)([bool]False))')
+T8  = GP2.tree('([tuple]([int]1)([float]3.0)([complex]20.0+5.0j)([bool]False))')
+assert T6() == (8, 14.0, (35+19j), True)
 
 
 def to_list(self_val, *child_vals, **kwargs):
@@ -99,6 +103,5 @@ tree_lists = [
     [T1],
     [T2]
 ]
-
 
 

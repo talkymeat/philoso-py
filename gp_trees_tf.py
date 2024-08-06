@@ -147,6 +147,7 @@ class GPNonTerminal(NonTerminal):
         # What if we get a numerical exception?
         except OverflowError:
             if DEBUG:
+                ic.enable()
                 ic('Numerical Overflow')
                 ic(self)
                 child_outputs = pd.DataFrame()
@@ -158,15 +159,19 @@ class GPNonTerminal(NonTerminal):
                         self._operator([val for val in row])
                     except:
                         ic(f'GUILTY: {self._operator} on {row} at {j}')
+                ic.disable()
             self.root.metadata['penalty'] = self.root.metadata.get('penalty', 1.0) * 2.0
             return None
         except TypeError as e:
             if "'NoneType'" in str(e) and 'unsupported operand type' in str(e):
+                ic.enable()
                 ic('aw fuck, NoneType')
+                ic.disable()
                 return None
             raise e
         except AttributeError as e:
             if DEBUG:
+                ic.enable()
                 ic('Attribute Error')
                 ic('This subtree:')
                 ic(self)
@@ -174,10 +179,13 @@ class GPNonTerminal(NonTerminal):
                 ic(self.root)
                 ic('did a fuckus wuckus')
                 ic(e)
+                ic.disable()
         except ZeroDivisionError:
             if DEBUG:
+                ic.enable()
                 ic('Zero Division')
                 ic(self)
+                ic.disable()
             self.root.metadata['penalty'] = self.root.metadata.get('penalty', 1.0) * 2.0**0.1
             return None
             

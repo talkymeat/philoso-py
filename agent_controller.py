@@ -20,6 +20,7 @@ from repository import Archive, Publication
 from model_time import ModelTime
 from action import Action, GPNew, GPContinue, UseMem, StoreMem, Publish, Read, PunchSelfInFace
 from observation import Observation, GPObservation, Remembering, LitReview
+from mutators import random_mutator_factory
 
 from icecream import ic
 
@@ -67,21 +68,16 @@ class AgentController(Env):
             value: str="fitness", 
             # tree_factory_factories: list[TreeFactoryFactory]=None,
             # max_actions: int = 40, ## ??? XXX
-            # gp_steps: int = 100,
             max_volume: int = 50_000,
-            # max_thinking_nodes: int = 20_000,
-            # max_knowledge_nodes: int = 1000,
-            # max_knowledge_trees: int = 50,
             max_max_size: int = 400, ## ??? XXX
             max_max_depth: int = 100, ## ??? XXX
             theta: float = 0.05,
             gp_vars_core: list[str] = None,
             gp_vars_more: list[str] = None,
-            # value_measures: list=None,
-            # value_measure_weights: list[float]=None,
             device: str='cpu',
             guardrail_base_penalty = 1.0,
             ping_freq=5,
+            mutators: Sequence[Callable]=None,
             *args, **kwargs
         ):
         """What should be in __init__, and what in reset?
@@ -110,9 +106,10 @@ class AgentController(Env):
         self.meta = {}
         self.tmp = {}
         self._mems_to_use = []
+        self.mutators = [random_mutator_factory] if mutators is None else mutators
         # self.tree_factory_factories = tree_factory_factories
         self.gp_vars_core = gp_vars_core if gp_vars_core else [ 
-            'mse', 'rmse', 'size', 'depth', 'raw_fitness', 'fitness', 
+            'mse', 'rmse', 'size', 'depth', 'raw_fitness', 'fitness', 'value'
         ]
         self.gp_vars_more = gp_vars_more if gp_vars_more else [
             'wt_fitness', 'wt_size', 'wt_depth', "crossover_rate", "mutation_rate", 
@@ -166,12 +163,14 @@ class AgentController(Env):
                                             self.dv,
                                             self.def_fitness,
                                             self.max_volume,
+                                            self.mutators,
                                             self.theta,
                                             self.ping_freq
                                         )
         self.actions["gp_continue"] = GPContinue(self,
                                             self.out_dir,
-                                            self.t
+                                            self.t, 
+                                            len(self.mutators)
                                         )
         self.actions["use_mem"]     = UseMem(self) 
         self.actions["store_mem"]   = StoreMem(self) 
@@ -180,7 +179,6 @@ class AgentController(Env):
                                            max_readings=self.max_readings,
                                            vars=self.gp_vars_out
                                         )
-        self.actions['punch_self']  = PunchSelfInFace(self)
         self._action_space = Dict(
             {k: v.action_space for k, v in self.actions.items()}
         )

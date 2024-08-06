@@ -134,31 +134,6 @@ class TypeNativiser:
                 if tt[0](arg):
                     return tt[1]
         return _DoesNothing
-        # if isinstance(arg, pd.Series) or isinstance(arg, np.generic):
-        #     dt = self.dtype_dict.get(
-        #         arg.dtype,
-        #         self.dtype_dict.get(type(arg.dtype), None)
-        #     )
-        #     if dt:
-        #         return dt
-        #     if isinstance(arg, pd.Series):
-        #         for k in self.type_list:
-        #             if arg.dtype == k:
-        #                 self.dtype_dict[arg.dtype] = k
-        #                 return k
-        #         ic('================='*100)
-        #         ic(arg)
-        #         ic('================='*100)
-        #         ic(type(arg))
-        #         ic(arg.dtype, arg.dtype==float)
-        #         ic(self.type_list)
-        #         ic('================='*100)
-        #         self.dtype_dict[arg.dtype] = _DoesNothing
-        #         return _DoesNothing
-        #     ty = type(arg.item())
-        #     self.dtype_dict[type(arg)] = ty
-        #     return ty
-        # return type(arg)
 
 def main():
     import doctest

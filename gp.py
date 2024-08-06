@@ -1,5 +1,6 @@
 from treebanks import TypeLabelledTreebank
 from gp_trees import GPTerminal, GPNonTerminal
+from mutators import MutatorMutator, random_mutator_factory
 from gp_fitness import *
 import pandas as pd
 import numpy as np
@@ -41,6 +42,8 @@ class GPTreebank(TypeLabelledTreebank):
             pop: int=1000000000,
             tree_factory: TreeFactory=None,
             observatory: Observatory=None,
+            mutator_factories: list[Callable]=None,
+            mutator_weights: list[float]=None,
             crossover_rate: float = 0.0,
             mutation_rate: float = 0.0,
             mutation_sd: float = 0.0,
@@ -136,6 +139,16 @@ class GPTreebank(TypeLabelledTreebank):
         if tree_factory and tree_factory.treebank is not self:
             tree_factory.set_treebank(self)
         self.tree_factory = tree_factory
+        self.mutator_factories = (
+            mutator_factories 
+            if mutator_factories 
+            else [random_mutator_factory]
+        )
+        self.mutator_weights = (
+            mutator_weights 
+            if mutator_weights 
+            else [1.0/len(self._mut_fac)] * len(self._mut_fac)
+        )
 
     @property
     def data_dir(self):
@@ -154,7 +167,6 @@ class GPTreebank(TypeLabelledTreebank):
     @property
     def best(self):
         return self._best
-    
 
     @best.setter
     def best(self, best_tree_with_data):
@@ -181,6 +193,37 @@ class GPTreebank(TypeLabelledTreebank):
         }
         self._best = {'tree': best_tree, 'data': metadata}
 
+
+    @property
+    def mutator_factories(self) -> list[MutatorMutator]:
+        return list(self._mut_fac[self._mfw > 0])
+    
+    @mutator_factories.setter
+    def mutator_factories(self, factories: list|np.ndarray):
+        self._mut_fac = np.array([f(self) for f in factories])
+
+
+    @property
+    def mutator_weights(self) -> np.ndarray:
+        return self._mfw[self._mfw > 0]
+    
+    @mutator_weights.setter
+    def mutator_weights(self, weights) -> None:
+        self._mfw = np.array(weights)
+        if self._mfw.min() < 0:
+            self._mfw -= self._mfw.min()
+        self._mfw = self._mfw/self._mfw.sum()
+    
+    @property
+    def _mutator_change_indices(self):
+        if len(self.mutator_weights)==1:
+            return [0]
+        return [0] + list((
+                self.mutator_weights*(
+                    self.pop-self.elitism
+                )
+            ).astype(np.int64).cumsum()[:-1]
+        )
 
     def run(
             self,
@@ -253,7 +296,8 @@ class GPTreebank(TypeLabelledTreebank):
 
     def _run_step(self):
         """A single evolutionary step for GP"""
-        
+        mc_idxs = self._mutator_change_indices
+        mutmuts = self.mutator_factories
         # First, get an array of all the trees (root nodes only)
         # (right now it's float-rooted nodes only ,but may change this later)
         old_gen = self.get_all_root_nodes()[float].array()
@@ -267,6 +311,7 @@ class GPTreebank(TypeLabelledTreebank):
         sum_scores = np.sum(scores)
         # As long as they don't sum to zero, this can be done
         the_masses = self.pop-self.elitism
+        new_gen = []
         if sum_scores != 0:
             # If there are negative scores, shift the range up so the
             # minimum value is zero, and take the sum again
@@ -289,8 +334,11 @@ class GPTreebank(TypeLabelledTreebank):
                 # Note that making a copy automatically adds it to the
                 # treebank, so there's no need to assign this 
                 # print(f'Tree {n} of {the_masses}, copying {t}')
+                if mc_idxs and n == mc_idxs[0]:
+                    mutmuts.pop()()
+                    mc_idxs.pop(0)
                 n +=1
-                t.copy(gp_copy=True) 
+                new_gen.append(t.copy(gp_copy=True)) 
         # However, if they sum to exactly zero, that is practically
         # certainly because all the trees are NANing out - in which case
         # 1. print out deets, because that is a fucky outcome
@@ -305,7 +353,7 @@ class GPTreebank(TypeLabelledTreebank):
             self.scoreboard.to_csv(scoreboard_dumpname)
             print(self.observatory)
             for t in self.np_random.choice(old_gen, size=the_masses):
-                t.copy(gp_copy=True) 
+                new_gen.append(t.copy(gp_copy=True)) 
             raise ValueError("Error in place temporarily, as this may be sensible behaviour in the context that causes it, IDK: but anyway, it's weird that fitness sums to 0 here, ind it should be investigated.")
         ###|##|#######################################
         ## |  | If final_best (the output of the run) exists, make sure it doesn't get deleted
@@ -322,6 +370,8 @@ class GPTreebank(TypeLabelledTreebank):
         deathlist = filter(
             lambda t: t.tmp['to_delete'] == True, old_gen
         ) if self.elitism else old_gen
+        for t in new_gen:
+            t.meta_set_recursive(__no_xo__=False)
         # ... and delete them
         for t in deathlist:
             t.delete()

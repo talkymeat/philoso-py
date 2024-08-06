@@ -9,6 +9,7 @@ from gp_fitness import SimpleGPScoreboardFactory
 from model_time import ModelTime
 from reward import Reward, Curiosity, Renoun, GuardrailCollisions, Punches
 from tree_funcs import sum_all
+from mutators import single_leaf_mutator_factory, single_xo_factory
 
 from typing import Container
 import asyncio
@@ -121,7 +122,7 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
     )
     n_agents = 8
     gp_vars_core = [
-        'mse', 'rmse', 'size', 'depth', 'raw_fitness', 'fitness', 
+        'mse', 'rmse', 'size', 'depth', 'raw_fitness', 'fitness', 'value'
     ]
     gp_vars_more = [
         'wt_fitness', 'wt_size', 'wt_depth', "crossover_rate", "mutation_rate", 
@@ -138,7 +139,7 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
         types = np.float64, # types: Sequence[dtype] | Mapping[str, dtype] | dtype | None = None,
         tables = 2, # tables: int = 1,
         reward = 'ranked', # reward: PublicationRewardFunc | str | None = None,
-        value = 'irmse'
+        value = 'value'
         # DEFAULTS USED decay: float = 0.95, value: str = "fitness",
     )
     agents = [
@@ -164,7 +165,8 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
                 gp_vars_core=gp_vars_core,
                 gp_vars_more=gp_vars_more,
                 ping_freq=ping_freq,
-                value='irmse'
+                value='value',
+                mutators=[single_leaf_mutator_factory, single_xo_factory]
             ), # AgentController
             dancing_chaos_at_the_heart_of_the_world, # rng
             network_class = ActorCriticNetworkTanh
@@ -199,17 +201,12 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
             model
         )
     )
-    model.add_reward(
-        Punches(
-            model
-        )
-    )
     return model
 
 
 if __name__ == "__main__":
     model = example_model(seed=42, ping_freq=10)
-    model.run(50,100, prefix='b_')
+    model.run(50,100, prefix='d_')
     # model.run(40, 100)
     # model.run(100, 100)
     # model.run(2, 10_000)

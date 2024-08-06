@@ -1,7 +1,7 @@
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Sequence, Callable
 from collections import OrderedDict
 from functools import cached_property
 
@@ -189,8 +189,9 @@ class GPNew(Action):
             dv: str, 
             def_fitness: str,
             max_volume: int,
+            mutators: list[Callable],
             theta: float = 0.05,
-            ping_freq=5
+            ping_freq=5,
 
         ) -> None:
         super().__init__(controller)
@@ -205,11 +206,19 @@ class GPNew(Action):
             self.tf_options = tree_factory_classes
         else:
             raise ValueError("CompositeTreeFactory cannot be included in tree_factory options")
+        self.num_tf_opts = (
+            len(self.tf_options) if len(self.tf_options) > 1 else 0
+        ) 
         self.obs_fac = obs_factory
+        self.num_wobf_params = len(self.obs_fac.wobf_param_ranges)
         self.rng = rng
         self.out_dir = out_dir if isinstance(out_dir, Path) else Path(out_dir)
         self.t = time
         self.dv = dv 
+        self.mutators = mutators
+        self.num_mut_wts = (
+            len(self.mutators) if len(self.mutators) > 1 else 0
+        )
         self.def_fitness = def_fitness
         # XXX TODO make these size factors user-settable params (not less than 2,3,2 tho)
         self.min_pop = 2
@@ -272,6 +281,15 @@ class GPNew(Action):
             Shape:
                 2
 
+        mutator_weights (Box):
+            Used to determine how many of the trees in each generation will be
+            replicated with each of the available mutation protocols
+
+            Range:
+                All [-inf, inf] >-tanh-> [0.0, inf] 
+            Shape:
+                len(self.mutators) or 0
+
         misc (crossover_rate, mutation_rate, mutation_sd, max_depth, 
                 elitism, temp_coeff: Box):
             These are single vars that are determined by their own [0.0, 1.0]
@@ -317,6 +335,8 @@ class GPNew(Action):
         num_wobf_params = len(self.obs_fac.wobf_param_ranges)
         box_len = 9 + self.num_sb_weights + num_wobf_params + (
             len(self.tf_options) if len(self.tf_options) > 1 else 0
+        ) + (
+            len(self.mutators) if len(self.mutators) > 1 else 0
         )
         long_box = Box(low=-np.inf, high=np.inf, shape=(box_len,))
         return Dict({
@@ -336,6 +356,8 @@ class GPNew(Action):
         self.guardrails.make('max_depth', min=1, max=np.inf)
         self.guardrails.make('elitism', min=0, max=1)
         self.guardrails.make('temp_coeff', min=0, max=np.inf)
+        for i in range(len(self.mutators)):
+            self.guardrails.make(f'mutator_wt_{i}', min=0, max=1)
         self.obs_guardrail_names = []
         for params in self.obs_fac.wobf_guardrail_params:
             self.obs_guardrail_names.append(params['name'])
@@ -354,8 +376,8 @@ class GPNew(Action):
         episode_len = self.guardrails['episode_len'](raws[2], episode_len)
         # XXX TODO make this able to handle more weights
         sb_weights = scale_to_sum(np.append(1.0, arr[3:3+self.num_sb_weights]))
-        for i, raw, cooked in zip(range(self.num_sb_weights), sb_weights, raws[3:3+self.num_sb_weights]):
-            self.guardrails[f'sb_weight_{i}'](raw, cooked)
+        for i, raw in zip(range(self.num_sb_weights), raws[3:3+self.num_sb_weights]):
+            sb_weights[i] = self.guardrails[f'sb_weight_{i}'](raw, sb_weights[i])
         crossover_rate = self.guardrails['crossover_rate'](raws[3+self.num_sb_weights], arr[3+self.num_sb_weights]) # no scaling
         mutation_rate = self.guardrails['mutation_rate'](raws[4+self.num_sb_weights], arr[4+self.num_sb_weights])  # no scaling
         mutation_sd = self.guardrails['mutation_rate'](raws[5+self.num_sb_weights], arr[5+self.num_sb_weights])    # no scaling
@@ -377,8 +399,13 @@ class GPNew(Action):
             for raw_param, obs_arg, gr_name 
             in zip(obs_params_raw, obs_args, self.obs_guardrail_names)
         ])
-        tf_weights = arr[11+len(self.obs_fac.wobf_param_ranges):] if len(self.tf_options) > 1 else None
-        
+        tf_weights = arr[
+            9+self.num_sb_weights
+            +len(self.obs_fac.wobf_param_ranges)
+            :9+self.num_sb_weights
+            +len(self.obs_fac.wobf_param_ranges)
+            +len(self.tf_options)
+        ] if len(self.tf_options) > 1 else None
         tf_choices = None
         if tf_weights:
             tf_weights = scale_to_sum(tf_weights)
@@ -388,7 +415,21 @@ class GPNew(Action):
                 tf_choices = self.tf_options[mask]
             else:
                 tf_choices = self.tf_options
-         
+        mut8or_weights = None
+        if len(self.mutators) > 1:
+            mut8or_weights = arr[
+                9+self.num_sb_weights
+                +self.num_wobf_params
+                +self.num_tf_opts:
+            ]
+            mut8or_raws = raws[
+                9+self.num_sb_weights
+                +self.num_wobf_params
+                +self.num_tf_opts:
+            ]
+            for i, raw in zip(range(len(mut8or_weights)), mut8or_raws):
+                mut8or_weights[i] = self.guardrails[f'mutator_wt_{i}'](raw, mut8or_weights[i])
+        
         # temp_coeff,
         return (
             gp_register, 
@@ -405,7 +446,8 @@ class GPNew(Action):
             elitism,
             episode_len,
             sb_weights,
-            obs_args
+            obs_args,
+            mut8or_weights
         )
     
     def do(self, 
@@ -425,6 +467,7 @@ class GPNew(Action):
             episode_len,
             sb_weights: np.ndarray[float],
             obs_args,
+            mutator_weights,
             *args, **kwargs
         ):
         if isinstance(gp_register, torch.Tensor):
@@ -460,7 +503,9 @@ class GPNew(Action):
                                     ),
                 elitism =         _i(elitism),
                 fitness =            scoreboard,
-                ping_freq =          self.ping_freq
+                ping_freq =          self.ping_freq,
+                mutator_factories=   self.mutators,
+                mutator_weights=     mutator_weights.tolist()
                 # dv = self.dv, 
                 # def_fitness = self.def_fitness,
             )
@@ -469,7 +514,7 @@ class GPNew(Action):
             {int(_i(pop))=}, {int(_i(max_size))=}, {int(_i(episode_len))=}, {int(_i(max_depth))=},
             {_i(crossover_rate)=}, {_i(mutation_rate)=}, {_i(mutation_sd)=},
             {_i(temp_coeff)=}, {_i(elitism)=},            
-            {sb_weights=},
+            {sb_weights=}, {mutator_weights=}
             {obs_args=}""")
             self.gptb_list[gp_register].set_up_run()
             self.gptb_list[gp_register].insert_trees(self.ac.mems_to_use)
@@ -521,7 +566,7 @@ class GPContinue(Action):
                 Categorical
 
         misc (crossover_rate, mutation_rate, mutation_sd, max_depth, 
-                elitism, temp_coeff: Box):
+                elitism, temp_coeff, *mutator_weights: Box):
             These are single vars that are determined by their own [0.0, 1.0]
             Box value, though some have different scaling factors:
 
@@ -535,17 +580,19 @@ class GPContinue(Action):
                 Scaled to [0, pop], rounded
             temp_coeff:
                 Doubled
+            mutator_weight_0 ... mutator_weight_{n}
+                Unscaled
 
             Range:
                 All [0.0, 1.0]
             Shape:
-                5
+                5 + len(mutators)
 
         XXX TODO: it might be nice to allow this to also adjust scoreboard 
         weights XXX
         """
         gp_register_sp = Discrete(len(self.gptb_list)) 
-        misc_box       = Box(low=0.0, high=1.0, shape=(5,))
+        misc_box       = Box(low=0.0, high=1.0, shape=(5+self.num_mutators,))
         return Dict({
             'gp_register': gp_register_sp,
             'misc_box': misc_box
@@ -567,10 +614,18 @@ class GPContinue(Action):
                 _i(self.guardrails['elitism'](raws[3], arr[3]))*self.gptb_list[gp_register].pop
             ) if self.gptb_list[gp_register] else -1
             temp_coeff = _i(self.guardrails['temp_coeff'](raws[4], arr[4]))*2
+            mut8or_weights = None
+            if self.num_mutators > 1:
+                mut8or_weights = arr[5:]
+                mut8or_raws = raws[5:]
+                for i, raw in zip(range(len(mut8or_weights)), mut8or_raws):
+                    mut8or_weights[i] = self.guardrails[f'mutator_wt_{i}'](raw, mut8or_weights[i])
         else:
             gp_register = -1
             crossover_rate = mutation_rate = mutation_sd = temp_coeff = 0.0
             elitism = 0
+            if self.num_mutators > 1:
+                mut8or_weights = [0.0]*self.num_mutators
         return (
             gp_register, 
             crossover_rate,
@@ -578,19 +633,22 @@ class GPContinue(Action):
             mutation_sd,
             temp_coeff,
             elitism,
+            mut8or_weights
         )
 
     def __init__(self, 
             controller,
             out_dir: str|Path,
             time: ModelTime,
+            num_mutators: int
         ) -> None:
         super().__init__(controller)
-        self.gptb_list = self.ac.gptb_list
-        self.gptb_cts  = self.ac.gptb_cts
+        self.gptb_list    = self.ac.gptb_list
+        self.gptb_cts     = self.ac.gptb_cts
         self.guardrails: GuardrailManager = self.ac.guardrail_manager
-        self.out_dir   = out_dir if isinstance(out_dir, Path) else Path(out_dir)
-        self.t         = time
+        self.out_dir      = out_dir if isinstance(out_dir, Path) else Path(out_dir)
+        self.t            = time
+        self.num_mutators = num_mutators
 
     def do(self, 
             gp_register: int, 
@@ -599,6 +657,7 @@ class GPContinue(Action):
             mutation_sd,
             temp_coeff,
             elitism,
+            mut8or_weights,
             *args, **kwargs
         ):
         if isinstance(gp_register, torch.Tensor):
@@ -611,14 +670,15 @@ class GPContinue(Action):
             if gp:
                 gp.insert_trees(self.ac.mems_to_use)
                 gp.data_dir = self.out_dir / 'gp_out' / f"{gp_register}" / f"{self.gptb_cts[gp_register]}" / f"g{gp.gens_past}" / f"t{self.t}"
-                gp.crossover_rate = _i(crossover_rate)
-                gp.mutation_rate  = _i(mutation_rate)
-                gp.mutation_sd    = _i(mutation_sd)
-                gp.temp_coeff     = _i(temp_coeff)
-                gp.elitism        = _i(elitism) 
+                gp.crossover_rate  = _i(crossover_rate)
+                gp.mutation_rate   = _i(mutation_rate)
+                gp.mutation_sd     = _i(mutation_sd)
+                gp.temp_coeff      = _i(temp_coeff)
+                gp.elitism         = _i(elitism) 
+                gp.mutator_weights = mut8or_weights.tolist()
                 print(f"""Agent {self.ac.name} continued GP in slot {gp_register}:
                 {_i(crossover_rate)=} {_i(mutation_rate)=} {_i(mutation_sd)=}
-                {_i(temp_coeff)=} {_i(elitism)=} 
+                {_i(temp_coeff)=} {_i(elitism)=} {mut8or_weights=}
                 """)
                 gp.continue_run()
             # Note: no else block. If the NN asks to continue a non-existent GP, nothing happens
@@ -666,7 +726,11 @@ class UseMem(Action):
             *args, **kwargs
         ):
         self.ac.mems_to_use = [self.memory[table, row, 'tree'] for table, row in locations]
-        print(f"Agent {self.ac.name} will use the following from memory with GP: {self.ac.mems_to_use}")
+        print(
+            f"Agent {self.ac.name} will use the following from " +
+            f"memory with GP: \n" +
+            '\n'.join([f'{t}' for t in self.ac.mems_to_use])
+        )
 
 
 class StoreMem(Action):

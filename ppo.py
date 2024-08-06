@@ -45,8 +45,7 @@ class ActorCriticNetwork(nn.Module):
             ['use_mem', 'gp_continue'], 
             ['store_mem'],
             ['publish'],
-            ['read'],
-            ['punch_self']
+            ['read']
         ]
         self.action_choice_space = Discrete(len(self.action_choices))
         self.device = device

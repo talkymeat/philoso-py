@@ -120,6 +120,7 @@ class Archive(TypeLabelledTreebank): #M #P
         if len(cols) != len(self.cols):
             raise ValueError(f'Duplicate column names in cols {cols}')
         if value not in cols:
+            print(cols)
             raise ValueError(f"No column '{value}' exists")
 
     def _preprocess_entry(self, tree, **data) -> bool:
