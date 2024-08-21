@@ -713,6 +713,7 @@ class UseMem(Action):
     ):
         # XXX this comes in the wrong shape and I don't know why
         # XXX investigate later TODO
+        # XXX I think it's fixed now?
         in_vals['mb'] = unflatten(self.action_space['mb'], in_vals['mb'])
         locations = []
         for i, x in enumerate(in_vals['mb']):
@@ -789,7 +790,7 @@ class StoreMem(Action):
         ):
         for gp_reg, mem_loc in zip(gp_registers, memory_locations):
             if self.gptb_list[gp_reg]:
-                tree_data = self.gptb_list[gp_reg].best
+                tree_data = ic(self.gptb_list[gp_reg].best)
                 if tree_data['tree'] is not None:
                     data = {k: v for k, v in tree_data['data'].items() if k in self.vars}
                     self.memory.insert_tree(tree_data['tree'], journal=_i(mem_loc[0]), pos=_i(mem_loc[1]), **data)

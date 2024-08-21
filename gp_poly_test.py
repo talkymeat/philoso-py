@@ -11,7 +11,6 @@ from tree_factories import RandomPolynomialFactory
 from typing import Callable
 from observatories import FunctionObservatory, StaticObservatory, Observatory
 from icecream import ic
-ic.disable()
 
 def make_var_name():
     alphabet = 'abcdefghijklmnopqrstuvwyz'

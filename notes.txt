@@ -22,3 +22,23 @@ ic| best:          tree  size  depth        mse     imse     rmse     irmse     
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 3    [(x), (x)]
 Name: tree, dtype: object
+
+e_  : 
+g__ : No duplicates in repositories << deadass didn't work - there were dupes! YYYYY?
+h__ : increase SW amplitudes from 1, 01 to 100, 10
+
+Other things to try:
+
+(str, type) labels
+random tree generation
+fixed obs size
+tournament selection
+headless chicken crossover
+fiddle with rewards:
+       make curiosity less -ve  - compare to avg? 
+       multiply pos. rewards for renoun
+       reward & record operator diversity
+could we use Correlation Coefficient for fitness?
+reward for read (by other)
+
+record outputs & obses

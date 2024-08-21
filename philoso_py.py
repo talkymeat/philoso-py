@@ -1,7 +1,7 @@
 from repository import Publication
 from world import World, SineWorld
 from observatories import SineWorldObservatoryFactory
-from tree_factories import RandomPolynomialFactory
+from tree_factories import RandomPolynomialFactory, RandomTreeFactory, RandomAlgebraicTreeFactory
 from ppo import ActorCriticNetworkTanh, ActorCriticNetwork
 from agent_controller import AgentController
 from agent import Agent
@@ -16,10 +16,12 @@ import asyncio
 from pathlib import Path
 from copy import copy
 
-# from icecream import ic
+from icecream import ic
 
 import numpy as np
 import pandas as pd
+
+ic.disable()
 
 class Model:
     def __init__(self,
@@ -53,7 +55,8 @@ class Model:
         if state_file: # loading state a nice thing for later
             pass
         for _ in range(days):
-            asyncio.run(self.day(steps_per_day))
+            print(f'=== DAY {_} ===')
+            asyncio.run(self.day(steps_per_day)) 
             self.night()
         for r in self.rewards:
             r.record.to_parquet(f'{prefix}{r.NAME}_record.parquet')
@@ -81,6 +84,39 @@ class Model:
             self.rng.shuffle(shuffled_agents)
             tasks = [asyncio.create_task(agent.day_step()) for agent in shuffled_agents]
             _ = await asyncio.wait(tasks)
+            for a in self.agents:
+                for i, tbl in enumerate(a.ac.memory.tables):
+                    for j, row in tbl.iterrows():
+                        if row['exists'] and ((ic(row)['tree'].size() != row['size']) or (row['tree'].depth() != row['depth'])):
+                            raise ValueError(
+                                f"At time {self.t}, "+
+                                f"agent {a.name} has tree {row['tree']} recorded at table "+
+                                f"{i}, row {j} with size"+
+                                f" and depth {row['size'], row['depth']} when it should be"+
+                                f" {row['tree'].size(), row['tree'].depth()}"
+                            )
+                        if row['exists'] and row['size']==1:
+                            raise ValueError(
+                                f"At time {self.t}, "+
+                                f"agent {a.name} has tree {row['tree']} recorded at table "+
+                                f"{i}, row {j} with size and depth 1. Huhhhhhhh?"
+                            )
+            for i, tbl in enumerate(self.publications.tables):
+                for j, row in tbl.iterrows():
+                    if row['exists'] and ((row['tree'].size() != row['size']) or (row['tree'].depth() != row['depth'])):
+                        raise ValueError(
+                            f"At time {self.t}, "+
+                            f"publication {i} has tree {row['tree']} recorded at"+
+                            f" row {j} with size"+
+                            f" and depth {row['size'], row['depth']} when it should be"+
+                            f" {row['tree'].size(), row['tree'].depth()}"
+                        )
+                    if row['exists'] and row['size']==1:
+                        raise ValueError(
+                            f"At time {self.t}, "+
+                            f"agent {a.name} has tree {row['tree']} recorded at table "+
+                            f"{i}, row {j} with size and depth 1. Huhhhhhhh?"
+                        )
             self.t.tick()
         print('What a beautiful sunset!')
         for agent in self.agents:
@@ -110,11 +146,12 @@ def model_from_file(fname: str) -> Model:
     pass
 
 def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping_freq=5) -> Model:
+    dancing_chaos_at_the_heart_of_the_world = np.random.Generator(np.random.PCG64(seed))
     world = SineWorld(
-        np.pi*5, 100, 0.05, (1,1), (0.1, 0.1)
+        np.pi*5, 100, 0.05, (1,100), (0.1, 10), 
+        seed=dancing_chaos_at_the_heart_of_the_world
     )
     obs_factory = SineWorldObservatoryFactory(world)
-    dancing_chaos_at_the_heart_of_the_world = np.random.Generator(np.random.PCG64(seed))
     print(f'Seed: {dancing_chaos_at_the_heart_of_the_world.bit_generator.seed_seq.entropy}')
     sb_factory = SimpleGPScoreboardFactory(
         ['irmse', 'size', 'depth', 'penalty', 'hasnans', 'fitness'],
@@ -154,7 +191,7 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
                 'irmse', # str, def_fitness
                 sb_factory, # SimpleGPScoreboardFactory, # Needs to be more general XXX TODO
                 obs_factory, # ObservatoryFactory
-                [RandomPolynomialFactory], #tree_factory_classes, # tree_factory_classes: list[type[TreeFactory]],
+                [RandomAlgebraicTreeFactory], #tree_factory_classes, # tree_factory_classes: list[type[TreeFactory]],
                 dancing_chaos_at_the_heart_of_the_world, # np.random.Generator,
                 agent_names, #agent_names, # dict[str, int],
                 pub, #repository, # Publication,
@@ -205,8 +242,8 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
 
 
 if __name__ == "__main__":
-    model = example_model(seed=42, ping_freq=10)
-    model.run(50,100, prefix='d_')
+    model = example_model(seed=69, ping_freq=10)
+    model.run(50,100, prefix='h__')
     # model.run(40, 100)
     # model.run(100, 100)
     # model.run(2, 10_000)

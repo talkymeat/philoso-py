@@ -91,7 +91,7 @@ class Agent:
         self.steps_done = 0
 
     # one action: a day is a loop of these
-    async def day_step(self):
+    async def day_step(self): 
         # NN outputs: action_logits is raw NN output, a 1D tensor of floats.
         # choice is a simpler task as it's just a single Categorical, not a Dict
         obs = torch.tensor(

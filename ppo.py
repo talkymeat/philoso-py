@@ -15,6 +15,7 @@ from torch import optim
 from torch.distributions.categorical import Categorical
 from gymnasium.spaces import Discrete, flatten_space
 from icecream import ic
+torch.manual_seed(69)
 
 
 # Policy and value model

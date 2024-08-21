@@ -603,7 +603,7 @@ def same_args_diff_rtn_validator_factory(
         raise TypeError(
             'To make a single-type validator with ' +
             '`same_args_diff_rtn_validator_factory`,' +
-            'pass a type, a numpy dtype, or a function'
+            ' pass a type, a numpy dtype, or a function'
         )
     def validator(return_type: np.dtype|type, *arg_types: np.dtype|type):
         return reduce(
@@ -678,6 +678,14 @@ Arguments:
 Returns:
     (str) The concatenated string, e.g.: "pet the cat"
 """
+
+INT_SUM = Operator(
+    _sum, 
+    "INT_SUM", 
+    validator=same_args_diff_rtn_validator_factory(int, int, float), 
+    return_validator=float,
+    force_type=ForceType.STRICT
+)
 
 SUM = Operator(
     _sum, 
@@ -1019,12 +1027,13 @@ def _pand(arg):
 
 
 class OperatorFactory:
-    def __init__(self):
-        self.op_dic = {
+    def __init__(self, **custom):
+        self.op_dic = {**{
             "ID": ID,
             "UNIT_ID": UNIT_ID,
             "CONCAT": CONCAT,
             "SUM": SUM,
+            "INT_SUM": INT_SUM,
             "PROD": PROD,
             "SQ": SQ,
             "CUBE": CUBE,
@@ -1043,7 +1052,7 @@ class OperatorFactory:
             "TERN_COMPLEX": TERN_COMPLEX,
             "TERN_BOOL": TERN_BOOL,
             "TERN_STR": TERN_STR
-        }
+        }, **custom}
 
     def add_op(
             self, func, name, return_type = Any, arg_regex = "",
@@ -1056,7 +1065,7 @@ class OperatorFactory:
 
     def __call__(self, names):
         if isinstance(names, str):
-            names = [names]
+            return self.op_dic[names]
         operator_dictionary = {}
         for name in names:
             try:

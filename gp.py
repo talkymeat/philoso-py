@@ -4,7 +4,7 @@ from mutators import MutatorMutator, random_mutator_factory
 from gp_fitness import *
 import pandas as pd
 import numpy as np
-# from icecream import ic
+from icecream import ic
 from copy import copy
 from typing import Sequence # Union, List, Callable, Mapping, 
 from observatories import *
@@ -20,8 +20,18 @@ from string import ascii_lowercase as lcase
 import os
 from pathlib import Path
 from tree_funcs import sum_all, unions_for_all, get_operators
+from copy import copy
 
 
+def ic_mut8rz(tree):
+    ic(tree)
+    if hasattr(tree, 'gp_operator'):
+        ic(tree.gp_operator)
+    if hasattr(tree, 'xo_operator'):
+        ic(tree.xo_operator)
+    if hasattr(tree, 'children'):
+        for c in tree:
+            ic_mut8rz(c)
 
 DEBUG = False
 
@@ -137,7 +147,7 @@ class GPTreebank(TypeLabelledTreebank):
         self.record = pd.DataFrame()
         # Set up the tree factory to generate the initial population that will be evolved
         if tree_factory and tree_factory.treebank is not self:
-            tree_factory.set_treebank(self)
+            tree_factory.treebank = self
         self.tree_factory = tree_factory
         self.mutator_factories = (
             mutator_factories 
@@ -250,6 +260,8 @@ class GPTreebank(TypeLabelledTreebank):
         foreign_ops = {op.name: op for op in foreign_ops}
         self.operators = {**self.operators, **foreign_ops}
         for t in bonus_trees:
+            if t.size()==1:
+                raise ValueError(f"WTTF, a bonus tree {t} with size 1, in bonus set {bonus_trees}")
             t.copy_out(self)
 
     def set_up_run(
@@ -284,7 +296,7 @@ class GPTreebank(TypeLabelledTreebank):
             # Would be nice to replace this with a proper progress bar
             if ping_freq and not i%ping_freq:
                 print(f'{i} generations')
-            best = self._run_step()
+            best = self._run_step() 
             self.update_record(best, i)
             if self.grapher:
                 self.update_plots(i)
@@ -294,13 +306,16 @@ class GPTreebank(TypeLabelledTreebank):
             self.grapher.save(self.make_filename('plots_1', 'png'))
         return self._last_step()
 
-    def _run_step(self):
+    def _run_step(self): 
         """A single evolutionary step for GP"""
-        mc_idxs = self._mutator_change_indices
-        mutmuts = self.mutator_factories
+        mc_idxs = copy(self._mutator_change_indices)
+        mutmuts = copy(self.mutator_factories)
         # First, get an array of all the trees (root nodes only)
         # (right now it's float-rooted nodes only ,but may change this later)
         old_gen = self.get_all_root_nodes()[float].array()
+        for _t in old_gen:
+            if _t.size() == 1:
+                raise ValueError(f"{_t} in old_gen WTFFF")
         # Output a dict containing the best tree and its scores
         best = self.scoreboard.score_trees(old_gen, except_for=self.expt_outvals)
         # Mark the non-k-best trees for deletion
@@ -335,10 +350,20 @@ class GPTreebank(TypeLabelledTreebank):
                 # treebank, so there's no need to assign this 
                 # print(f'Tree {n} of {the_masses}, copying {t}')
                 if mc_idxs and n == mc_idxs[0]:
-                    mutmuts.pop()()
+                    mutmuts.pop(0)()
                     mc_idxs.pop(0)
                 n +=1
                 new_gen.append(t.copy(gp_copy=True)) 
+                if new_gen[-1].size()==1:
+                    ic(t.metadata)
+                    for tt in old_gen:
+                        if tt.size():
+                            ic(tt)
+                    ic(new_gen[-1].metadata)
+                    ic.disable()
+                    raise ValueError(
+                        f"Item {len(new_gen)-1} is a size-1 tree, {new_gen[-1]}, copied fron {t}: WTF?!"
+                    )
         # However, if they sum to exactly zero, that is practically
         # certainly because all the trees are NANing out - in which case
         # 1. print out deets, because that is a fucky outcome

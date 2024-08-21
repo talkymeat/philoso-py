@@ -67,12 +67,12 @@ class Archive(TypeLabelledTreebank): #M #P
         self._t = model_time
         self.max_size = max_size
         self.max_depth = max_depth
-        self.N = GPNonTerminal
-        self.T = GPTerminal
         self.mutation_rate = 0.0
         self.mutation_sd = 0.0
         self.np_random = None
         super().__init__()
+        self.N = GPNonTerminal
+        self.T = GPTerminal
 
     def observe(self):
         return np.array([self.observe_journal(journal) for journal in self.tables])
@@ -131,7 +131,9 @@ class Archive(TypeLabelledTreebank): #M #P
             missing_msg = f"lacks the keys {missing}, which are required in Repository.cols" if missing else ""
             and_msg = "; and " if surplus and missing else ""
             raise ValueError(f"metadata values passed to Repository.insert_tree {surplus_msg}{and_msg}{missing_msg}.")
+        ic("fjkghfjgkhdfgkjhdjfhjgfd", tree)
         data['tree'] = tree.copy_out(treebank=self)
+        ic('grnglhlglglglgl', data['tree'])
         data['exists'] = True
         data['t'] = self._t()
         return data
@@ -146,11 +148,17 @@ class Archive(TypeLabelledTreebank): #M #P
         return self.tables[journal]
 
     def insert_tree(self, tree, pos, journal=-1, **data) -> float:
-        data = self._preprocess_entry(tree, **data)
-        _journal = self._get_journal(journal)
+        # Do not add the tree if it is already in the repo
+        if tree.size()==1:
+            raise ValueError(f"Tree inserted in memory, {tree} is size 1, data is {data}")
+        for table in self.tables:
+            if (table['tree'] == ic(tree)).any():
+                return
+        data = self._preprocess_entry(tree, **ic(data))
+        _table = self._get_journal(journal)
         if pos < 0 or pos >= self.rows:
             raise ValueError(f"Value of `pos` [{pos}] is out of range")
-        _journal.loc[pos] = data 
+        _table.loc[pos] = ic(data) 
 
     def __getitem__(self, idx):
         if isinstance(idx, int):
@@ -240,6 +248,18 @@ class Publication(Archive):
         return vals
 
     def insert_tree(self, tree, agent_name, journal=-1, **data) -> float:
+        if tree.size()==1:
+            raise ValueError(f"Tree inserted in journal, {tree} is size 1, data is {data}")
+        for table in self.tables:
+            if (table['tree'] == tree).any():
+                return
+            for i, row in table.iterrows():
+                if str(row['tree']) == str(tree):
+                    raise ValueError(f"""
+                        wtf {str(row['tree'])} == {str(tree)} BUT {(row['tree'] == tree)=})
+                        {row['tree'][0,0]=}, {tree[0,0]}: {row['tree'][0,0] - tree[0,0]=}
+                        {row['tree'][1,0]=}, {tree[1,0]}: {row['tree'][1,0] - tree[1,0]=}
+                    """)
         # XXX JANK
         data = data['data'] if 'data' in data else data
         data = self._assign_tree_to_agent(agent_name, **data) 

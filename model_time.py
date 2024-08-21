@@ -12,3 +12,6 @@ class ModelTime:
     
     def tick(self):
         self._t += 1
+
+    def __eq__(self, other):
+        return self._t == other

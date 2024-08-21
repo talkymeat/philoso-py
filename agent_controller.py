@@ -21,18 +21,7 @@ from model_time import ModelTime
 from action import Action, GPNew, GPContinue, UseMem, StoreMem, Publish, Read, PunchSelfInFace
 from observation import Observation, GPObservation, Remembering, LitReview
 from mutators import random_mutator_factory
-
 from icecream import ic
-
-class Action(Enum):
-    RUN_GP = 1
-    # REMEMBER_LAST_RESULT = 2
-    # PUBLISH_RESULT = 3
-    # PUBLISH_BET = 4
-    # TAKE_BET = 5
-    # LEARN_PUBLISHED_RESULT = 6
-    DO_NOTHING = 0
-
 
 @dataclass
 class Result:
@@ -257,7 +246,7 @@ class AgentController(Env):
         if self.model is None:
             raise AttributeError('An AgentController must be assigned to a philoso_py.Model to run')
         # print(f'Seed: {self.np_random.bit_generator.seed_seq.entropy}')
-        self.world.seed = self.np_random
+        self.world.np_random = self.np_random
         return flatten(self._observation_space, self.observe()), {}
     
     def observe(self):
@@ -302,11 +291,6 @@ class AgentController(Env):
         self.model.mark_done(self.name)
         reward = await self.model.get_rewards(self.name)
         observation = self.observe()
-        # DEBUGGING XXX
-        if np.isnan(flatten(self._observation_space, observation)).any():
-            print('FFFFg'*100)
-            print(observation)
-        # DEBUGGING XXX
         return flatten(self._observation_space, observation), reward, False, False, {'asdf': 'asdf'}, False
 
 

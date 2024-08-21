@@ -23,19 +23,23 @@ class World(Actionable):
     observed by agents.
     """
 
-    def __init__(self, *args, seed: int|None=None, **kwargs):
+    def __init__(self, *args, seed: int|np.random.Generator|None=None, **kwargs):
         self.np_random = np.random.Generator(np.random.PCG64(seed))
 
     @property
-    def seed(self) -> int:
-        return self.np_random.bit_generator.seed_seq.entropy
+    def np_random(self) -> int:
+        return self._np_random
     
-    @seed.setter
-    def seed(self, seed: int|np.random.Generator|None):
+    @property
+    def seed(self) -> int:
+        return self._np_random.bit_generator.seed_seq.entropy
+    
+    @np_random.setter
+    def np_random(self, seed: int|np.random.Generator|None):
         if isinstance(seed, np.random.Generator):
-            self.np_random = seed
+            self._np_random = seed
         else:
-            self.np_random = np.random.Generator(np.random.PCG64(seed))
+            self._np_random = np.random.Generator(np.random.PCG64(seed))
 
     @abstractmethod
     def observe(self, params: dict|tuple|np.ndarray) -> dict|tuple|np.ndarray:
@@ -86,7 +90,7 @@ class VectorWorld(World):
                 fn_list: List[Callable],
                 max_observation_size: int,
                 cell_type=float,
-                seed: int|None = None,
+                seed: int|np.random.Generator|None = None,
                 transposal_probability: float = 0.0,
                 jitter_stdev: float = 0.0
             ):
@@ -133,7 +137,7 @@ class VectorWorld(World):
             is not in the interval [0.0, 1.0) (must be a valid probability,
             cannot be 1.0 as this would result in infinite transposal distances)
         """
-        self.seed=seed
+        self.np_random=seed
         self.length = length
         if len(initial_conditions) > length:
             raise ValueError(
@@ -889,13 +893,13 @@ class SineWorld(World):
             max_observation_size: int,
             noise_sd: float,
             *sine_wave_params: Collection[float],
-            seed: int|None = None,
+            seed: int|np.random.Generator|None = None,
             speed: float = 0.0,
             dtype: np.dtype = np.float32,
             iv: str = 'x',
             dv: str = 'y'
         ):
-        self.seed=seed
+        self.np_random=seed
         self.range = (-radius, radius)
         sine_wave_params = sine_wave_params if sine_wave_params else ((),)
         self.max_observation_size = max_observation_size

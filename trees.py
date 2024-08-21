@@ -554,7 +554,7 @@ class NonTerminal(Tree):
         [0, 0, 1]
         """
         # First check all the local property comparisons
-        if self.__class__ == other.__class__ and self.label == other.label and len(self) == len(other):
+        if (self.__class__ == other.__class__) and (self.label == other.label) and (len(self) == len(other)):
             # If all of those come up true, check the children
             for self_c, other_c in zip(self, other):
                 # If any children are not equal, self and other are not equal
@@ -2549,7 +2549,7 @@ class TypeLabel(Label):
             except Exception:
                 raise AttributeError("Invalid label")
         #### XXX just commented out the lines below - looks like they should break stuff 
-        #### XXX but will this brak other stuff? Why was this even working at all?
+        ####  Children must all be types but will this break other stuff? Why was this even working at all?
         #### XXX also, it had `name` instead of `class_id` in the method body, but 
         #### XXX 'class_id` as the param. WTF?
         # if isinstance(class_id, type): # Type check
@@ -2588,7 +2588,7 @@ class TypeLabel(Label):
 
 
 class SubstitutionSite(Tree):
-    """Abstract Base Class defining behaviour for all tree nodes.
+    """XXX Document me
 
     All trees are labelled, but some have children (lists of tree nodes below
     them in the tree structure), and others have leaves - concrete content like
@@ -2723,25 +2723,6 @@ class SubstitutionSite(Tree):
     def apply(self, func, *args, top_down=False, **kwargs) -> None:
         func(self, *args, **kwargs)
 
-
-# class SubstitutionSite:
-    # """Dataclass containing all the information about a nonterminal leaf node
-    # needed to do a node substitution at that location: its label (so we can
-    # check the substitution is valid), its parent, and its index in its parent
-    # (so the substitution can be performed).
-
-    # Attributes:
-    #     parent (NonTerminal): parent node of the nonterminal leaf node, needed
-    #         to perform substitution.
-    #     index (int): index of nonterminal leaf node, needed to perform
-    #         substitution.
-    #     label (Label): Label of nonterminal leaf node, needed to ensure
-    #         substitution if valid.
-    # """
-    # parent: NonTerminal
-    # index: int
-    # label: Label
-
     def perform_substitution(self, subtree: Tree):
         """Takes a subtree and, if it has the same node label, swaps it for the
         nonterminal leafnode at the substitution site
@@ -2756,8 +2737,9 @@ class SubstitutionSite(Tree):
         # If substitution is legit...
         if subtree.label == self.label:
             # ...then, do it. ...
+            parent_ = self.parent
             self.parent[self.index] = subtree
-            subtree.parent = self.parent
+            subtree.parent = parent_
         else:
             # ... otherwise, noep.
             raise ValueError(

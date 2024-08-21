@@ -13,7 +13,6 @@ from typing import Any
 from icecream import ic
 import warnings
 from copy import deepcopy
-ic.disable()
 DEBUG = True
 
 class D:
@@ -90,7 +89,114 @@ class GPNonTerminal(NonTerminal):
             )
         return True
 
-    def copy_out(self, treebank = None, gp_copy=False, _sd: SizeDepth=None, _at_depth=0, _max_size=None, **kwargs):
+    def copy_out(self, treebank = None, gp_copy=False, _at_depth=0, _max_size=None, **kwargs):
+        """Generates a deep copy of a tree: the same structure, same Labels, and
+        for the Terminals, same content: but each node a distinct object in
+        memory from the corresponding node in the original. If a Treebank is
+        passed to `treebank`, the new NonTerminal and its children will belong
+        to `treebank`.
+
+        If `treebank` is `None`, a new empty Treebank will be created, and the
+        new NonTerminal will belong to that instead. This acts as a 'dummy
+        treebank', in the case where trees are needed temporarily for some
+        computation, without the overhead of storing them in an existing
+        treebank.
+
+        Parameters
+        ----------
+            treebank:
+                The target treebank the tree is being copied into
+            gp_copy (bool):
+                If true, GP mutation and crossover operators will be applied
+            sd (SizeDepth):
+                A simple tracker which ensures GP crossover operators don't 
+                make the output tree too big or too deep
+            kwargs:
+                Not used, but needed for compatibility with subclasses
+
+        Returns
+        -------
+            NonTerminal: copy of original tree
+
+        >>> from tree_factories import RandomPolynomialFactory
+        >>> from gp import GPTreebank
+        >>> from test_materials import DummyTreeFactory
+        >>> import pandas as pd
+        >>> import operators as ops
+        >>> rng = np.random.Generator(np.random.PCG64())
+        >>> gp = GPTreebank(
+        ...     mutation_rate = 0.0, 
+        ...     mutation_sd=0.0, 
+        ...     crossover_rate=0.5, 
+        ...     max_depth=70,
+        ...     max_size=300, 
+        ...     seed=rng,
+        ...     operators=[ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE], 
+        ...     tree_factory=DummyTreeFactory()
+        ... )
+        >>> rpf = RandomPolynomialFactory(params = np.array([5, -10.0, 10.0], dtype=float), treebank=gp, seed=rng)
+        >>> trees = [rpf('x', 'y') for _ in range(1)]
+        >>> for t in trees:
+        ...     t.meta_set_recursive(gen=0)
+        >>> def test_msr(t):
+        ...     assert 'gen' in t.metadata and t.metadata['gen']==0
+        ...     if hasattr(t, 'children'):
+        ...         for c in t:
+        ...             test_msr(c)
+        >>> for t in trees:
+        ...     test_msr(t)
+        >>> df = pd.DataFrame({'x': [1.0, 1.0], 'y': [1.0, 1.0]})
+        >>> def incr_gen(t):
+        ...     t.metadata['gen'] += 1
+        >>> def _all_meta(t):
+        ...     if hasattr(t, 'children'):
+        ...         for c in t:
+        ...             _all_meta(c)
+        ...     if hasattr(t, 'metadata'):
+        >>> for _ in range(10):
+        ...     new_trees = []
+        ...     for t in trees:
+        ...         _all_meta(t)
+        ...         new_t = t.copy(gp_copy=True)
+        ...         new_t.apply(incr_gen)
+        ...         new_trees.append(new_t)
+        ...     for t in trees:
+        ...         t.delete()
+        ...     for t in new_trees:
+        ...         t.meta_set_recursive(__no_xo__=False)
+        ...     trees = new_trees
+        >>> for t in trees:
+        ...     assert t.tree_map_reduce(max, map_any=lambda x: x.metadata['gen']) < 11
+        """
+        if gp_copy:
+            return self.gp_copy_out(
+                treebank=treebank, 
+                gp_copy=gp_copy, 
+                _at_depth=_at_depth, 
+                _max_size=_max_size, 
+                **kwargs
+            )
+        # If `treebank` is None...
+        if not treebank:
+            # create a dummy treebank, and then it won't be None. 
+            treebank = self.treebank.__class__()
+        copied_children = []
+        for i, c in enumerate(self):
+            c_copy = c.copy_out(
+                treebank, 
+                gp_copy=False, 
+                **kwargs
+            )
+            copied_children.append(c_copy)
+        return treebank.N(
+            treebank,
+            self.label if treebank == self.treebank else treebank.get_label(self.label.class_id),
+            *copied_children,
+            operator = self._operator,
+            metadata = {**deepcopy(self.metadata), **{'__no_xo__': True}}
+        )
+
+    def gp_copy_out(self, treebank = None, gp_copy=False, _at_depth=0, _max_size=None, **kwargs):
         """Generates a deep copy of a tree: the same structure, same Labels, and
         for the Terminals, same content: but each node a distinct object in
         memory from the corresponding node in the original. If a Treebank is
@@ -175,41 +281,41 @@ class GPNonTerminal(NonTerminal):
             # create a dummy treebank, and then it won't be None. 
             treebank = self.treebank.__class__()
         if _max_size is None:
-            _max_size = treebank.max_size
-        _max_depth = treebank.max_depth
-        _, to_copy = self.gp_operator(None, self)
-        child_sizes = [c.size() for c in self]
-        size = self.size()
+            _max_size = ic(treebank.max_size)
+        _max_depth = ic(treebank.max_depth)
+        _, to_copy = ic(self.gp_operator(None, self))
+        child_sizes = ic([c.size() for c in self])
+        size = ic(self.size())
         gp_copied_children = []
         for i, c in enumerate(self):
-            extra_size = _max_size - size
-            allowed_child_size = extra_size + child_sizes[i]
-            allowed_child_depth = _max_depth - (_at_depth+1)
-            c_copy = self.xo_operator(
+            extra_size = ic(_max_size - size)
+            allowed_child_size = ic(extra_size + child_sizes[i])
+            allowed_child_depth = ic(_max_depth - (_at_depth+1))
+            c_copy = ic(self.xo_operator(
                 None, c, 
                 _max_size  = allowed_child_size,
                 _max_depth = allowed_child_depth,
                 **kwargs
-            )[1]
-            c_copy = c_copy.copy_out(
+            ))[1]
+            c_copy = ic(c_copy.copy_out(
                 treebank, 
                 gp_copy=gp_copy, 
                 _max_size  = allowed_child_size,
                 _at_depth = _at_depth + 1,
                 **kwargs
-            )
+            ))
             gp_copied_children.append(c_copy)
-            c_size = c_copy.size()
+            c_size = ic(c_copy.size())
             size += c_size - child_sizes[i]
-            child_sizes[i] = c_size
-            max([c.depth() for c in gp_copied_children])
-        return treebank.N(
+            child_sizes[i] = ic(c_size)
+            ic(max([c.depth() for c in gp_copied_children]))
+        return ic(treebank.N(
             treebank,
             to_copy.label if treebank == to_copy.treebank else treebank.get_label(to_copy.label.class_id),
             *gp_copied_children,
             operator = to_copy._operator,
             metadata = {**deepcopy(to_copy.metadata), **{'__no_xo__': True}}
-        ) 
+        ) )
     
     def __call__(self, **kwargs):
         try:
@@ -374,11 +480,11 @@ class Variable(GPTerminal):
             treebank = self.treebank.__class__()
             # XXX How to make sure TB has right OPS?
         # return the copy Terminal, with `treebank=treebank`
-        _, to_copy = self.gp_operator(None, self) if gp_copy else (None, self)
+        _, to_copy = ic(self.gp_operator(None, self)) if gp_copy else (None, self)
         return Variable(
             treebank,
             to_copy.label if treebank == to_copy.treebank else treebank.get_label(to_copy.label.class_id),  ##-OK both, raw val
-            '$' + copy(to_copy.leaf),
+            ic('$' + copy(to_copy.leaf)),
             operator = to_copy._operator,
             metadata = {**deepcopy(to_copy.metadata), **{'__no_xo__': True}},
             gp_operator=to_copy.gp_operator
@@ -441,7 +547,7 @@ class Constant(GPTerminal):
         -------
             bool: True if class, label and leaf are the same, else False.
         """
-        return self.__class__ == other.__class__ and self.leaf == other.leaf and self.label == other.label
+        return (self.__class__ == other.__class__) and (self.leaf == other.leaf) and (self.label == other.label)
 
     def to_LaTeX(self, top = True):
         """Converts trees to LaTeX expressions using the `qtree` package.
@@ -498,7 +604,6 @@ class Constant(GPTerminal):
         if not treebank:
             # ...make a dummy treebank for the copied Terminal to live in
             treebank = self.treebank.__class__()
-            # XXX SHould that have been `treebank = self.treebank.__class__()`?
         # return the copy Terminal, with `treebank=treebank`
         copy_leaf, to_copy = self.gp_operator(copy(self.leaf), self) if gp_copy else (copy(self.leaf), self)
         return Constant(

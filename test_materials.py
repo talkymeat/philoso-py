@@ -2,7 +2,7 @@ from icecream import ic
 from gp import GPTreebank
 import operators as ops
 from functools import reduce
-from tree_factories import TestTreeFactory
+from tree_factories import TestTreeFactory, RandomTreeFactory
 from gp_poly_test import EXAMPLE_POLY_OBS_FAC as POF
 from gp_fitness import SimpleGPScoreboardFactory
 from repository import Archive, Publication
@@ -45,8 +45,13 @@ class DummyTreeFactory:
     def __init__(self) -> None:
         self.treebank = None
 
-    def set_treebank(self, treebank, *args, **kwargs):
-        self.treebank = treebank
+    @property
+    def treebank(self)->"GPTreebank":
+        return self._treebank
+
+    @treebank.setter
+    def treebank(self, treebank: "GPTreebank"):
+        self._treebank = treebank
 
 class DummyController:
     def __init__(self) -> None:
@@ -104,4 +109,21 @@ tree_lists = [
     [T2]
 ]
 
+
+_opf = ops.OperatorFactory()
+RTF = RandomTreeFactory([], [], _opf, treebank=GP2)
+TS = [
+    RTF.NTTemplate(float, _opf('SUM'), [float, float]),
+    RTF.NTTemplate(float, _opf('SUM'), [int, int]),
+    RTF.NTTemplate(float, _opf('POW'), [float, int]),
+    RTF.NTTemplate(float, _opf('TERN_FLOAT'), [bool, float, float]),
+    RTF.NTTemplate(int, _opf('INT_SUM'), [int, int]),
+    RTF.NTTemplate(bool, _opf('EQ'), [int, int]),
+    RTF.NTTemplate(bool, _opf('EQ'), [float, float]),
+    RTF.ConstTemplate(float, lambda: 2.0),
+    RTF.ConstTemplate(int, lambda: 7),
+    RTF.ConstTemplate(bool, lambda: True),
+    RTF.ConstTemplate(bool, lambda: False),
+    RTF.VarTemplate(float, 'x')
+]
 

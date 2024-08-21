@@ -10,8 +10,6 @@ import numpy as np
 from logtools import MiniLog
 from size_depth import SizeDepth 
 
-ic.disable()
-
 def _complement(ls, x):
     if x in ls:
         i = ls.index(x)
@@ -31,7 +29,7 @@ class Mutator(ABC):
     The first round of testing will be done in a Jupyter Notebook, as it
     requires graphing distributions and kinda eyeballing them.
     """
-    rng = np.random.Generator(np.random.PCG64())
+    rng = np.random.Generator(np.random.PCG64(69))
 
     def mutate_here(self, tree):
         return self.rng.random() <= self.mutation_rate
@@ -391,8 +389,6 @@ class CrossoverMutator(Mutator):
             # otherwise. Therefore, if the update succeeds, the loop condition is
             # broken
             sts, std = subtree.size(), subtree.depth()
-            #### XXX should be: while not sd(pruned_size+sts, pruned_depth+std): 
-            #### while not st, max(sd.depth, pruned_depth+std)):
             while subtree.metadata.get('__no_xo__', False) or (sts > _max_size) or (std > _max_depth):
                 # If it doesn't work, increment i and try again
                 i+=1
