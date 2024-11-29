@@ -11,10 +11,6 @@ from gp import GPTreebank
 from gp_fitness import GPScoreboard
 from repository import Archive, Publication
 from icecream import ic
-from utils import taper
-
-def clean_df(df: pd.DataFrame, scale=1_000_000):
-    return df.map(taper, scale=scale).fillna(0)
 
 class Observation(ABC):
     def __init__(self, 
@@ -39,7 +35,6 @@ class Observation(ABC):
     @abstractmethod
     def observe(*args, **kwargs) -> tuple:
         pass
-
 
 class GPObservation(Observation):
     def __init__(self, 
@@ -130,12 +125,14 @@ class GPObservation(Observation):
         ).clip(np.finfo(np.float64).min/4.0, np.finfo(np.float64).max/4.0)
 
     def process_scoreboards(self, scoreboards):
+        # XXX AFTER DEBUG remove [np.isfinite(sb[var])]
+        # XXX AFTER DEBUG also put this back to just directly 
+        # #returning, no return_val intermediary variable
         return np.array([
             (
                 [
                     (
-                        [f(sb[var]) for f in self.sb_statfuncs] 
-                        # [f(sb[var][np.isfinite(sb[var])]) for f in self.sb_statfuncs] 
+                        [f(sb[var][np.isfinite(sb[var])]) for f in self.sb_statfuncs] 
                         if var in sb 
                         else np.zeros(
                             len(self.sb_statfuncs), 
@@ -154,6 +151,7 @@ class GPObservation(Observation):
             for sb 
             in scoreboards
         ], dtype=np.float64).clip(np.finfo(np.float64).min/4.0, np.finfo(np.float64).max/4.0)
+        #return return_val
     
     def process_records(self, records: list[pd.DataFrame]):
         return np.array([
@@ -215,7 +213,7 @@ class Remembering(Observation):
         
     def process_repo_data(self, repo: list[pd.DataFrame]):
         try:
-            return np.array([clean_df(table[self.gp_vars_core]) for table in repo])
+            return np.array([table[self.gp_vars_core] for table in repo])
         except KeyError:
             for table in repo:
                 for key in self.gp_vars_core:

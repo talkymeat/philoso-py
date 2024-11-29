@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from scipy import stats
 from typing import Collection, Iterable, Callable
 from gymnasium.spaces import Box
 from gp_trees import GPNonTerminal
@@ -395,7 +396,7 @@ def get_errs(tree: GPNonTerminal, target: pd.Series=None, ivs=None) -> pd.Series
     nans = np.isnan(ests).sum()
     if nans:
         tree.tmp['hasnans'] = True
-        if nans <= np.round(len(ests) * 0.04):
+        if (not np.isscalar(ests)) and (nans <= np.round(len(ests) * 0.04)):
             tree.tmp['penalty'] = tree.tmp.get('penalty', 1.0) * 2.0**nans
         else:
             tree.tmp['survive'] = False
@@ -407,6 +408,43 @@ def mse(tree: GPNonTerminal, target: pd.Series=None, ivs=None, **kwargs):
     requires `tree`
     """
     return (get_errs(tree, target=target, ivs=ivs)**2).mean()
+
+def is_constant(x) -> bool:
+    return np.isscalar(x) or len(x)==1 or (x==x[0]).all()
+
+@scoreboard_pipeline_element(out_key='r')
+def r(tree: GPNonTerminal, target: pd.Series=None, ivs=None, **kwargs):
+    """Calculates the Pearson's R between tree outputs and target.
+    Adds `r`, requires `tree`. If the target is a constant, then 
+    modifying the value of the tree based on r is inappropriate, so 1.0
+    if returned. If the target is not a constant, but the tree returns
+    a constant, this is a bad tree, and should be given zero fitness
+    """
+    est = tree(**ivs)
+    if is_constant(target):
+        return 1.0
+    if is_constant(est):
+        return 0.0
+    if np.isnan(est).any() or np.isinf(est).any():
+        return -1.0
+    err_ct = 0
+    while True:
+        # If est has very high values, the sum of values may overflow the
+        # numpy float64 dtype, in which case an error will be raised. This
+        # loop guards against this, by trying halving the values and trying
+        # again. However, we need to guard against the possibility of other
+        # causes of ValueError, so if more than 20 halvings doesn't fix the
+        # problem, or NaNs are detected, the error will be raised.
+        try:
+            return stats.pearsonr(target, est).statistic
+        except ValueError as e: 
+            err_ct += 1
+            # Note: target is pd.Series, est is np.ndarray
+            if target.isna().any() or np.isnan(est).any() or err_ct > 20:
+                raise e
+            est /= 2
+            target /= 2 
+
 
 @scoreboard_pipeline_element(out_key='sae')
 def sae(tree: GPNonTerminal, target: pd.Series=None, ivs=None, **kwargs):
@@ -503,6 +541,10 @@ def scale(a: float, **kwargs):
 def nan_zero(a: float, **kwargs):
     return a.fillna(0)
 
+@flexi_pipeline_element()
+def copy(a, **kwargs):
+    return a
+
 @scoreboard_pipeline_element(out_key='size')
 def size(tree: GPNonTerminal, **kwargs):
     return tree.size()
@@ -570,7 +612,7 @@ class SimpleGPScoreboardFactory:
     
     @property
     def num_sb_weights(self):
-        return 3
+        return 2
 
     def __call__(self, observatory: Observatory, temp_coeff, weights=None):
         self.observatory = observatory
@@ -593,15 +635,17 @@ class SimpleGPScoreboardFactory:
             case 'isae':
                 pipeline += [   sae]
         pipeline         += [   safe_inv(self.def_fitness[1:]),
-                                scale(self.def_fitness, out_key='value')]
+                                scale(self.def_fitness, out_key='value'),
+                                r]
         if weights is not None:
             pipeline     += [   safe_inv('size'), 
                                 safe_inv('depth'), 
                                 weighted_sum(self.def_fitness, 'isize', 'idepth')]
             def_2_fitness = f"ws_{self.def_fitness}_isize_idepth"
         else: 
-            def_2_fitness = self.def_fitness
-        pipeline         += [   rename(def_2_fitness, 'raw_fitness'), 
+            pipeline     += [   copy(self.def_fitness, out_key=f"{self.def_fitness}_cp")]
+            def_2_fitness = f"{self.def_fitness}_cp"
+        pipeline         += [   multiply(def_2_fitness, 'r', out_key='raw_fitness'), 
                                 heat, 
                                 rename("fitness", 'pre_fitness_1')]
         # if temp_coeff: 
@@ -624,6 +668,14 @@ class SimpleGPScoreboardFactory:
             if val:
                 sb_kwargs[arg] = val 
         return GPScoreboard(*pipeline, **sb_kwargs)
+    
+class SimplerGPScoreboardFactory(SimpleGPScoreboardFactory):
+    def __call__(self, observatory: Observatory, temp_coeff, weights=None):
+        return super().__call__(observatory, temp_coeff, weights=None)
+    
+    @property
+    def num_sb_weights(self):
+        return 0
 
 class GPScoreboard(pd.DataFrame):
     """Extension to pandas.Dataframe to function as a scoreboard for GP,
@@ -731,10 +783,10 @@ class GPScoreboard(pd.DataFrame):
     @property
     def sb_params(self):
         return {
-            'temp_coeff': self.kwargs['temp_coeff'],
-            'wt_fitness': self.kwargs['weights'][0],
-            'wt_size': self.kwargs['weights'][1],
-            'wt_depth': self.kwargs['weights'][2]
+            'temp_coeff': self.kwargs['temp_coeff'] #,
+            # 'wt_fitness': self.kwargs['weights'][0],
+            # 'wt_size': self.kwargs['weights'][1],
+            # 'wt_depth': self.kwargs['weights'][2]
         }
 
     def _post_process_pipeline(self):
@@ -1101,6 +1153,36 @@ class GPScoreboard(pd.DataFrame):
         7     True      4.0        0.25000     True        0.25000  0.25000
         8     True      2.0        0.50000     True        0.50000  0.50000
         9    False      1.0        1.00000     True        1.00000  1.00000
+        >>> op3 = [ops.PROD, ops.POW]
+        >>> gp3 = GPTreebank(operators = op3, temp_coeff=0.5, tree_factory=DummyTreeFactory())
+        >>> iv3 = [1., 2., 3., 4., 5., 6.]
+        >>> dv3 = [1., 8., 27., 64., 125., 216]
+        >>> dv3c = [1., 1., 1., 1., 1., 1]
+        >>> df3 = pd.DataFrame({'x': iv3, 'y0': dv3, 'y1': dv3c})
+        >>> t3 = [
+        ...     gp3.tree(f"([float]<PROD>([float]<POW>([float]$x)([int]{exp}))([int]{b}))")
+        ...     for exp in range(6) for b in range(1,3)
+        ... ] 
+        >>> obs3 = StaticObservatory('x', 'y0', sources=df3, obs_len=6)
+        >>> gps3 = GPScoreboard(r, rename('r', 'fitness'), clear('tree'), obs=obs3, temp_coeff=1.0)
+        >>> gps3(t3)
+             fitness
+        0   0.000000
+        1   0.000000
+        2   0.937931
+        3   0.937931
+        4   0.988447
+        5   0.988447
+        6   1.000000
+        7   1.000000
+        8   0.993475
+        9   0.993475
+        10  0.979640
+        11  0.979640
+        >>> obs3c = StaticObservatory('x', 'y1', sources=df3, obs_len=6)
+        >>> gps3c = GPScoreboard(r, rename('r', 'fitness'), clear('tree'), obs=obs3c, temp_coeff=1.0)
+        >>> (gps3c(t3)==1.0).all().item()
+        True
         """
         if cols:
             if except_for:

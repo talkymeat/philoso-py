@@ -311,7 +311,7 @@ class GPTreebank(TypeLabelledTreebank):
         mc_idxs = copy(self._mutator_change_indices)
         mutmuts = copy(self.mutator_factories)
         # First, get an array of all the trees (root nodes only)
-        # (right now it's float-rooted nodes only ,but may change this later)
+        # (right now it's float-rooted nodes only ,but may change this later)  
         old_gen = self.get_all_root_nodes()[float].array()
         for _t in old_gen:
             if _t.size() == 1:
@@ -327,12 +327,12 @@ class GPTreebank(TypeLabelledTreebank):
         # As long as they don't sum to zero, this can be done
         the_masses = self.pop-self.elitism
         new_gen = []
+        # If there are negative scores, shift the range up so the
+        # minimum value is zero, and take the sum again
+        if np.min(scores) < 0:
+            scores -= np.min(scores)
+            sum_scores = np.sum(scores)
         if sum_scores != 0:
-            # If there are negative scores, shift the range up so the
-            # minimum value is zero, and take the sum again
-            if np.min(scores) < 0:
-                scores -= np.min(scores)
-                sum_scores = np.sum(scores)
             # calculate normed scores    
             normed_scores = scores/sum_scores
             # make copies of trees, to replace those marked for
@@ -369,17 +369,8 @@ class GPTreebank(TypeLabelledTreebank):
         # 1. print out deets, because that is a fucky outcome
         # 2. pick trees to GP-copy at random
         else:
-            print(self.scoreboard['fitness'].fillna(0).sum())
-            print(f'Fitness sums to 0.0, size of the masses: is {the_masses}, ' +
-                f'the elite is {self.elitism}, the old gen is {len(old_gen)}'
-                )
-            scoreboard_dumpname = self.make_filename("dumptron9000", 'csv', '')
-            print(f"Dumping Scoreboard as '{scoreboard_dumpname}'")
-            self.scoreboard.to_csv(scoreboard_dumpname)
-            print(self.observatory)
             for t in self.np_random.choice(old_gen, size=the_masses):
                 new_gen.append(t.copy(gp_copy=True)) 
-            raise ValueError("Error in place temporarily, as this may be sensible behaviour in the context that causes it, IDK: but anyway, it's weird that fitness sums to 0 here, ind it should be investigated.")
         ###|##|#######################################
         ## |  | If final_best (the output of the run) exists, make sure it doesn't get deleted
         ###V##V#######################################

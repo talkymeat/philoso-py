@@ -55,6 +55,9 @@ def _sq(*args):
 def _cube(*args):
     return args[0]**3
 
+def _poly_term(*args):
+    return (args[0]*(args[1]**args[2]))+args[3]
+
 TYPE_TOOLS = {
     float:   {'test': disjoin_tests(is_float, is_float_dtype), 'dtype': np.float64  },
     int:     {'test': disjoin_tests(is_integer, is_integer_dtype), 'dtype': np.int64    },
@@ -986,6 +989,26 @@ Returns:
     (bool) P & Q
 """
 
+def validate_poly(return_type, *arg_types):
+    return len(
+        arg_types
+    ) == 4 and issubclass(
+        arg_types[0], float
+    ) and issubclass(
+        arg_types[1], float
+    ) and issubclass(
+        arg_types[2], int
+    ) and issubclass(
+        arg_types[3], float
+    )
+
+POLY = Operator(
+    _poly_term,
+    "POLY",
+    validator = validate_poly,
+    return_validator=float
+)
+
 def ternary_operator_factory(r_type):
     def validate_ternary(return_type, *arg_types):
         return len(
@@ -1051,7 +1074,8 @@ class OperatorFactory:
             "TERN_FLOAT": TERN_FLOAT,
             "TERN_COMPLEX": TERN_COMPLEX,
             "TERN_BOOL": TERN_BOOL,
-            "TERN_STR": TERN_STR
+            "TERN_STR": TERN_STR,
+            "POLY": POLY
         }, **custom}
 
     def add_op(
@@ -1205,6 +1229,8 @@ def main():
     array([False, False,  True, False])
     >>> EQ(df['i3'], TERN_INT(df['b2'], df['i2'], df['i1']))
     array([ True,  True,  True,  True])
+    >>> POLY(3.0, 5.0, 2, 100.0)
+    175.0
     """
     import doctest
     doctest.testmod()

@@ -27,8 +27,8 @@ from icecream import ic
 class Result:
     best_tree: Tree 
     fitness: float
-    
 
+    
 class AgentController(Env):
 
     def __init__(self, 
@@ -110,16 +110,25 @@ class AgentController(Env):
             # on `action.GPNew` and `action.GPContinue` should prevent Scoreboards
             # under this length, but filtering out infs and nans may result in 
             # short cols
-            lambda col: col.mean() if len(col) > 0 else 0.0,
-            lambda col: col.mode().mean() if len(col) > 0 else 0.0,
+            # lambda col: col.mean() if len(col) > 0 else 0.0,
+            # lambda col: col.mode().mean() if len(col) > 0 else 0.0,
+            # # XXX TODO - there quantiles are acting weird
+            # *[(lambda col: col.quantile(q) if len(col) > 0 else 0.0) for q in np.linspace(0.0, 1.0, 9)],
+            # lambda col: col.std() if len(col) > 1 else 0.0,
+            lambda col: col[np.isfinite(col)].mean() if len(col[np.isfinite(col)]) > 0 else 0.0,
+            lambda col: col[np.isfinite(col)].mode().mean() if len(col[np.isfinite(col)]) > 0 else 0.0,
             # XXX TODO - there quantiles are acting weird
-            *[(lambda col: col.quantile(q) if len(col) > 0 else 0.0) for q in np.linspace(0.0, 1.0, 9)],
-            lambda col: col.std() if len(col) > 1 else 0.0,
+            *[(lambda col: col[np.isfinite(col)].quantile(q) if len(col[np.isfinite(col)]) > 0 else 0.0) for q in np.linspace(0.0, 1.0, 9)],
+            lambda col: col[np.isfinite(col)].std() if len(col[np.isfinite(col)]) > 1 else 0.0,
             # The `Observation` which uses these statfuncs ignores all `nan`,
             # `inf`, and `-inf` values, so it is useful to also note how many
             # of these values there are  
-            lambda col: col.isna().mean(),
-            lambda col: np.isinf(col).mean()
+            # nanage,
+            # infage
+            # lambda col: col.isna().mean(),
+            # lambda col: np.isinf(col).mean()
+            lambda col: self.nanage(col),
+            lambda col: self.infage(col)
         ]
         # MEMORY SET UP
         self.memory = Archive(
@@ -189,6 +198,33 @@ class AgentController(Env):
             {k: v.observation_space for k, v in self.observations.items()}
         )
 
+    def nanage(self, col):
+        nange = col.isna().mean()
+        if np.isnan(nange):
+            print('GARG '*40)
+            print(self.name)
+            print(col)
+            print('+'*100)
+            for i, tb in enumerate(self.gptb_list):
+                if tb is not None:
+                    print(i)
+                    print(tb.scoreboard)
+            print('BERF '*40)
+        return nange
+
+    def infage(self, col):
+        infinge = np.isinf(col).mean()
+        if np.isnan(infinge):
+            print('POBB '*40)
+            print(self.name)
+            print(col)
+            print('+'*100)
+            for i, tb in enumerate(self.gptb_list):
+                if tb is not None:
+                    print(i)
+                    print(tb.scoreboard)
+            print('GWEK '*40)
+        return infinge
 
     @property
     def observation_space(self):

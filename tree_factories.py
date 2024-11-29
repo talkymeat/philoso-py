@@ -629,6 +629,7 @@ class RandomTreeFactory(TreeFactory):
         def __call__(self, treebank):
             """
             
+
             >>> from gp import GPTreebank
             >>> gf1 = lambda: 2
             >>> gf2 = lambda: 2.0
@@ -1212,6 +1213,28 @@ class RandomAlgebraicTreeFactory(RandomTreeFactory):
             (float, 'SUM', (float, float)),
             (float, 'PROD', (float, float)),
             (float, 'POW', (float, int)),
+            (float, 'x'),
+            (float, lambda: self.np_random.normal(0, 0.1)),
+            (int, lambda: self.np_random.integers(10))
+        )
+        root_types = [float] 
+        operator_factory = ops.OperatorFactory()
+        super().__init__(
+            templates, 
+            root_types, 
+            operator_factory, 
+            treebank,
+            *args,
+            **kwargs
+        )
+    
+class SimpleRandomAlgebraicTreeFactory(RandomTreeFactory):
+    def __init__(self,
+            *args, 
+            treebank: Treebank=None,
+            **kwargs): 
+        templates = (
+            (float, 'POLY', (float, float, int, float)),
             (float, 'x'),
             (float, lambda: self.np_random.normal(0, 0.1)),
             (int, lambda: self.np_random.integers(10))

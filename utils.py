@@ -216,6 +216,10 @@ def _i(item):
         return item
 
 
+def taper(x, scale=1):
+    if np.abs(x) <= scale:
+        return x
+    return (scale * np.sign(x)) + (np.tanh((x - scale)/scale) * scale)
 
 def main():
     import doctest

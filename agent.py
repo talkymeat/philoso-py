@@ -42,11 +42,14 @@ class Agent:
         self.ac.make_actions()
         self.actions: dict[Action] = self.ac.actions
         self.ac.make_observations()
+        ic.enable()
         self.nn = self.net_class( # put a factory class here, from param
-            flatten_space(self.ac.observation_space).shape[0],
+            ic(flatten_space(ic(self.ac.observation_space))).shape[0],
             self.ac.actions
             # {k: flatten_space(sp).shape[0] for k, sp in self.ac.action_space.items()}
         )
+        self.nn.obs_sp = ic(self.ac._observation_space)
+        ic.disable()
         self.nn.to(self.device)
         # Set up the training buffer with a multi-index
         self.policy_names = [('choice')]
@@ -94,6 +97,7 @@ class Agent:
     async def day_step(self): 
         # NN outputs: action_logits is raw NN output, a 1D tensor of floats.
         # choice is a simpler task as it's just a single Categorical, not a Dict
+        print(f'{self.name} is up next')
         obs = torch.tensor(
             [self.obs], dtype=torch.float64, device=self.device
         )

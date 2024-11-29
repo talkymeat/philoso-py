@@ -1,11 +1,11 @@
 from repository import Publication
 from world import World, SineWorld
 from observatories import SineWorldObservatoryFactory
-from tree_factories import RandomPolynomialFactory, RandomTreeFactory, RandomAlgebraicTreeFactory
+from tree_factories import RandomPolynomialFactory, RandomTreeFactory, RandomAlgebraicTreeFactory, SimpleRandomAlgebraicTreeFactory
 from ppo import ActorCriticNetworkTanh, ActorCriticNetwork
 from agent_controller import AgentController
 from agent import Agent
-from gp_fitness import SimpleGPScoreboardFactory
+from gp_fitness import SimpleGPScoreboardFactory, SimplerGPScoreboardFactory
 from model_time import ModelTime
 from reward import Reward, Curiosity, Renoun, GuardrailCollisions, Punches
 from tree_funcs import sum_all
@@ -148,12 +148,12 @@ def model_from_file(fname: str) -> Model:
 def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping_freq=5) -> Model:
     dancing_chaos_at_the_heart_of_the_world = np.random.Generator(np.random.PCG64(seed))
     world = SineWorld(
-        np.pi*5, 100, 0.05, (1,100), (0.1, 10), 
+        5, 100, 0.05, (1,100), (0.1, 10), 
         seed=dancing_chaos_at_the_heart_of_the_world
     )
     obs_factory = SineWorldObservatoryFactory(world)
     print(f'Seed: {dancing_chaos_at_the_heart_of_the_world.bit_generator.seed_seq.entropy}')
-    sb_factory = SimpleGPScoreboardFactory(
+    sb_factory = SimplerGPScoreboardFactory(
         ['irmse', 'size', 'depth', 'penalty', 'hasnans', 'fitness'],
         'y'
     )
@@ -162,12 +162,12 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
         'mse', 'rmse', 'size', 'depth', 'raw_fitness', 'fitness', 'value'
     ]
     gp_vars_more = [
-        'wt_fitness', 'wt_size', 'wt_depth', "crossover_rate", "mutation_rate", 
+        "crossover_rate", "mutation_rate", 
         "mutation_sd", "max_depth", "max_size", "temp_coeff", "pop", "elitism", 
         'obs_start', 'obs_stop', 'obs_num'
     ]
     time = ModelTime()
-    agent_names = {f'a{i}': i for i in range(n_agents)}
+    agent_names = {f'ag{i}': i for i in range(n_agents)}
     pub = Publication(
         gp_vars_core + gp_vars_more, # cols: Sequence[str],
         10, # rows: int,
@@ -184,14 +184,14 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
             AgentController(
                 world, # World,
                 time, # ModelTime,
-                f'a{i}', # name,
+                name, # name,
                 6, # mem_rows,
                 3, # mem_tables,
                 world.dv, # dv,
                 'irmse', # str, def_fitness
                 sb_factory, # SimpleGPScoreboardFactory, # Needs to be more general XXX TODO
                 obs_factory, # ObservatoryFactory
-                [RandomAlgebraicTreeFactory], #tree_factory_classes, # tree_factory_classes: list[type[TreeFactory]],
+                [SimpleRandomAlgebraicTreeFactory], #tree_factory_classes, # tree_factory_classes: list[type[TreeFactory]],
                 dancing_chaos_at_the_heart_of_the_world, # np.random.Generator,
                 agent_names, #agent_names, # dict[str, int],
                 pub, #repository, # Publication,
@@ -207,7 +207,7 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
             ), # AgentController
             dancing_chaos_at_the_heart_of_the_world, # rng
             network_class = ActorCriticNetworkTanh
-        ) for i in range(n_agents)
+        ) for name in agent_names.keys()
     ]
     # Note, this must be done after all agents have been made,
     # as some params depend on knowing how many other agents there are
@@ -242,8 +242,8 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
 
 
 if __name__ == "__main__":
-    model = example_model(seed=69, ping_freq=10)
-    model.run(50,100, prefix='h__')
+    model = example_model(seed=69420, ping_freq=10)
+    model.run(100,100, prefix='k__')
     # model.run(40, 100)
     # model.run(100, 100)
     # model.run(2, 10_000)

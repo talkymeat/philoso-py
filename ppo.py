@@ -13,7 +13,7 @@ import torch
 from torch import nn
 from torch import optim
 from torch.distributions.categorical import Categorical
-from gymnasium.spaces import Discrete, flatten_space
+from gymnasium.spaces import Discrete, flatten_space, unflatten
 from icecream import ic
 torch.manual_seed(69)
 
@@ -64,7 +64,7 @@ class ActorCriticNetwork(nn.Module):
         #     ['store_mem'],
         #     ['publish'],
         #     ['read'] <<== optional, reads into mem, not gp run
-        # ]
+        # ] 
 
         # chared with the value (critic) head, the choice head,
         # and all action heads
@@ -131,7 +131,7 @@ class ActorCriticNetwork(nn.Module):
         """
 
         torch.autograd.set_detect_anomaly(True)
-
+        ic.disable()
         # This didn't fix the inplace bug:
         # obs = obs.clone().detach().requires_grad_(True)
 
@@ -146,10 +146,18 @@ class ActorCriticNetwork(nn.Module):
             choice_distribution = Categorical(logits=action_logits['choice'])
         except Exception as e:
             print(('sz'*50)+('SZ'*50)+('sz'*50))
-            print(obs)
+            print(obs[0], obs.shape)
+            print('='*120)
+            for i in range(0, len(obs[0]), 10):
+                print(obs[0].numpy()[i:i+10])
             print('='*120)
             print(z_0)
+            print(self.obs_sp)
+            ic.enable()
+            print(unflatten(ic(self.obs_sp), ic(obs.numpy()[0])))
+            ic.disable()
             print(('sz'*50)+('SZ'*50)+('sz'*50))
+            raise e
         choice = choice_distribution.sample()
         # the log prob is needed for training
         choice_log_prob = choice_distribution.log_prob(choice).item()
