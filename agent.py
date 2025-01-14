@@ -31,6 +31,32 @@ class Agent:
         self.ac = ac
         self.net_class=network_class
 
+    @classmethod
+    def from_json(cls, json, rng=None, controller=None, prefix=None, network_class=None):
+        args = [controller, rng]
+        kwargs = {
+            'device': json[['agent_templates', prefix, 'device']],
+            'network_class': network_class
+        }
+        return cls(*args, **kwargs)
+    
+    @property
+    def json(self)->dict:
+        return {
+            'controller': self.ac.json,
+            'device': self.device,
+            'network_class': self.net_class.__name__,
+            'seed': self.rng.bit_generator.seed_seq.entropy,
+            'network_params': {
+                'ppo_clip_val': self.trainer.ppo_clip_val,
+                'target_kl_div': self.trainer.target_kl_div,
+                'max_policy_train_iters': self.trainer.max_policy_train_iters,
+                'value_train_iters': self.trainer.value_train_iters,
+                'policy_lr': self.trainer.policy_lr,
+                'value_lr': self.trainer.value_lr
+            }
+        }
+
     def make_networks(self,
                 ppo_clip_val=0.2,
                 target_kl_div=0.01,
@@ -42,9 +68,8 @@ class Agent:
         self.ac.make_actions()
         self.actions: dict[Action] = self.ac.actions
         self.ac.make_observations()
-        ic.enable()
         self.nn = self.net_class( # put a factory class here, from param
-            ic(flatten_space(ic(self.ac.observation_space))).shape[0],
+            flatten_space(self.ac.observation_space).shape[0],
             self.ac.actions
             # {k: flatten_space(sp).shape[0] for k, sp in self.ac.action_space.items()}
         )
@@ -82,6 +107,10 @@ class Agent:
     @property
     def name(self):
         return self.ac.name
+
+    @property
+    def prefix(self):
+        return self.ac.prefix
 
     # Set-up for rollout
     def morning_routine(self, steps):

@@ -752,53 +752,34 @@ class StaticFunctionObservatory(FunctionObservatory):
         return self._last_dv_out.copy()
     
     # self._dv_data[[col for col in self._dv_data.columns if self.dv_key in col]].copy()
-
-
-class ObservatoryFactory(ABC):
-    def __init__(self, world):
-        self.world = world
-
-    @abstractmethod
-    def __call__(self, *args: Any, **kwargs: Any) -> Observatory:
-        pass
-
-    @property
-    @abstractmethod
-    def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
-        pass
-
-    @property
-    @abstractmethod
-    def wobf_guardrail_params(self):
-        pass
     
 
-class SineWorldObservatoryFactory(ObservatoryFactory):
-    @property
-    def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
-        return self.world.range, self.world.range, (2, self.world.max_observation_size)
+# class SineWorldObservatoryFactory(ObservatoryFactory):
+#     @property
+#     def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
+#         return self.world.range, self.world.range, (2, self.world.max_observation_size)
 
-    @property    
-    def wobf_guardrail_params(self):
-        return (
-            {'name': '_', '_no_make': None}, 
-            {'name': '_', '_no_make': None}, 
-            {'name': 'obs_len', 'min': 2, 'max': np.inf}
-        )
+#     @property    
+#     def wobf_guardrail_params(self):
+#         return (
+#             {'name': '_', '_no_make': None}, 
+#             {'name': '_', '_no_make': None}, 
+#             {'name': 'obs_len', 'min': 2, 'max': np.inf}
+#         )
 
-    def __call__(
-            self, start: float, stop: float, num: int,  **kwargs: Any
-        ) -> Observatory:
-        if start > stop:
-            start, stop = stop, start
-        return SineWorldObservatory(
-            self.world.iv,
-            self.world.dv,
-            world=self.world,
-            start = start if start >= self.world.range[0] else self.world.range[0],
-            stop  = stop  if stop  <= self.world.range[1] else self.world.range[1],
-            num = int(num) if num <= self.world.max_observation_size else self.world.max_observation_size
-        )
+#     def __call__(
+#             self, start: float, stop: float, num: int,  **kwargs: Any
+#         ) -> Observatory:
+#         if start > stop:
+#             start, stop = stop, start
+#         return SineWorldObservatory(
+#             self.world.iv,
+#             self.world.dv,
+#             world=self.world,
+#             start = start if start >= self.world.range[0] else self.world.range[0],
+#             stop  = stop  if stop  <= self.world.range[1] else self.world.range[1],
+#             num = int(num) if num <= self.world.max_observation_size else self.world.max_observation_size
+        # )
 
 class SineWorldObservatory:
     """Observatory class for SineWorld, a World consisting of the sum of

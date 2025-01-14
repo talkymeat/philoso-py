@@ -206,6 +206,20 @@ def conjoin_tests(*tests: Callable[[Any|None], bool]):
         )
     return test_conjunction
 
+class HierarchicalDict(dict):
+    def __getitem__(self, idx):
+        if isinstance(idx, list):
+            if len(idx)==1:
+                return super().__getitem__(idx[0])
+            elif not idx:
+                raise IndexError(
+                    'An empty list is an invalid index for ' +
+                    'HierarchicalDict: Provide a Hashable object ' +
+                    'or a list of one or more Hashables.'
+                )
+            else:
+                pass
+
 
 def _i(item):
     if isinstance(item, torch.Tensor) and np.prod(item.shape)==1:
@@ -220,6 +234,14 @@ def taper(x, scale=1):
     if np.abs(x) <= scale:
         return x
     return (scale * np.sign(x)) + (np.tanh((x - scale)/scale) * scale)
+
+def simplify(ls_: list):
+    if sum([oth==ls_[0] for oth in ls_[1:]]):
+        return ls_[0]
+    return ls_
+
+def name_dict(*vals) -> dict:
+    return {v.__name__: v for v in vals}
 
 def main():
     import doctest

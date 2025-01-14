@@ -241,6 +241,11 @@ class PPOTrainer():
         self.value_train_iters = value_train_iters
         self.np_random = np_random
 
+        # learning rates saved here for easy access when saving a 
+        # JSON file to recreate a given model
+        self.value_lr = value_lr
+        self.policy_lr = policy_lr
+
         # all heads get Adam Optimsers
         value_params = list(self.actor_critic.shared_layers.parameters()) + \
             list(self.actor_critic.value_layers.parameters())

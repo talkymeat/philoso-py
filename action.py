@@ -6,7 +6,7 @@ from collections import OrderedDict
 from functools import cached_property
 
 from gp import GPTreebank
-from observatories import ObservatoryFactory
+from world import World
 from tree_factories import TreeFactory, CompositeTreeFactory
 from model_time import ModelTime
 from repository import Archive, Publication
@@ -181,7 +181,7 @@ class GPNew(Action):
 
     def __init__(self, 
             controller,
-            obs_factory: ObservatoryFactory,
+            obs_factory: World,
             tree_factory_classes: list[type[TreeFactory]],
             rng: np.random.Generator,
             out_dir: str|Path,

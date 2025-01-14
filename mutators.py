@@ -8,7 +8,8 @@ from matplotlib.pylab import Generator
 import numpy as np
 
 from logtools import MiniLog
-from size_depth import SizeDepth 
+#from size_depth import SizeDepth 
+from jsonable import JSONableFunc
 
 def _complement(ls, x):
     if x in ls:
@@ -665,18 +666,21 @@ class MutatorMutator:
             for c in tree:
                 self._decorate_tree(c)
 
+@JSONableFunc
 def random_mutator_factory(treebank: 'Treebank'):
     return MutatorMutator(
         MutatorFactory, treebank,
         xo_class=CrossoverMutator
     )
 
+@JSONableFunc
 def single_leaf_mutator_factory(treebank: 'Treebank'):
     return  MutatorMutator(
         SinglePointLeafMutatorFactory, treebank,
         root_mutator_class=TaggingMutator
     )
 
+@JSONableFunc
 def single_xo_factory(treebank: 'Treebank'):
     return MutatorMutator(
         NullMutatorFactory, treebank,

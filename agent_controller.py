@@ -7,7 +7,7 @@ from world import World
 from tree_factories import TreeFactory #, CompositeTreeFactory, TreeFactoryFactory
 from gp import GPTreebank
 from trees import Tree
-from observatories import ObservatoryFactory
+# from observatories import ObservatoryFactory ## DEL ME XXX
 from guardrails import GuardrailManager
 from dataclasses import dataclass
 from world import World
@@ -18,9 +18,10 @@ from gymnasium.spaces.utils import flatten, flatten_space #, unflatten
 from gp_fitness import SimpleGPScoreboardFactory
 from repository import Archive, Publication
 from model_time import ModelTime
-from action import Action, GPNew, GPContinue, UseMem, StoreMem, Publish, Read, PunchSelfInFace
+from action import Action, GPNew, GPContinue, UseMem, StoreMem, Publish, Read
 from observation import Observation, GPObservation, Remembering, LitReview
 from mutators import random_mutator_factory
+from sb_statfuncs import mean, mode, std, infage, nanage, Quantile
 from icecream import ic
 
 @dataclass
@@ -30,6 +31,141 @@ class Result:
 
     
 class AgentController(Env):
+    @classmethod
+    def from_json(cls, 
+                  json_, 
+                  world=None,
+                  time=None, 
+                  name=None, 
+                  prefix=None,
+                  sb_factory=None, 
+                  tree_factory_classes=None,
+                  agent_indices=None,
+                  repository=None,
+                  gp_system=None,
+                  sb_statfuncs=None,
+                  rng=None,
+                  mutators: Sequence[Callable]=None
+                ):
+        json_args = [
+            json_[[
+                "agent_templates", 
+                prefix, 
+                "controller", 
+                pram
+            ]]
+            for pram
+            in [
+                "mem_rows",
+                "mem_tables",
+                'dv',
+                "def_fitness",
+                "out_dir",
+                "record_obs_len"
+            ]
+        ]
+        args = [
+            world, time, name
+        ] + json_args[:4] + [
+            sb_factory, tree_factory_classes, rng, 
+            json_.get("agent_indices", agent_indices), 
+            repository
+        ] + json_args[4:]
+        kwargs = {
+            **{
+                pram: json_.get([
+                    "agent_templates", prefix, "controller", pram
+                ])
+                for pram
+                in [
+                    "max_readings",
+                    "num_treebanks",
+                    "short_term_mem_size",
+                    "value",
+                    "max_volume",
+                    "max_max_size",
+                    "max_max_depth", 
+                    "theta",
+                    "gp_vars_core",
+                    "gp_vars_more",
+                    "ping_freq",
+                    "guardrail_base_penalty",
+                    "mem_col_types"
+                ]
+            },
+            **{
+                "gp_system": gp_system,
+                "mutators":  mutators,
+                "prefix": prefix
+            }
+        }
+        # gets all the statfuncs explicitly listed in json
+        kwargs['sb_statfuncs'] = [
+            sb_statfuncs[sbsf['name']] if len(sbsf)==1 else sb_statfuncs[sbsf['name']](**sbsf)
+            for sbsf
+            in json_[["agent_templates", prefix, "controller", "sb_statfuncs"]]
+        ] 
+        # generates a number of quantile statfuncs all at once from the int value
+        # "sb_statfuncs_quantiles"
+        kwargs['sb_statfuncs'] += sb_statfuncs['Quantile'].multi(
+            json_.get(
+                ["agent_templates", prefix, "controller", "sb_statfuncs_quantiles"], 
+                0
+            )
+        )
+        kwargs['mutators'] = [
+            mutators[mut['name']] if len(mut)==1 else mutators[mut['name']](**mut)
+            for mut
+            in json_[["agent_templates", prefix, "controller", "mutators"]]
+        ] 
+        if isinstance(kwargs["mem_col_types"], dict):
+            kwargs["mem_col_types"] = {
+                k: np.dtype(v) for k, v in kwargs["mem_col_types"].items()
+            }
+        elif isinstance(kwargs["mem_col_types"], list):
+            kwargs["mem_col_types"] = [
+                np.dtype(v) for v in kwargs["mem_col_types"]
+            ]
+        elif isinstance(kwargs["mem_col_types"], str):
+            kwargs["mem_col_types"] = np.dtype(kwargs["mem_col_types"])
+        else:
+            raise TypeError(
+                "`mem_col_types` should be a dict[str, str], a list[str], or a str"
+            )
+        return cls(*args, **kwargs)
+    
+    @property
+    def json(self) -> dict:
+        memory_json = self.memory.json
+        return { 
+            'name': self.name,
+            'mem_rows': len(self.memory.tables[0]),
+            'mem_tables': len(self.memory.tables),
+            'dv': self.dv,
+            'def_fitness': self.def_fitness,
+            'tree_factory_classes': [tfc.__name__ for tfc in self.tree_factory_classes],
+            'agent_indices': self.agent_names,
+            'out_dir': str(self.out_dir.parent),
+            'record_obs_len': self.record_obs_len,
+            'max_readings': self.max_readings,
+            'mem_col_types': memory_json['types'],
+            'gp_system': self.gp_system.__name__,
+            'sb_statfuncs': [sbsf.json for sbsf in self.sb_statfuncs],
+            'num_treebanks': len(self.gptb_list),
+            'short_term_mem_size': self.short_term_mem_size,
+            'value': memory_json['value'], 
+            'max_volume': self.max_volume,
+            'max_max_size': memory_json['max_size'],
+            'max_max_depth': memory_json['max_depth'],
+            'theta': self.theta,
+            'gp_vars_core': self.gp_vars_core,
+            'gp_vars_more': self.gp_vars_more,
+            'guardrail_base_penalty': self.guardrail_manager.base_penalty,
+            'ping_freq': self.ping_freq,
+            'mutators': [mut.json for mut in self.mutators],
+            'args': self.args, 
+            'kwargs': self.kwargs
+        }
 
     def __init__(self, 
             world: World,
@@ -40,7 +176,7 @@ class AgentController(Env):
             dv: str,
             def_fitness: str,
             sb_factory: SimpleGPScoreboardFactory, # Needs to be more general XXX TODO
-            obs_factory: ObservatoryFactory,
+            # obs_factory: ObservatoryFactory,
             tree_factory_classes: list[type[TreeFactory]],
             rng: np.random.Generator,
             agent_names: dict[str, int],
@@ -49,13 +185,12 @@ class AgentController(Env):
             record_obs_len: int,
             max_readings: int = 5,
             mem_col_types: Sequence[np.dtype]|Mapping[str, np.dtype]|np.dtype|None=None,
-            gp_system=type[GPTreebank],
+            gp_system: type[GPTreebank]=GPTreebank,
             sb_statfuncs: Sequence[Callable]=None,
             num_treebanks: int = 2,
             short_term_mem_size: int = 5,
             # fitness_measures = None,
             value: str="fitness", 
-            # tree_factory_factories: list[TreeFactoryFactory]=None,
             # max_actions: int = 40, ## ??? XXX
             max_volume: int = 50_000,
             max_max_size: int = 400, ## ??? XXX
@@ -63,10 +198,10 @@ class AgentController(Env):
             theta: float = 0.05,
             gp_vars_core: list[str] = None,
             gp_vars_more: list[str] = None,
-            device: str='cpu',
             guardrail_base_penalty = 1.0,
             ping_freq=5,
             mutators: Sequence[Callable]=None,
+            prefix: str=None,
             *args, **kwargs
         ):
         """What should be in __init__, and what in reset?
@@ -75,10 +210,11 @@ class AgentController(Env):
         self.world = world
         self.model = None
         self.t = time
-        self.np_random = rng # Note, np_random is a @property setter in Env
+        self.np_random = ic(rng) # Note, np_random is a @property setter in Env
         self.name = name
+        self.prefix = prefix if prefix else name 
         self.dv = dv
-        self.out_dir = out_dir / self.name
+        self.out_dir = Path(out_dir) / self.name
         # GP CLASS SETUP
         self.gp_system = gp_system
         self.def_fitness = def_fitness
@@ -104,31 +240,17 @@ class AgentController(Env):
             'wt_fitness', 'wt_size', 'wt_depth', "crossover_rate", "mutation_rate", 
             "mutation_sd", "max_depth", "max_size", "temp_coeff", "pop", "elitism", 
             'obs_start', 'obs_stop', 'obs_num'
-        ]
+        ] 
         self.sb_statfuncs = sb_statfuncs if sb_statfuncs else [
             # calculating std of a col of len 1 or 0 returns nan. The Guardrails
             # on `action.GPNew` and `action.GPContinue` should prevent Scoreboards
             # under this length, but filtering out infs and nans may result in 
             # short cols
-            # lambda col: col.mean() if len(col) > 0 else 0.0,
-            # lambda col: col.mode().mean() if len(col) > 0 else 0.0,
-            # # XXX TODO - there quantiles are acting weird
-            # *[(lambda col: col.quantile(q) if len(col) > 0 else 0.0) for q in np.linspace(0.0, 1.0, 9)],
-            # lambda col: col.std() if len(col) > 1 else 0.0,
-            lambda col: col[np.isfinite(col)].mean() if len(col[np.isfinite(col)]) > 0 else 0.0,
-            lambda col: col[np.isfinite(col)].mode().mean() if len(col[np.isfinite(col)]) > 0 else 0.0,
-            # XXX TODO - there quantiles are acting weird
-            *[(lambda col: col[np.isfinite(col)].quantile(q) if len(col[np.isfinite(col)]) > 0 else 0.0) for q in np.linspace(0.0, 1.0, 9)],
-            lambda col: col[np.isfinite(col)].std() if len(col[np.isfinite(col)]) > 1 else 0.0,
+            mean, mode, *Quantile.multi(9), std, 
             # The `Observation` which uses these statfuncs ignores all `nan`,
             # `inf`, and `-inf` values, so it is useful to also note how many
             # of these values there are  
-            # nanage,
-            # infage
-            # lambda col: col.isna().mean(),
-            # lambda col: np.isinf(col).mean()
-            lambda col: self.nanage(col),
-            lambda col: self.infage(col)
+            infage, nanage
         ]
         # MEMORY SET UP
         self.memory = Archive(
@@ -139,21 +261,21 @@ class AgentController(Env):
             tables     = mem_tables,
             value      = value, 
             max_size   = max_max_size,
-            max_depth  = max_max_depth,
-            **kwargs
+            max_depth  = max_max_depth
         )
         # READING SET UP
         self.max_readings = max_readings
         self.repository = repository
         self.repository._add_user(self)
-        self.obs_factory = obs_factory
         self.tree_factory_classes = tree_factory_classes
+        self.args = args
+        self.kwargs = kwargs
     
     # ACTIONS
     def make_actions(self):
         self.actions: dict[str, Action] = {}
         self.actions["gp_new"]      = GPNew(self,
-                                            self.obs_factory,
+                                            self.world,
                                             self.tree_factory_classes,
                                             self.np_random,
                                             self.out_dir,
@@ -198,33 +320,33 @@ class AgentController(Env):
             {k: v.observation_space for k, v in self.observations.items()}
         )
 
-    def nanage(self, col):
-        nange = col.isna().mean()
-        if np.isnan(nange):
-            print('GARG '*40)
-            print(self.name)
-            print(col)
-            print('+'*100)
-            for i, tb in enumerate(self.gptb_list):
-                if tb is not None:
-                    print(i)
-                    print(tb.scoreboard)
-            print('BERF '*40)
-        return nange
+    # def nanage(self, col):
+    #     nange = col.isna().mean()
+    #     if np.isnan(nange):
+    #         print('GARG '*40)
+    #         print(self.name)
+    #         print(col)
+    #         print('+'*100)
+    #         for i, tb in enumerate(self.gptb_list):
+    #             if tb is not None:
+    #                 print(i)
+    #                 print(tb.scoreboard)
+    #         print('BERF '*40)
+    #     return nange
 
-    def infage(self, col):
-        infinge = np.isinf(col).mean()
-        if np.isnan(infinge):
-            print('POBB '*40)
-            print(self.name)
-            print(col)
-            print('+'*100)
-            for i, tb in enumerate(self.gptb_list):
-                if tb is not None:
-                    print(i)
-                    print(tb.scoreboard)
-            print('GWEK '*40)
-        return infinge
+    # def infage(self, col):
+    #     infinge = np.isinf(col).mean()
+    #     if np.isnan(infinge):
+    #         print('POBB '*40)
+    #         print(self.name)
+    #         print(col)
+    #         print('+'*100)
+    #         for i, tb in enumerate(self.gptb_list):
+    #             if tb is not None:
+    #                 print(i)
+    #                 print(tb.scoreboard)
+    #         print('GWEK '*40)
+    #     return infinge
 
     @property
     def observation_space(self):

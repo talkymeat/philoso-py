@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Collection
-from typing import List, Callable, Union
+from typing import List, Callable, Union, Any
 from gymnasium.spaces import Space, Box
 
-from observatories import SineWorldObservatory
+from observatories import SineWorldObservatory, Observatory
 
 #import matplotlib.pyplot as plt
 import numpy as np
@@ -14,6 +14,7 @@ import itertools, math
 from dataclasses import dataclass
 from utils import list_transpose, linear_interpolated_binned_means
 from rl_bases import Actionable
+from hd import HierarchicalDict as HD
 
 
 class World(Actionable):
@@ -25,6 +26,25 @@ class World(Actionable):
 
     def __init__(self, *args, seed: int|np.random.Generator|None=None, **kwargs):
         self.np_random = np.random.Generator(np.random.PCG64(seed))
+
+    @classmethod
+    @abstractmethod
+    def from_json(cls, json) -> 'World':
+        pass
+
+    @abstractmethod
+    def __call__(self, *args: Any, **kwargs: Any) -> Observatory:
+        pass
+
+    @property
+    @abstractmethod
+    def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
+        pass
+
+    @property
+    @abstractmethod
+    def wobf_guardrail_params(self):
+        pass
 
     @property
     def np_random(self) -> int:
@@ -888,6 +908,10 @@ class SineWorld(World):
             self.phase += incr
             self.phase %= (2 * np.pi)/self.wavelength
         
+        @property
+        def json(self):
+            return [self.wavelength, self.amplitude, self.phase]
+        
     def __init__(self, 
             radius: float,
             max_observation_size: int,
@@ -915,6 +939,46 @@ class SineWorld(World):
             dtype=self.dtype
         )
         self.sine_waves = [SineWorld.SineWave(*params) for params in sine_wave_params]
+
+    @property
+    def json(self) -> dict:
+        return {
+            'radius': self.range[1],
+            'max_observation_size': self.max_observation_size,
+            'noise_sd': self.noise_sd,
+            'sine_wave_params': [sw.json for sw in self.sine_waves],
+            'seed': self.np_random.bit_generator.seed_seq.entropy,
+            'speed': self.speed,
+            'dtype': str(np.dtype(self.dtype)),
+            'iv': self.iv,
+            'dv': self.dv
+        }
+
+    @classmethod
+    def from_json(cls, json: HD):
+        args = [
+            json[['world_params', pram]] for pram in [
+                'radius', 'max_observation_size', 'noise_sd'
+            ]
+        ] + json[['world_params', 'sine_wave_params']]
+        kwargs = {
+            k: json[['world_params', k]] for k in [
+                'seed', 'speed', 'dtype', 'iv', 'dv'
+            ] if ['world_params', k] in json
+        }
+        return cls(*args, **kwargs)
+    
+    @property
+    def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
+        return self.range, self.range, (2, self.max_observation_size)
+
+    @property    
+    def wobf_guardrail_params(self):
+        return (
+            {'name': '_', '_no_make': None}, 
+            {'name': '_', '_no_make': None}, 
+            {'name': 'obs_len', 'min': 2, 'max': np.inf}
+        )
 
     def act(self, params: np.ndarray):
         super().act(params)
@@ -961,6 +1025,20 @@ class SineWorld(World):
         if self.speed:
             for sw in self.sine_waves:
                 sw.step(self.speed)
+    
+    def __call__(
+            self, start: float, stop: float, num: int,  **kwargs: Any
+        ) -> Observatory:
+        if start > stop:
+            start, stop = stop, start
+        return SineWorldObservatory(
+            self.iv,
+            self.dv,
+            world=self,
+            start = start if start >= self.range[0] else self.range[0],
+            stop  = stop  if stop  <= self.range[1] else self.range[1],
+            num = int(num) if num <= self.max_observation_size else self.max_observation_size
+        )
 
 
 def main():

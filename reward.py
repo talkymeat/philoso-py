@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from m import MDict
 from icecream import ic
 from utils import _i
+from jsonable import SimpleJSONable
+from hd import HierarchicalDict as HD
 
 import numpy as np
 import pandas as pd
@@ -13,7 +15,7 @@ def _print(*args, **kwargs):
     if DEBUG:
         print(*args, **kwargs)
 
-class Reward(ABC):
+class Reward(SimpleJSONable, ABC):
     @property
     @abstractmethod
     def NAME(cls):
@@ -44,6 +46,32 @@ class Reward(ABC):
     @abstractmethod
     def get_reward_data(self):
         pass
+
+    @property
+    def json(self)->dict:
+        return {
+            "name": self.NAME
+        }
+
+    @classmethod
+    def from_json(cls, json_, *args, model=None, **kwargs):
+        json_ = HD(json_)
+        cls.addr = ['reward_params', cls.NAME]
+        return cls(
+            model,
+            *[
+                json_.get(cls.addr+[arg], None) 
+                for arg 
+                in ic(cls.args)
+            ],
+            *(json_.get(cls.addr+[cls.stargs], ()) if cls.stargs else ()),
+            **{
+                kwarg: json_[cls.addr+[kwarg]] 
+                for kwarg 
+                in cls.kwargs 
+                if cls.addr+[kwarg] in json_
+            }
+        )
 
 
 class Curiosity(Reward):
@@ -94,6 +122,7 @@ class Curiosity(Reward):
     True
     """
     NAME = 'Curiosity'
+    args = ["def_fitness", "first_finding_bonus"]
 
     def __init__(self, 
             model,
@@ -106,7 +135,10 @@ class Curiosity(Reward):
         self.agents: dict[str, 'Agent'] = {a.name: a for a in self.model.agents}
         self.best_mean_fitness_dict = {k: 0.0 for k in self.agents.keys()}
         self.def_fitness = def_fitness
-        self.first_finding_bonus = first_finding_bonus
+        ic.enable()
+        self.first_finding_bonus = ic(first_finding_bonus)
+        ic(self.first_finding_bonus)
+        ic.disable()
     
     def get_reward_data(self):
         return {nm: self.agent_reward_data(a) for nm, a in self.agents.items()}
@@ -127,7 +159,14 @@ class Curiosity(Reward):
             self.best_mean_fitness_dict[agent.name]
         )
         return rew
-
+    
+    @property
+    def json(self):
+        return {
+            'def_fitness': self.def_fitness,
+            'first_finding_bonus': self.first_finding_bonus,
+            **super().json
+        }
             
 class Renoun(Reward):
     """Gathers rewards for all agents besed on their contributin to shared repositories
@@ -159,7 +198,7 @@ class Renoun(Reward):
 
 
 class GuardrailCollisions(Reward):
-    NAME = 'Guardrails'
+    NAME = 'GuardrailCollisions'
 
     def __init__(self, 
             model,

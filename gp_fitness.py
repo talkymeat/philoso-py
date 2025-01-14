@@ -609,6 +609,19 @@ class SimpleGPScoreboardFactory:
         self.def_fitness = def_fitness
         self.best_outvals = best_outvals
         self.dv = dv
+
+    @classmethod
+    def from_json(cls, json):
+        defit = {'def_fitness': json[['sb_factory_params', 'def_fitness']]} if ['sb_factory_params', 'def_fitness'] in json else {}
+        return cls(*[json[['sb_factory_params', pram]] for pram in ['best_outvals', 'dv']], **defit)
+    
+    @property
+    def json(self):
+        return {
+            "def_fitness": self.def_fitness,
+            "best_outvals": self.best_outvals,
+            "dv": self.dv
+        }
     
     @property
     def num_sb_weights(self):

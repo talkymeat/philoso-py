@@ -8,24 +8,15 @@ import torch
 from typing import Sequence, Collection, Mapping # List, Callable, 
 from observatories import *
 from tree_factories import *
-from tree_funcs import *
-# from utils import collect
-# from logtools import Stopwatch
+from tree_funcs import * 
 from tree_errors import UserIDCollision
-# import pickle
-# from datetime import datetime
-# from time import time
-# from tree_iter import DepthFirstBottomUp as DFBU
-# import json
-# from string import ascii_lowercase as lcase
-# import os
-# from pathlib import Path
 from model_time import ModelTime
 from typing import Protocol
 from collections import deque
 from m import MDict
 from functools import reduce
 from icecream import ic
+from utils import simplify
 
 class PublicationRewardFunc(Protocol):
     """Typically, reward should be positive if the submission is successfully
@@ -46,6 +37,8 @@ def null_reward_func(self, index=-1, **measures) -> float:
     return 0.0
 
 class Archive(TypeLabelledTreebank): #M #P
+    ESSENTIAL_COLS = ['t', 'exists', 'tree']
+
     def __init__(self, 
             cols: Sequence[str],  #M #P
             rows: int,  #M #P
@@ -57,9 +50,13 @@ class Archive(TypeLabelledTreebank): #M #P
             max_size: int = 1000,
             max_depth: int = 1000
         ):
+        if types is None:
+            types = np.float64
+        self.types = types
         self._initialise_df(rows, cols, types)
         self._init_multi_dfs(tables)
         self._validate_cols(cols, value)
+        self.value = value
         self.rows = rows
         # observations are a 3d np.ndarray, tables x rows x the length of 
         # the user-provided cols, plus 1 for the tree ages
@@ -73,6 +70,35 @@ class Archive(TypeLabelledTreebank): #M #P
         super().__init__()
         self.N = GPNonTerminal
         self.T = GPTerminal
+
+    @property
+    def _common_json(self) -> dict:
+        noncore = self.noncore
+        return {
+            'cols': list(noncore.columns),
+            'rows': len(noncore),  
+            'types': self.noncore_types,
+            'tables': len(self.tables), 
+            'value': self.value, 
+        }
+
+    @property
+    def json(self) -> dict:
+        return {
+            **self._common_json,
+            **{
+                'max_size': self.max_size,
+                'max_depth': self.max_depth
+            }
+        }
+    
+    @property
+    def noncore(self):
+        return self.tables[0].drop(self.ESSENTIAL_COLS, axis=1)
+    
+    @property
+    def noncore_types(self):
+        return simplify([str(dtype) for dtype in self.noncore.dtypes])
 
     def observe(self):
         return np.array([self.observe_journal(journal) for journal in self.tables])
@@ -188,6 +214,7 @@ class Publication(Archive):
     REWARD_FUNCS = {
         'ranked': rank_reward_func_factory
     } # other possibilities: sd, time-lagged sd, composite XXX
+    ESSENTIAL_COLS = ['credit', 't', 'exists', 'tree']
 
     def __init__(self, 
             cols: Sequence[str],  #M #P
@@ -200,7 +227,14 @@ class Publication(Archive):
             reward: PublicationRewardFunc|str|None=None,  #P
             decay: float=0.95
         ):
-        super().__init__(cols+['credit'], rows, model_time, value=value, types=types, tables=tables)
+        super().__init__(
+            cols+([] if 'credit' in cols else ['credit']), 
+            rows, 
+            model_time, 
+            value=value, 
+            types=types, 
+            tables=tables
+        )
         # observations are a 3d np.ndarray: as with Archive, the first 2 dims are
         # tables & rows x, but now the cols are:
         # *   the length of the user-provided cols
@@ -215,7 +249,10 @@ class Publication(Archive):
         if decay > 1 or decay < 0:
             raise ValueError(f'Decay must be between 0 and 1: {decay} is invalid')
         self.decay = decay
-        if isinstance(self._reward, str):
+        if isinstance(self._reward, Callable):
+            self.reward_name = self._reward.__name__
+        elif isinstance(self._reward, str):
+            self.reward_name = self._reward
             match self._reward:
                 case 'ranked':
                     self._reward = self.__class__.REWARD_FUNCS['ranked'](rows)
@@ -224,8 +261,74 @@ class Publication(Archive):
                         self._reward = self.__class__.REWARD_FUNCS[reward]
                     else:
                         raise ValueError(f"Reward function '{self._reward}' not recognised")
+        else:
+            raise ValueError(f"Reward function '{self._reward}' not a string or a Callable")
         self._agents = pd.DataFrame({'agent': [], 'reward': []}) # P
         self.value = value
+
+    @classmethod
+    def from_json(cls, json, time=None, agent_names=None):
+        if not time or not isinstance(time, ModelTime):
+            raise AttributeError('A ModelTime object must be passed as `time`')
+        if not agent_names or not isinstance(agent_names, dict) or sum([(not (isinstance(name, str) and isinstance(i, int))) for name, i in agent_names.items()]):
+            raise AttributeError('A dict mapping strings to ints must be passed as `agent_names`')
+        cols = json.get(
+            ['publication_params', 'cols'], 
+            (
+                json.get(['publication_params', 'gp_vars_core'], []) 
+                + json.get(['publication_params', 'gp_vars_more'], [])
+            )
+        )
+        if not cols:
+            raise ValueError(
+                "publication_params must have at least one of " +
+                "'cols', 'gp_vars_core', and 'gp_vars_more'"
+            )
+        args = [
+            cols,
+            json[['publication_params', 'rows']],
+            time,
+            agent_names
+        ]
+        kwargs = {
+            pram: json[['publication_params', pram]] 
+            for pram 
+            in [
+                'tables', 
+                'reward', 
+                'value', 
+                'decay'
+            ] 
+            if [
+                'publication_params', 
+                pram
+            ] in json
+        }
+        if ['publication_params', 'types'] in json:
+            types = json[['publication_params', 'types']]
+            if isinstance(types, dict):
+                types = {k: np.dtype(v) for k, v in types.items()}
+            elif isinstance(types, list):
+                types = [np.dtype(v) for v in types]
+            elif isinstance(types, str):
+                types = np.dtype(types)
+            else:
+                raise TypeError(
+                    '`types` must be a dict of strings, a list of strings, a string, or None'
+                )
+            kwargs['types'] = types
+        return cls(*args, **kwargs)
+
+    @property
+    def json(self) -> dict:
+        return {
+            **self._common_json,
+            **{
+                'agent_indices': self.agent_names, 
+                'reward': self.reward_name,
+                'decay': self.decay
+            }
+        }
 
     def add_users(self, users):
         """Do not use with a running model. that is a feature not yet implemented"""
