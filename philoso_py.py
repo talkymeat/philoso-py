@@ -57,45 +57,148 @@ class Model:
         
     @property
     def json(self)->dict:
+        """Outputs a json representation of the initial parameters of the
+        Model, so that it can be recreated from the json. This includes
+        generating json for objects of other philoso.py classes, which are
+        passed into the `Model.__init__` method
+
+        >>> # test me 
+        """
+        # `Model` contains `Agent` objects, with `AgentControllers`; 
+        # the output JSON can contain parameters for single agents,
+        # or populations of agents that start with the same paraneters.
+        # Standardly, agents in a population will have a common naming 
+        # prefix, `prefix`, and a number, such that agents are numbered
+        # from 0 to n-1. The name of the agent, then, will be `prefix`_`idx`.
+        # However, the Model itself does not necessarily explicitly 
+        # represent Agents as belonging to populations, so this code 
+        # identifies populations, which can be represented with a single 
+        # JSON template, and single agents, which need a JSON 
+        # representation of their own.
+        # -------
+        # `pop_max_idx` records the highest observed `idx` value for each
+        # population. This should be equal to the population size, minus 1  
         pop_max_idxs = {}
         pop_sizes = {}
+        # `pop_idxs` records the observed `idx` values for a population,
+        # and is only actually used if it isn't just all the ints in
+        # `range(n)` where `n` is the population size
         pop_idxs = {}
-        nonpop_ag_names = []
+        # `nonpop_ag_names` records names of Agents not included in
+        # populations: if there are any such agents, this is directly
+        # included in the output JSON
+        nonpop_ag_names = [] 
+        # records the names of populations - the prefixes in agent names.
+        # If there are any populations of `n` greater than 1, this is
+        # included in the output JSON 
         pop_names = []
+        # The actual JSON representations of Agent objects, which will be
+        # included in the output JSON 
         agent_templates = {}
+        # If any Agents at first appear to belong to a population, but 
+        # then turn out not to be representable with a single JSON
+        # template, the population will be split into single Agents.
+        # This list records the populations for which this is done 
         split_pops = []
+        # Loop over all agents...
         for a in self.agents:
+            # ... and use their own .json property to JSONise them
             agent_json = a.json
+            # Agents have `name` and `prefix` properties ... 
             a_name = agent_json['controller']['name']
+            # ... but if the AgentController has no `prefix`, it will 
+            # just use `name` for both. ...
             a_prefix = a.prefix
+            idx = -1
             if a_name==a_prefix:
+                # ... However, if the `{prefix}_{idx}` format is 
+                # followed, we can split the name to get the prefix
                 if match := re.fullmatch(r'(.*)_([0-9]+)', a_name):
                     agent_json['controller']['prefix'] = a_prefix = match[1]
+                    idx = match[2]
+            # If at this point the name and prefix are still the same, 
+            # this Agent must be singly represented as not belonging to 
+            # a population
             if a_name==a_prefix:
                 nonpop_ag_names.append(a_name)
                 agent_templates[a_name] = agent_json
             else:
-                idx = int(a_name[len(a_prefix)+1:])
+                # Use regex to get idx, if it hasn't already been got
+                if idx < 0:
+                    idx = re.fullmatch(r'(.*)_([0-9]+)', a_name)[2]
+                # The first disjunct indicates that this branch is for 
+                # Agents that are the first of their population to be
+                # recorded, since in this case the JSON template has yet
+                # to be added to `json_templates`. This also applies in 
+                # the case of non-population Agents, for which prefix
+                # and name are identical, as these must be individually
+                # recorded. 
+                # However, ...
                 if (a_prefix not in pop_names) or (a_prefix in split_pops):
-                    pop_names.append(a_prefix)
-                    agent_templates[a_prefix] = agent_json
+                    # ...it's ALSO for Agents that appear to be in
+                    # populations, but that population has been split into 
+                    # non-population Agents, because they don't all have 
+                    # the same template: In this case, `name` is used
+                    # instead of `prefix`. This is the purpose of the 
+                    # second disjunct above, and is why we need `id`
+                    # below to behave differently in these two cases.
+                    id = a_name if a_prefix in split_pops else a_prefix
+                    # XXX waitasec, should this be nonpop_ag_names in 
+                    # some cases? XXX
+                    pop_names.append(id)
+                    # Add the template to the JSON
+                    agent_templates[id] = agent_json
+                # if the new agent IS apparently a member of a population,
+                # AND that population has already had a template recorded
+                # in `agent_templates`, we need to check subsequent observed
+                # agents, to ensure that they *do* use the same template.
+                # The comparison is made using HierarchicalDict.eq_except
+                # because we *do* expect that the output JSON will include
+                # the Agent's `name`, which will be different for each 
+                # Agent even within a population, so the comparison should
+                # exclude this 
                 elif not HD(agent_json).eq_except(agent_templates[a_prefix], 'name'):
+                    # Uh-oh, the Agent appeared to be a population member, 
+                    # but it differs from the others in the same 
+                    # population. So, we treat is as non-population,
+                    # but also we need to do the same with previous and
+                    # subsequent members of the same apparent population
+                    # -----
+                    # Record the template, using the agent name ...
                     agent_templates[a_name] = agent_json
+                    # ... and record the name as a `nonpop_ag_name`
                     nonpop_ag_names.append(a_name)
+                    # ... but now all the agents already recorded as members of 
+                    # populations have to be individually recorded as non-pop
+                    # agents. There's maybe more elegant ways of going about this,
+                    # but this will do for now b=ouo
                     for idx in pop_idxs[a_prefix]:
+                        # Set them all up with individual templates...
                         agent_templates[f'{a_prefix}_{idx}'] = deepcopy(agent_templates[a_prefix])
+                        # And add them to the nonpop names
                         nonpop_ag_names.append(f'{a_prefix}_{idx}')
+                    # then clear out all the records of them as members of a population 
                     del agent_templates[a_prefix]
                     del pop_sizes[a_prefix]
                     del pop_max_idxs[a_prefix]
                     del pop_idxs[a_prefix]
+                    # Note that this is a former population that has 
+                    # been split
                     split_pops.append(a_prefix)
+                    # and remove from the list of populations
                     pop_names.remove(a_prefix)
+                # Now, some bookkeeping. Update the max index if the
+                # current index is the highest seen so far for its prefix... 
                 pop_max_idxs[a_prefix] = max(idx, pop_max_idxs.get(a_prefix, 0))
+                # ... increment the population size ...
                 pop_sizes[a_prefix] = pop_sizes.get(a_prefix, 0) + 1
+                # ... and add the index to the list of indices.
                 pop_idxs[a_prefix] = pop_idxs.get(a_prefix, []) + [idx]
         for p in pop_names:
-            if pop_max_idxs[p] >= pop_sizes[p]:
+            # The max index for each population should be one less than
+            # the pop size. If not, make individual JSONs for each agent
+            # in the population, and treat them as non-population agents 
+            if pop_max_idxs[p] != pop_sizes[p]+1:
                 for idx in pop_idxs[p]:
                     agent_templates[f'{p}_{idx}'] = deepcopy(agent_templates[p])
                     nonpop_ag_names.append(f'{p}_{idx}')
@@ -104,11 +207,24 @@ class Model:
                 del pop_max_idxs[p]
                 del pop_idxs[p]
                 pop_names.remove(p)
+        # Each template needs to show the population size. For templates
+        # that apply to multiple agents, there should not be a 'name'
+        # field 
         for pref, tmpt in agent_templates.items():
             tmpt['n'] = pop_sizes.get(pref, 1)
             if tmpt['n'] > 1:
                 del tmpt['controller']['name']
-        print(self.out_dir, 'XXXX')
+        # Besides the agents, it is also necessary to return a number
+        # of other params that are needed to recreate the model. These
+        # are either available as object attributes of the Model, or
+        # of other objects which are attrs of the Model. The 
+        # `HierarchicalDict` class allows `list`s of keys to be used
+        # to address dicts within dicts, and lower-level dicts inherit
+        # key-value pairs from higher-level ones, unless they have
+        # overriding key-value pairs. The `HD.simplify()` call moves
+        # pairs into lower-level dicts, consolidating any identical
+        # pairs in different dicts on different branches to their
+        # nearest common parent, and removes any which are redundant
         return HD({
             "seed": self.rng.bit_generator.seed_seq.entropy,
             "out_dir": str(ic(self.out_dir)),
@@ -315,6 +431,80 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
     return model
 
 class ModelFactory:
+    """A class used to generate and run philoso.py Models from JSON
+    files or objects. This could have been done statically, with
+    class methods or functionally, but this approach was chosen so users
+    can add custom Worlds, networks, mutators, etc. Custom classes
+    and functions are added when the initialiser is run, and 
+    then multiple Models can be run from the same ModelFactory.
+
+    Note that all the Attributes listed below are class attributes,
+    but are overriden by instance attributes of the same name on
+    initialisation. The instance attributes comprise the same values
+    as the class attributes, plus any values added on initialisation
+    via the parameters of the same name
+    
+    Parameters
+    ----------
+    worlds : Sequence[class[World]]
+        Custom `World` classes to be added to the `worlds` attribute
+    sb_factories : Sequence[class[GPScoreboardFactory]]
+        Custom `GPScoreboardFactory` classes to be added to the 
+        `sb_factories` attribute
+    network_classes : Sequence[class[torch.Module]]
+        Custom neural network classes to be added to the
+        `network_classes` attribute
+    tree_factory_classes : Sequence[class[TreeFactory]]
+        Custom `TreeFactory` classes to be added to the 
+        `tree_factory_classes` attribute
+    mutators : Sequence[Callable]
+        Custom `mutator` functions to be added to the `mutators`
+        attribute
+    gp_systems : Sequence[Treebank]
+        Custom GP Systems classes to be added to the `gp_systems` 
+        attribute
+    rewards : Sequence[Reward]
+        Custom `Reward` classes to be added to the `rewards` attribute
+
+    Attributes
+    ----------
+    worlds : dict[str, class[World]]
+        `dict` to allow JSON data to specify which `World` class (which
+        can be a provided class, or custom) should be used in a `Model`
+    sb_factories : dict[str, class[GPScoreboardFactory]]
+        `dict` to allow JSON data to specify which `GPScoreboardFactory` 
+        class (whichcan be a provided class, or custom) should be used 
+        in a `Model`, as part of the Genetic Programming system. A 
+        scoreboard includes a pipeline of functions that calculate 
+        measures of model performance, or other measures of 
+        characteristics of models (trees) generated by GP. These are
+        mainly used to calculate fitness, but are also useful for allowing
+        the RL system to observe characteristics of the GP outputs
+    network_classes : dict[str, class[torch.Module]]
+        `dict` to allow JSON data to specify which pytorch Module class 
+        should be used in a `Model`, to provide the Neural Networks
+        that control the `Agents`
+    tree_factory_classes : dict[str, class[TreeFactory]]
+        `dict` to allow JSON data to specify which `TreeFactory` class 
+        (which can be a provided class, or custom) should be used in a 
+        `Model` to initialise the GP system with random trees
+    mutators : dict[str, Callable]
+        `dict` to allow JSON data to specify which mutator functions 
+        (whichcan be provided or custom) should be used in a `Model`'s
+        GP system to mutate trees when they are copied
+    gp_systems : dict[str, Treebank]
+        `dict` to allow JSON data to specify which GP system (provided 
+        or custom) should be used in by `Model`'s `Agents` to form 
+        generalisations over their `World`
+    rewards : dict[str, Reward]
+        `dict` to allow JSON data to specify which `Reward` classes
+        generate rewards for `Agent`'s RL systems, based on the state 
+        of the model as a whole
+    """
+
+    # `nd` is a function that turns a collection of objects (classes
+    # or functions) with a `__name__` attr into a dictionary in which 
+    # the `__name__`s are the keys and the objects are the values 
     worlds = nd(SineWorld)
     sb_factories = nd(
         SimpleGPScoreboardFactory, 
@@ -341,60 +531,181 @@ class ModelFactory:
 
     def __init__(self, 
             worlds:Sequence=None, 
-            sb_factories:dict=None, 
-            network_classes:dict=None, 
-            tree_factory_classes:dict=None,
-            mutators:dict=None,
-            gp_systems:dict=None,
-            sb_statfuncs:dict=None,
-            rewards:dict=None
+            sb_factories:Sequence=None, 
+            network_classes:Sequence=None, 
+            tree_factory_classes:Sequence=None,
+            mutators:Sequence=None,
+            gp_systems:Sequence=None,
+            sb_statfuncs:Sequence=None,
+            rewards:Sequence=None
         ):
-        self.worlds = {**self.worlds, **(worlds or {})}
-        self.sb_factories = {**self.sb_factories, **(sb_factories or {})}
-        self.network_classes = {**self.network_classes, **(network_classes or {})}
-        self.tree_factory_classes = {**self.tree_factory_classes, **(tree_factory_classes or {})}
-        self.mutators = {**self.mutators, **(mutators or {})}
-        self.gp_systems = {**self.gp_systems, **(gp_systems or {})}
-        self.sb_statfuncs = {**self.sb_statfuncs, **(sb_statfuncs or {})}
-        self.rewards = {**self.rewards, **(rewards or {})}
+        # creates instance attributes out of all the class attribute
+        # dicts, with any values passed to the initialiser params added
+        # also 
+        self.worlds = {**self.worlds, **nd(*worlds or [])}
+        # `*param or []` unrolls `param` if param is not `None`, 
+        # otherwise unrolls *[]. `nd` takes its *args and makes a dict,
+        # such that each `arg` is a value, and `arg.__name__` as the key.
+        # `{**dic1, **dic2}` creates a combined dictionary with the keys
+        # and values of dic1 and dic2, with dic2 overriding dic1 in
+        # the case of key collisions 
+        self.sb_factories = {**self.sb_factories, **nd(*sb_factories or [])}
+        self.network_classes = {**self.network_classes, **nd(*network_classes or [])}
+        self.tree_factory_classes = {**self.tree_factory_classes, **nd(*tree_factory_classes or [])}
+        self.mutators = {**self.mutators, **nd(*mutators or [])}
+        self.gp_systems = {**self.gp_systems, **nd(*gp_systems or [])}
+        self.sb_statfuncs = {**self.sb_statfuncs, **nd(*sb_statfuncs or [])}
+        self.rewards = {**self.rewards, **nd(*rewards or [])}
     
-    def read_json(self, json_) -> HD:
+    def _read_json(self, json_: dict|str) -> HD:
+        """`ModelFactory` represents json data, not using the standard
+        built-in `dict` class, but a custom `dict` subclass, 
+        `HierarchicalDict`, (`HD`) in which `dicts` nested in `dicts`inherit 
+        or override key-value pairs in the parent `dict`, and lists
+        of keys can be passed as keys, such that:
+        
+        ```
+        dic[['a', 'b', 'c']]
+        ```
+        
+        is syntactic sugar for:
+
+        ```
+        dic['a']['b']['c']
+        ```
+
+        However, a valid input can be:
+        
+        1) a valid json string
+        2) a file address for a valid json file
+        3) a json-formatted python `dict`
+        4) a json-formatted HierarchicalDict
+
+        This method takes any of (1) to (4) and outputs (4)
+
+        Parameters
+        ----------
+
+        json_ : dict|HierarchicalDict|str
+            JSON data (in `str`, `dict`, or `HierarchicalDict` formats) 
+            or a str giving the location of a JSON file to provide all 
+            the parameters needed to create a philoso_py Model
+
+        Returns
+        -------
+        HierarchicalDict
+            A HierarchicalDict of the `json_` data.
+
+        """
         if not isinstance(json_, HD):
             if isinstance(json_, str):
+                if json_.strip()[0] in '[{':
+                    json_ = json.loads(json_)
                 with open(json_) as f:
                     json_ = json.load(f)
             json_ = HD(json_)
         return json_
 
     def from_json(self, json_: str|dict) -> Model:
-        json_ = self.read_json(json_)
+        """This represents the core functionality of the ModelFactory
+        class: it creates a ready-to-run philoso.py `Model` from a 
+        JSON input.
+
+        Parameters
+        ----------
+
+        json_ : dict|HierarchicalDict|str
+            JSON data (in `str`, `dict`, or `HierarchicalDict` formats) 
+            or a str giving the location of a JSON file to provide all 
+            the parameters needed to create a philoso_py Model
+
+        Returns
+        -------
+        Model
+        """
+        # ensure the json data is in HierarchicalDict format
+        json_ = self._read_json(json_)
+        # seed the random number generator with seed provided in json,
+        # or let numpy generate its own seed, if no seed value is 
+        # provided. The seed is printed for reproducibility.
+        seed = json_.get('seed', None)
+        match seed:
+            case 42:
+                print("DON'T PANIC")
+            case 69:
+                print("NICE")
+            case 420:
+                print(
+                    "BLAZE IT. Actually don't, at least not while you're coding. " +
+                    "Or do. I don't care. I'm not your mum."
+                )
+            case 666:
+                print("HAIL SATAN")
         dancing_chaos_at_the_heart_of_the_world = np.random.Generator(
             np.random.PCG64(json_.get('seed', None))
         )
-        world = self.worlds[json_['world']].from_json(json_)
         print(f'Seed: {dancing_chaos_at_the_heart_of_the_world.bit_generator.seed_seq.entropy}')
+        # `World` has a static method `from_json` which locates the branch
+        # of the json HierarchicalDict that contains the params for 
+        # creating a `World` instance, and creates an instance with those
+        # params
+        world = self.worlds[json_['world']].from_json(json_)
+        # So does ScoreboardFactory
         sb_factory = self.sb_factories[json_['sb_factory']].from_json(json_)
+        # ModelTime acts as a timekeeper for the model, and can be
+        # created with no params
         time = ModelTime()
+        # the agent_names key in json holds a list of names of agents
+        # that do not belong to a population (a population being two 
+        # or more Agents spawned using the a single json template)
         listed_names = json_.get('agent_names', [])
+        # We're going to make a list of all the agent names, including
+        # those that belong to populations - so rather than add the
+        # population-members to the list in `_json`, they are added to a 
+        # copy, which is made below 
         agent_name_list = list(listed_names)
+        # Iterate through the names of agent populations, which are
+        # listed in `agent_populations`, to add the names of all 
+        # agents in each population  
         for nom in json_[['agent_populations']]:
+            # For a population to have agents, the population template
+            # must include a positive value `n`, which gives the 
+            # population size. If `n` is greater than 1...
             if json_.get(["agent_templates", nom, "n"], 0) > 1:
+                # ... add each agent in the population's name to the
+                # agent_name_list as: 
+                # '{population name}_{0}' ... '{population name}_{n-1}'
                 agent_name_list += [
                     f'{nom}_{i}' for i in range(
                         json_[["agent_templates", nom, "n"]]
                     )
                 ]
             else:
+                # Otherwise, just add the population name, treating
+                # it as also being the name of the only agent in that
+                # population 
                 agent_name_list.append(nom)
+        # If the list has more members than `set(list)`, there are 
+        # duplicates ...
         if len(set(agent_name_list)) < len(agent_name_list):
+            # So check which names are duplicated
             for i, nm in enumerate(agent_name_list):
                 if nm in agent_name_list[i+1:]:
                     raise ValueError(
                         f"Duplicate name: {nm} in {agent_name_list}"
                     )
+        # A couple of the helper classes need dicts that reverse the map
+        # of agent names to indices in the agent list - e.g. Publication, 
+        # which is created next 
         agent_names_2_idxs = {name: i for i, name in enumerate(agent_name_list)}
+        # Publication is another class that can be created from JSON
         pub = Publication.from_json(json_, time=time, agent_names=agent_names_2_idxs)
+        # Cool, now it's time to make the actual Agents! First, an
+        # empty list to store them in 
         agents = []
+        # JSON should contain either a list of individual Agent names,
+        # or of population names, or both. Iterate through both lists
+        # to create the needed Agents 
         for agdata in ["agent_names", "agent_populations"]:
             for nom in json_.get([agdata], []):
                 if agdata=="agent_populations" and nom in listed_names:
@@ -402,6 +713,11 @@ class ModelFactory:
                         f"{nom} cannot be used as both an agent name and a" +
                         "population prefix"
                     )
+                # Agents require a number of helper classes and functions,
+                # which here are picked out from the dictionaries stored
+                # in ModelFactory, using data from json. Note the use of
+                # lists of keys to address items in the nested dictionaries
+                # of the json. Each agent needs...
                 tree_factory_classes = [
                     self.tree_factory_classes[tfc]
                     for tfc 
@@ -410,7 +726,7 @@ class ModelFactory:
                         nom, 
                         "controller", 
                         "tree_factory_classes"
-                    ]]
+                    ]] # One or more tree factory classes
                 ]
                 gp_system = self.gp_systems[
                     json_[[
@@ -418,7 +734,7 @@ class ModelFactory:
                         nom, 
                         "controller", 
                         "gp_system"
-                    ]]
+                    ]] # One GP system
                 ] 
                 network_class = self.network_classes[
                     json_[[
@@ -426,8 +742,15 @@ class ModelFactory:
                         nom, 
                         "controller", 
                         "network_class"
-                    ]]
-                ]
+                    ]] # And one network class. 
+                ] # Other needed helpers are passed to the Agent or
+                # AgentController from_json methods by passing the
+                # whole dict from ModelFactory (e.g. self.mutators)
+                # to the from_json call as a kwarg
+                # ------------------------
+                # Using a list comprehension to create as many agents as 
+                # needed from each template. If no value for `n` is given,
+                # `n` of 1 is assumed 
                 agents += [
                     Agent.from_json(
                         json_,
@@ -451,13 +774,14 @@ class ModelFactory:
                         )
                     ) for i in range(json_.get(['agent_templates', nom, 'n'], 1))
                 ]
-        # Note, this must be done after all agents have been made,
+        # Note, networks must be made *after* all agents have been made,
         # as some params depend on knowing how many other agents there are
         for agent in agents:
             prefix_ = agent.prefix
             agent.make_networks(
                 **json_[['agent_templates', prefix_, 'network_params']]
             )
+        # Now, the model itself can be created
         model = Model(
             world, #: World,
             dancing_chaos_at_the_heart_of_the_world, #: np.random.Generator,
@@ -468,13 +792,16 @@ class ModelFactory:
             out_dir=json_['out_dir']
             #json_['agent_populations']
         )
+        # Each Agent needs a backreference to Model
         for agent in agents:
             agent.ac.model = model
-        ic.enable()
+        # Rewards need visibility into the model, so they are created
+        # after `model`, and then are added to it.
         for reward in json_['rewards']:
             model.add_reward(
                 self.rewards[reward].from_json(json_, model=model)
             )
+        # DONE! MODEL!
         return model
 
     def save_json_and_run(self,
@@ -484,28 +811,66 @@ class ModelFactory:
             prefix='philoso_py_',
             json_out_dir=None,
             run=True):
+        """ This method takes an existing model (which may or may
+        not have been created by ModelFactory), makes it save a JSON
+        file containing all the parameters needed to recreate it, and
+        runs it. Parameters that are not added to any object's 
+        initialiser, but which are used when calling `model.run`
+        are included in this method's params, and are added to the
+        JSON before it is saved and the Model is run.
+
+        Parameters
+        ----------
+
+        model : Model
+            The model to be saved and run
+        steps_per_day : int
+            A 'day' cycle generates Agent behaviour and its rewards,
+            which is then used to train Agents networks during the 
+            'night'. `steps_per_day` indicates the number of actions
+            each Agent can take in one day
+        days: int
+            The number of days in the entire simulation
+        prefix : str
+            Prefix prepended to all output filenames for this 
+            simulation run
+        json_out_dir : str : optional
+            Target directory for the saved JSON file. If no value
+            is provided, the out_dir of the model is used
+        run : bool :optional:True
+            If False, the JSON is saved but the model is not run.
+            If True, the model is run.
+        """
+        # Generate the JSON data using the model's `json` property,
+        # and add in the `run` params, `days`, `steps_per_day`, and
+        # `output_prefix` 
         saved_json = {
             **model.json,
             'days': days, 
             'steps_per_day': steps_per_day,
             'output_prefix': prefix
         }
+        # If no json_out_dir is given, use the general file output
+        # directory, or else the current directory 
         if json_out_dir is None:
             if "out_dir" in saved_json:
                 json_out_dir = saved_json['out_dir']
             else:
                 json_out_dir = ""
-        print(json_out_dir)
+        # Create a Path object for this directory, and make sure it
+        # exists 
         path = Path(json_out_dir)
         path.mkdir(parents=True, exist_ok=True)
+        # append the json filename, to give the complete json filepath
         json_outpath = path / f'{prefix}params.json'
+        # save the json to a file
         with open(json_outpath, 'w', encoding='utf-8') as f:
             json.dump(
                 saved_json, f, 
                 ensure_ascii=False, 
                 indent=2
             )
-            print(json_outpath)
+        # Run the model if `run` is True
         if run:
             model.run(
                 days, 
@@ -514,11 +879,28 @@ class ModelFactory:
             )
     
     def run_json(self, json_: str|dict):
-        json_ = self.read_json(json_)
+        """This function creates and runs a model from a json file,
+        with no arguments other than the json itself
+
+        Parameters
+        ----------
+        json : str|dict
+            A json dict or HierarchicalDict, a json str, or a str
+            representing the location of a json file 
+        """
+        # Ensure the json is in the HierarchicalDict format
+        json_ = self._read_json(json_)
+        # Create the model
         model = self.from_json(json_)
+        # retrieve the extra data needed to cal model.run
         days = json_['days']
         steps_per_day = json_['steps_per_day']
         output_prefix=json_['output_prefix']
+        # this call creates a mew JSON file from the model,
+        # and runs the model. Note it is still useful to save
+        # json from the model, as it may have used default values
+        # of params. These would not be in the original JSON, so
+        # it's handy to keep a record 
         self.save_json_and_run(
             model, 
             steps_per_day,
