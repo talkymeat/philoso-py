@@ -115,7 +115,7 @@ class Model:
                 # followed, we can split the name to get the prefix
                 if match := re.fullmatch(r'(.*)_([0-9]+)', a_name):
                     agent_json['controller']['prefix'] = a_prefix = match[1]
-                    idx = match[2]
+                    idx = int(match[2])
             # If at this point the name and prefix are still the same, 
             # this Agent must be singly represented as not belonging to 
             # a population
@@ -263,6 +263,7 @@ class Model:
             for i, table in enumerate(agent.ac.memory.tables):
                 table['tree'] = table['tree'].apply(lambda x: f"{x}")
                 table.to_parquet(path_ / f'{prefix}{agent.name}_mem_{i}.parquet')
+            agent.save_nn(f'{path_}/{prefix}{agent.name}_nn_state.pt')
         pd.DataFrame({
             agent.name: agent.day_rewards for agent in self.agents
         }).to_parquet(path_ / f'{prefix}day_rewards.parquet')
@@ -914,14 +915,14 @@ if __name__ == "__main__":
     # model.run(100, 100)
     # model.run(2, 10_000)
     # model.run(days, steps_per_day) # 
-    # ModelFactory().run_json('model1.json')
-    ModelFactory().save_json_and_run(
-        example_model(
-            seed=69, 
-            out_dir='output/m', 
-            ping_freq=5
-        ),
-        100,
-        100,
-        "m__"
-    )
+    ModelFactory().run_json('model1.json')
+    # ModelFactory().save_json_and_run(
+    #     example_model(
+    #         seed=69, 
+    #         out_dir='output/n', 
+    #         ping_freq=5
+    #     ),
+    #     100,
+    #     100,
+    #     "n__"
+    # )

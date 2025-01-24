@@ -8,8 +8,6 @@ from action import Action
 from collections import OrderedDict
 from icecream import ic
 from typing import Sequence
-import pyarrow.parquet as pq
-import pyarrow as pa
 
 def filter_and_stack(ser: pd.Series, permute: Sequence[int], mask: Sequence[bool]):
     filtered = ser[permute][mask]
@@ -111,6 +109,9 @@ class Agent:
     @property
     def prefix(self):
         return self.ac.prefix
+    
+    def save_nn(self, file_path):
+        torch.save(self.nn.state_dict(), file_path)
 
     # Set-up for rollout
     def morning_routine(self, steps):

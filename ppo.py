@@ -131,9 +131,6 @@ class ActorCriticNetwork(nn.Module):
         """
 
         torch.autograd.set_detect_anomaly(True)
-        ic.disable()
-        # This didn't fix the inplace bug:
-        # obs = obs.clone().detach().requires_grad_(True)
 
         # feeds the observation into the shared layers
         z_0 = self.shared_layers(obs)
@@ -142,22 +139,7 @@ class ActorCriticNetwork(nn.Module):
         # 'choice' head
         action_logits['choice'] = self.policy_layers['choice'](z_0)
         # which is used to get a choice from a Categorical distribution
-        try:
-            choice_distribution = Categorical(logits=action_logits['choice'])
-        except Exception as e:
-            print(('sz'*50)+('SZ'*50)+('sz'*50))
-            print(obs[0], obs.shape)
-            print('='*120)
-            for i in range(0, len(obs[0]), 10):
-                print(obs[0].numpy()[i:i+10])
-            print('='*120)
-            print(z_0)
-            print(self.obs_sp)
-            ic.enable()
-            print(unflatten(ic(self.obs_sp), ic(obs.numpy()[0])))
-            ic.disable()
-            print(('sz'*50)+('SZ'*50)+('sz'*50))
-            raise e
+        choice_distribution = Categorical(logits=action_logits['choice'])
         choice = choice_distribution.sample()
         # the log prob is needed for training
         choice_log_prob = choice_distribution.log_prob(choice).item()
@@ -175,6 +157,12 @@ class ActorCriticNetwork(nn.Module):
         # the critic layer gives the observation a value score
         value = self.value_layers(z_0)
         return choice, choice_log_prob, action_logits, value
+    
+    def save(self):
+        return self.state_dict()
+
+    def load(self):
+        pass
   
 
 # Policy and value model
