@@ -236,8 +236,8 @@ class Model:
             "agent_populations": pop_names,
             'agent_names': nonpop_ag_names,
             "agent_templates": agent_templates,
-            "rewards": [rw.NAME for rw in self.rewards],
-            "reward_params": {rw.NAME: rw.json for rw in self.rewards}
+            "rewards": [rw.__name__ for rw in self.rewards],
+            "reward_params": {rw.__name__: rw.json for rw in self.rewards}
         }).simplify()
 
     def add_reward(self, rew: Reward):
@@ -255,7 +255,7 @@ class Model:
             asyncio.run(self.day(steps_per_day)) 
             self.night()
         for r in self.rewards:
-            r.record.to_parquet(path_ / f'{prefix}{r.NAME}_record.parquet')
+            r.record.to_parquet(path_ / f'{prefix}{r.__name__}_record.parquet')
         for i, table in enumerate(self.publications.tables):
             table['tree'] = table['tree'].apply(lambda x: f"{x}")
             table.to_parquet(path_ / f'{prefix}publication_{i}_end.parquet')
