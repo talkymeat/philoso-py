@@ -17,7 +17,8 @@ class DummyAgent:
 
 
 mt = ModelTime()
-AG = [DummyAgent(f"a{id}") for id in range(10)]
+AG = [DummyAgent(f"a_{id}") for id in range(10)]
+AGIDXS = {f"a_{id}": id for id in range(10)}
 
 MEM = Archive(
     cols=['goodness'], 
@@ -82,12 +83,13 @@ T4 = GP.tree('([int]13)')
 T5 = GP.tree('([float]<SUM>([float]<SQ>([float]<SUM>([float]<SQ>([int]17))([float]<SUM>([float]<PROD>([int]3)([int]19))([int]2))))([float]<SUM>([float]<PROD>([int]3)([int]23))([int]2)))')
 TF = TestTreeFactory(T0)
 
+TT = [GP.tree(f'([float]<PROD>([int]{x})([int]{10-x}))') for x in range(10)]
+
 GP2 = GPTreebank(tree_factory=DummyTreeFactory(), mutation_rate=0.2, mutation_sd=1.0, crossover_rate=0.5, max_depth=10, max_size=50)
 T6  = GP2.tree('([tuple]([int]8)([float]14.0)([complex]35.0+19.0j)([bool]True))')
 T7  = GP2.tree('([tuple]([int]-1)([float]1.0)([complex]10.0+1.0j)([bool]False))')
 T8  = GP2.tree('([tuple]([int]1)([float]3.0)([complex]20.0+5.0j)([bool]False))')
 assert T6() == (8, 14.0, (35+19j), True)
-
 
 def to_list(self_val, *child_vals, **kwargs):
     self_val = [self_val]
@@ -127,3 +129,6 @@ TS = [
     RTF.VarTemplate(float, 'x')
 ]
 
+col = [1,4,8, 9,11,13, 19,19,30, 40,50,69]
+nans = [np.nan, np.nan, np.nan, np.nan]
+infs = [np.inf, -np.inf, np.inf, -np.inf]

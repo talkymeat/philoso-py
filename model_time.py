@@ -15,3 +15,12 @@ class ModelTime:
 
     def __eq__(self, other):
         return self._t == other
+
+    def __gt__(self, other):
+        return self._t > other
+
+    def __lt__(self, other):
+        return self._t < other
+    
+    def reset(self):
+        self._t = 0

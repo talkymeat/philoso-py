@@ -33,20 +33,23 @@ class Result:
 class AgentController(Env):
     @classmethod
     def from_json(cls, 
-                  json_, 
-                  world=None,
-                  time=None, 
-                  name=None, 
-                  prefix=None,
-                  sb_factory=None, 
-                  tree_factory_classes=None,
-                  agent_indices=None,
-                  repository=None,
-                  gp_system=None,
-                  sb_statfuncs=None,
-                  rng=None,
-                  mutators: Sequence[Callable]=None
-                ):
+                json_, 
+                world=None,
+                time=None, 
+                name=None, 
+                prefix=None,
+                sb_factory=None, 
+                tree_factory_classes=None,
+                agent_indices=None,
+                repository=None,
+                gp_system=None,
+                sb_statfuncs=None,
+                rng=None,
+                mutators: Sequence[Callable]=None
+            ):
+        """A classmethod which creates an `AgentController` based on a JSON
+        object, plus a number of other objects created by the `ModelFactory`
+        """
         json_args = [
             json_[[
                 "agent_templates", 

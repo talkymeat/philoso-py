@@ -79,10 +79,20 @@ class Agent:
         for k, head in self.nn.policy_heads.items():
             self.policy_names += [(k, kk) for kk in head.keys()]
         # +list(self.nn.policy_layers.keys())
+        # self.training_buffer_keys = [
+        #     'obs', 'value', 'reward', ('act', 'choice'), ('log_prob', 'choice')
+        # ] + [
+        #     (a_lp, *polname)
+        #     for a_lp 
+        #     in ['act', 'log_prob']
+        #     for polname
+        #     in self.policy_names
+        # ]
+        # # XXX uncomment remove the above once debugging is done
         self.training_buffer_keys = [
-            'obs', 'value', 'reward', ('act', 'choice'), ('log_prob', 'choice')
+            'obs', 'value', 'reward'
         ] + [
-            (a_lp, *polname)
+            (a_lp, *polname) if isinstance(polname, tuple) else (a_lp, polname)
             for a_lp 
             in ['act', 'log_prob']
             for polname
@@ -132,7 +142,6 @@ class Agent:
             [self.obs], dtype=torch.float64, device=self.device
         )
         choice, choice_log_prob, action_logits, val = self.nn(obs)
-
         # set the observaton, plus the act and obs for `choice`
         training_instance = {
             ('obs'): self.obs, 
@@ -159,12 +168,10 @@ class Agent:
                 act_part_log_probs = OrderedDict({
                     k: d.log_prob(action_part[k]) for k, d in act_distros.items()
                 })
-
                 action_to_do[act] = action_part
                 for k, action_subpart in action_part.items():
                     training_instance[('act', act, k)] = action_subpart
                     training_instance[('log_prob', act, k)] = act_part_log_probs[k]
-
 
         # This is a tensor of size (1,1), we just want a float
         val = val.item()
@@ -191,6 +198,7 @@ class Agent:
 
         # XXX TODO XXX XXX make sure these are the right columns
         ### Do train data filtering
+        print(self.name, self.steps_done)
         self.training_buffer['reward'] = calculate_gaes(self.training_buffer['value'], self.training_buffer[('reward')])
         self.day_rewards.append(self.day_reward)
 

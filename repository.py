@@ -92,6 +92,12 @@ class Archive(TypeLabelledTreebank): #M #P
             }
         }
     
+    def __str__(self):
+        str_out = ""
+        for i, table in enumerate(self.tables):
+            str_out += f"TABLE {i}:\n{table}\n"
+        return str_out.strip()
+    
     @property
     def noncore(self):
         return self.tables[0].drop(self.ESSENTIAL_COLS, axis=1)
@@ -157,9 +163,7 @@ class Archive(TypeLabelledTreebank): #M #P
             missing_msg = f"lacks the keys {missing}, which are required in Repository.cols" if missing else ""
             and_msg = "; and " if surplus and missing else ""
             raise ValueError(f"metadata values passed to Repository.insert_tree {surplus_msg}{and_msg}{missing_msg}.")
-        ic("fjkghfjgkhdfgkjhdjfhjgfd", tree)
         data['tree'] = tree.copy_out(treebank=self)
-        ic('grnglhlglglglgl', data['tree'])
         data['exists'] = True
         data['t'] = self._t()
         return data
@@ -178,13 +182,13 @@ class Archive(TypeLabelledTreebank): #M #P
         if tree.size()==1:
             raise ValueError(f"Tree inserted in memory, {tree} is size 1, data is {data}")
         for table in self.tables:
-            if (table['tree'] == ic(tree)).any():
+            if (table['tree'] == tree).any():
                 return
-        data = self._preprocess_entry(tree, **ic(data))
+        data = self._preprocess_entry(tree, **data)
         _table = self._get_journal(journal)
         if pos < 0 or pos >= self.rows:
             raise ValueError(f"Value of `pos` [{pos}] is out of range")
-        _table.loc[pos] = ic(data) 
+        _table.loc[pos] = data
 
     def __getitem__(self, idx):
         if isinstance(idx, int):
@@ -244,6 +248,9 @@ class Publication(Archive):
         #self._validate_users_cols(cols, users)
         self.agent_names = agent_names
         for journal in self.tables:
+            # The length of self.agent_names is a suitable dummy value
+            # for 'credit' in an empty row containing no tree, as it cannot 
+            # be a valid agent index
             journal['credit'] = len(self.agent_names)
         self._reward = null_reward_func if reward is None else reward  #P
         if decay > 1 or decay < 0:

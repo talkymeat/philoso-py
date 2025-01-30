@@ -125,7 +125,7 @@ class Model:
             else:
                 # Use regex to get idx, if it hasn't already been got
                 if idx < 0:
-                    idx = re.fullmatch(r'(.*)_([0-9]+)', a_name)[2]
+                    idx = int(re.fullmatch(r'(.*)_([0-9]+)', a_name)[2])
                 # The first disjunct indicates that this branch is for 
                 # Agents that are the first of their population to be
                 # recorded, since in this case the JSON template has yet

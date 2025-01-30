@@ -80,6 +80,7 @@ class JSONableFunc(JSONable):
         """
         if self!=f:
             self.f = f
+        # self.__doc__ = f.__doc__
 
     def __call__(self, *args, **kwargs):
         """Calls f"""

@@ -243,7 +243,6 @@ class LitReview(Remembering):
         MultiContinuous of tables x cols x rows, with zero-padding
         Add record of ownership to col - MultiDiscrete, tables x rows, with zero-padding
         """
-#----#----#----#----#----#----#----#----#----#----#----#----#----#----#----#----
         return Tuple([
             super().observation_space,
             MultiDiscrete(

@@ -484,7 +484,7 @@ class Variable(GPTerminal):
         return Variable(
             treebank,
             to_copy.label if treebank == to_copy.treebank else treebank.get_label(to_copy.label.class_id),  ##-OK both, raw val
-            ic('$' + copy(to_copy.leaf)),
+            '$' + copy(to_copy.leaf),
             operator = to_copy._operator,
             metadata = {**deepcopy(to_copy.metadata), **{'__no_xo__': True}},
             gp_operator=to_copy.gp_operator

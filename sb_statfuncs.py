@@ -1,12 +1,22 @@
 import numpy as np
+import pandas as pd
+from scipy import stats as st
 from jsonable import SimpleJSONable, JSONableFunc
 from collections.abc import Sequence
 from typing import Callable
+
+def _filter_col(col: Sequence) -> np.ndarray:
+    col = np.array(col)
+    return col[np.isfinite(col)]
+
 
 @JSONableFunc
 def mean(col): 
     """Calculates the mean of the non-nan, non-inf values in a column. 
     Has a `json` property which returns {"name": "mean"}
+
+    Since a function decorated with a class cannot have doctests, this
+    function is tested in `sb_stafunc_tests`.
 
     Parameters
     ----------
@@ -17,8 +27,9 @@ def mean(col):
     -------
         float
     """
-    if len(col[np.isfinite(col)]) > 0:
-        return col[np.isfinite(col)].mean() 
+    col = _filter_col(col)
+    if len(col):
+        return col.mean() 
     return 0.0
     
 
@@ -28,6 +39,9 @@ def mode(col):
     If there is more than one mode, calculates the mean of modes.
     Has a `json` property which returns {"name": "mode"}
 
+    Since a function decorated with a class cannot have doctests, this
+    function is tested in `sb_stafunc_tests`.
+
     Parameters
     ----------
     col : Sequence[float|int|bool]
@@ -37,8 +51,9 @@ def mode(col):
     -------
         float
     """
-    if len(col[np.isfinite(col)]) > 0:
-        return col[np.isfinite(col)].mode().mean() 
+    col = _filter_col(col)
+    if len(col):
+        return pd.Series(col).mode().mean() 
     return 0.0
 
 @JSONableFunc
@@ -46,6 +61,9 @@ def std(col):
     """Calculates the standard deviation of the non-nan, non-inf values 
     in a column. Has a `json` property which returns {"name": "std"}
 
+    Since a function decorated with a class cannot have doctests, this
+    function is tested in `sb_stafunc_tests`.
+
     Parameters
     ----------
     col : Sequence[float|int|bool]
@@ -55,14 +73,18 @@ def std(col):
     -------
         float
     """
-    if len(col[np.isfinite(col)]) > 0:
-        return col[np.isfinite(col)].std() 
+    col = _filter_col(col)
+    if len(col):
+        return col.std() 
     return 0.0
 
 @JSONableFunc
 def nanage(col):  
     """Calculates the proportion of values in a column which are NaN. 
     Has a `json` property which returns {"name": "nanage"}
+
+    Since a function decorated with a class cannot have doctests, this
+    function is tested in `sb_stafunc_tests`.
 
     Parameters
     ----------
@@ -79,6 +101,9 @@ def nanage(col):
 def infage(col):  
     """Calculates the proportion of values in a column which are inf or 
     -inf. Has a `json` property which returns {"name": "infage"}
+
+    Since a function decorated with a class cannot have doctests, this
+    function is tested in `sb_statfunc_tests`.
 
     Parameters
     ----------
@@ -200,13 +225,29 @@ class Quantile(SimpleJSONable):
         -------
             float : between 0.0 and 1.0 inclusive
 
-        >>> col = [1,4,8, 9,11,13, 19,19,30, 40,50,69]
+        >>> from test_materials import col, nans, infs
         >>> np.random.shuffle(col)
         >>> [q(col) for q in Quantile.multi(5)] 
         [1.0, 8.75, 16.0, 32.5, 69.0]
+        >>> [q(col+nans) for q in Quantile.multi(5)] 
+        [1.0, 8.75, 16.0, 32.5, 69.0]
+        >>> [q(col+infs) for q in Quantile.multi(5)] 
+        [1.0, 8.75, 16.0, 32.5, 69.0]
+        >>> [q(col+nans+infs) for q in Quantile.multi(5)] 
+        [1.0, 8.75, 16.0, 32.5, 69.0]
+        >>> [q(nans*4) for q in Quantile.multi(5)] 
+        [0.0, 0.0, 0.0, 0.0, 0.0]
+        >>> [q(infs*4) for q in Quantile.multi(5)] 
+        [0.0, 0.0, 0.0, 0.0, 0.0]
+        >>> [q(nans*2+infs*2) for q in Quantile.multi(5)] 
+        [0.0, 0.0, 0.0, 0.0, 0.0]
+        >>> [q([5.0]*16) for q in Quantile.multi(5)] 
+        [5.0, 5.0, 5.0, 5.0, 5.0]
         """
-        col = np.array(col)
-        return np.quantile(col[np.isfinite(col)], self.q)
+        col = _filter_col(col)
+        if len(col):
+            return np.quantile(col, self.q)
+        return 0.0
     
     @property
     def json(self) -> dict:
@@ -237,8 +278,11 @@ class Quantile(SimpleJSONable):
 
     
 def main():
+    print('is this annoying?')
     import doctest
+    print('is this annoying?')
     doctest.testmod()
+    print('is this annoying?')
 
 if __name__ == '__main__':
     main()
