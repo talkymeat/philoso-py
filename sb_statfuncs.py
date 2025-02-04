@@ -275,14 +275,10 @@ class Quantile(SimpleJSONable):
         if issubclass(other.__class__, self.__class__):
             return self.q == other.q
         
-
     
 def main():
-    print('is this annoying?')
     import doctest
-    print('is this annoying?')
     doctest.testmod()
-    print('is this annoying?')
 
 if __name__ == '__main__':
     main()

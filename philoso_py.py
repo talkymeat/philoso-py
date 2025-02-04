@@ -157,7 +157,7 @@ class Model:
                 # the Agent's `name`, which will be different for each 
                 # Agent even within a population, so the comparison should
                 # exclude this 
-                elif not HD(agent_json).eq_except(agent_templates[a_prefix], 'name'):
+                elif not HD(agent_json).compare_except(agent_templates[a_prefix], 'name'):
                     # Uh-oh, the Agent appeared to be a population member, 
                     # but it differs from the others in the same 
                     # population. So, we treat is as non-population,
