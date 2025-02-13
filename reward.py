@@ -62,7 +62,7 @@ class Reward(SimpleJSONable, ABC):
             *[
                 json_.get(cls.addr+[arg], None) 
                 for arg 
-                in ic(cls.args)
+                in cls.args
             ],
             *(json_.get(cls.addr+[cls.stargs], ()) if cls.stargs else ()),
             **{
@@ -135,10 +135,7 @@ class Curiosity(Reward):
         self.agents: dict[str, 'Agent'] = {a.name: a for a in self.model.agents}
         self.best_mean_fitness_dict = {k: 0.0 for k in self.agents.keys()}
         self.def_fitness = def_fitness
-        ic.enable()
-        self.first_finding_bonus = ic(first_finding_bonus)
-        ic(self.first_finding_bonus)
-        ic.disable()
+        self.first_finding_bonus = first_finding_bonus
     
     def get_reward_data(self):
         return {nm: self.agent_reward_data(a) for nm, a in self.agents.items()}

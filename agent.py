@@ -71,8 +71,8 @@ class Agent:
             self.ac.actions
             # {k: flatten_space(sp).shape[0] for k, sp in self.ac.action_space.items()}
         )
-        self.nn.obs_sp = ic(self.ac._observation_space)
-        ic.disable()
+        self.nn.obs_sp = self.ac._observation_space
+        # ic.disable()
         self.nn.to(self.device)
         # Set up the training buffer with a multi-index
         self.policy_names = [('choice')]

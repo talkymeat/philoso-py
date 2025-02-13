@@ -21,7 +21,7 @@ import asyncio
 from pathlib import Path
 from copy import copy, deepcopy
 
-from icecream import ic
+# from icecream import ic
 
 import numpy as np
 import pandas as pd
@@ -142,10 +142,15 @@ class Model:
                     # instead of `prefix`. This is the purpose of the 
                     # second disjunct above, and is why we need `id`
                     # below to behave differently in these two cases.
-                    id = a_name if a_prefix in split_pops else a_prefix
-                    # XXX waitasec, should this be nonpop_ag_names in 
-                    # some cases? XXX
-                    pop_names.append(id)
+                    if a_prefix in split_pops:
+                        id = a_name 
+                        # In this case, the id is the name of an Agent that 
+                        # does not belong to a population
+                        nonpop_ag_names.append(id)
+                    else: 
+                        id = a_prefix
+                        # In this case, the ID is a population name
+                        pop_names.append(id)
                     # Add the template to the JSON
                     agent_templates[id] = agent_json
                 # if the new agent IS apparently a member of a population,
@@ -157,7 +162,7 @@ class Model:
                 # the Agent's `name`, which will be different for each 
                 # Agent even within a population, so the comparison should
                 # exclude this 
-                elif not HD(agent_json).compare_except(agent_templates[a_prefix], 'name'):
+                elif not HD(agent_json).compare_except(agent_templates[a_prefix], ['controller', 'name'], 'name'):
                     # Uh-oh, the Agent appeared to be a population member, 
                     # but it differs from the others in the same 
                     # population. So, we treat is as non-population,
@@ -198,7 +203,7 @@ class Model:
             # The max index for each population should be one less than
             # the pop size. If not, make individual JSONs for each agent
             # in the population, and treat them as non-population agents 
-            if pop_max_idxs[p] != pop_sizes[p]+1:
+            if pop_max_idxs[p]+1 != pop_sizes[p]:
                 for idx in pop_idxs[p]:
                     agent_templates[f'{p}_{idx}'] = deepcopy(agent_templates[p])
                     nonpop_ag_names.append(f'{p}_{idx}')
@@ -227,7 +232,7 @@ class Model:
         # nearest common parent, and removes any which are redundant
         return HD({
             "seed": self.rng.bit_generator.seed_seq.entropy,
-            "out_dir": str(ic(self.out_dir)),
+            "out_dir": str(self.out_dir),
             "world": self.world.__class__.__name__,
             "world_params": self.world.json,
             "sb_factory": self.sb_factory.__class__.__name__,
@@ -284,7 +289,7 @@ class Model:
             for a in self.agents:
                 for i, tbl in enumerate(a.ac.memory.tables):
                     for j, row in tbl.iterrows():
-                        if row['exists'] and ((ic(row)['tree'].size() != row['size']) or (row['tree'].depth() != row['depth'])):
+                        if row['exists'] and ((row['tree'].size() != row['size']) or (row['tree'].depth() != row['depth'])):
                             raise ValueError(
                                 f"At time {self.t}, "+
                                 f"agent {a.name} has tree {row['tree']} recorded at table "+

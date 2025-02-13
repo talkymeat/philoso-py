@@ -213,7 +213,7 @@ class AgentController(Env):
         self.world = world
         self.model = None
         self.t = time
-        self.np_random = ic(rng) # Note, np_random is a @property setter in Env
+        self.np_random = rng # Note, np_random is a @property setter in Env
         self.name = name
         self.prefix = prefix if prefix else name 
         self.dv = dv
