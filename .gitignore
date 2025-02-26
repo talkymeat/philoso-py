@@ -9,7 +9,6 @@ Untitled*.ipynb
 *.parquet
 outputs/
 output/
-model_json/
 cartpole_ppo_follow.ipynb
 cartpole_ppo_follow.py
 stuff.txt

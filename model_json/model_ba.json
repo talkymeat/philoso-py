@@ -1,0 +1,144 @@
+{
+    "seed": null,
+    "iv": "x",
+    "dv": "y",
+    "out_dir": "output/ba/",
+    "ping_freq": 5,
+    "output_prefix": "ba__",
+    "world": "SineWorld",
+    "world_params": {
+        "radius": 50,
+        "max_observation_size": 100,
+        "noise_sd": 0.05,
+        "sine_wave_params": [
+            [
+                10,
+                100,
+                0
+            ],
+            [
+                0.1,
+                1,
+                0
+            ]
+        ]
+    },
+    "sb_factory": "SimplerGPScoreboardFactory",
+    "sb_factory_params": {
+        "best_outvals": [
+            "irmse",
+            "size",
+            "depth",
+            "penalty",
+            "hasnans",
+            "fitness"
+        ]
+    },
+    "gp_vars_core": [
+        "mse",
+        "rmse",
+        "size",
+        "depth",
+        "raw_fitness",
+        "fitness",
+        "value"
+    ],
+    "gp_vars_more": [
+        "crossover_rate",
+        "mutation_rate",
+        "mutation_sd",
+        "max_depth",
+        "max_size",
+        "temp_coeff",
+        "pop",
+        "elitism",
+        "obs_start",
+        "obs_stop",
+        "obs_num"
+    ],
+    "publication_params": {
+        "reward": "ranked",
+        "value": "value",
+        "types": "float64",
+        "rows": 10,
+        "tables": 2
+    },
+    "agent_populations": [
+        "a"
+    ],
+    "agent_templates": {
+        "a": {
+            "device": "cuda",
+            "controller": {
+                "tree_factory_classes": [
+                    "SimpleRandomAlgebraicTreeFactory"
+                ],
+                "record_obs_len": 50,
+                "max_readings": 3,
+                "mem_col_types": "float64",
+                "value": "value",
+                "mutators": [
+                    {
+                        "name": "single_leaf_mutator_factory"
+                    },
+                    {
+                        "name": "single_xo_factory"
+                    }
+                ],
+                "gp_system": "GPTreebank",
+                "sb_statfuncs": [
+                    {
+                        "name": "mean"
+                    },
+                    {
+                        "name": "mode"
+                    },
+                    {
+                        "name": "std"
+                    },
+                    {
+                        "name": "nanage"
+                    },
+                    {
+                        "name": "infage"
+                    }
+                ],
+                "sb_statfuncs_quantiles": 9,
+                "mem_rows": 6,
+                "mem_tables": 3,
+                "num_treebanks": 2,
+                "max_volume": 50000,
+                "max_max_size": 400,
+                "max_max_depth": 100,
+                "theta": 0.05,
+                "short_term_mem_size": 5
+            },
+            "network_params": {
+                "target_kl_div": 0.01,
+                "max_policy_train_iters": 80,
+                "value_train_iters": 80,
+                "ppo_clip_val": 0.2,
+                "policy_lr": 0.0003,
+                "value_lr": 0.01
+            },
+            "n": 8,
+            "network_class": "ActorCriticNetworkTanh"
+        }
+    },
+    "rewards": [
+        "Curiosity",
+        "Renoun",
+        "GuardrailCollisions"
+    ],
+    "reward_params": {
+        "Curiosity": {
+            "def_fitness": "fitness",
+            "first_finding_bonus": 1.0
+        },
+        "Renoun": {},
+        "GuardrailCollisions": {}
+    },
+    "def_fitness": "irmse",
+    "days": 100,
+    "steps_per_day": 100
+}
