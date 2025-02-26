@@ -206,19 +206,125 @@ def conjoin_tests(*tests: Callable[[Any|None], bool]):
         )
     return test_conjunction
 
-class HierarchicalDict(dict):
-    def __getitem__(self, idx):
-        if isinstance(idx, list):
-            if len(idx)==1:
-                return super().__getitem__(idx[0])
-            elif not idx:
-                raise IndexError(
-                    'An empty list is an invalid index for ' +
-                    'HierarchicalDict: Provide a Hashable object ' +
-                    'or a list of one or more Hashables.'
+def unfold_lists(source_order, *lists):
+    """Combines two or more `lists` into a single list.
+    All items in each list in `lists` appear in the same
+    order in the returned list as they did in their original
+    list, while the order in which the lists are folded together
+    is given by `source_order`. Thus, if `lists` includes two
+    lists of four elements each, say all `'A'` and all `'B'`:
+
+    >>> a_s = ['A', 'A', 'A', 'A'] # lists[0]
+    >>> b_s = ['B', 'B', 'B', 'B'] # lists[1]
+
+    A `source_order` of alternating 0's and 1's, starting with 0,
+    will return alternating `'A'`s and `'B'`s:
+
+    >>> unfold_lists([0, 1, 0, 1, 0, 1, 0, 1], a_s, b_s)
+    ['A', 'B', 'A', 'B', 'A', 'B', 'A', 'B']
+
+    This also works using `True` and `False`, if `lists` is of
+    length 2. Thus alternating `True, False` will return 
+    alternating `'B', 'A'`:
+
+    >>> unfold_lists([True, False, True, False, True, False, True, False], a_s, b_s)
+    ['B', 'A', 'B', 'A', 'B', 'A', 'B', 'A']
+
+    For each list `lists[i]` at index `i`, `i` must appear
+    in `source_order` exactly `len(lists[i])` times. If
+    if does not, or any value appears in `source_order` that
+    is not an index of `lists`, a `ValueError` will be raised
+
+    >>> unfold_lists([0, 0, 0, 0, 0, 1, 1, 1], a_s, b_s)
+    Traceback (most recent call last):
+        ...
+    ValueError: List 0 is of length 4 but `0` appears 5 times in source_order: List 1 is of length 4 but `1` appears 3 times in source_order
+
+    Any value appearing in `source_order` that is not an index
+    of `lists` will also raise a ValueError
+
+    >>> unfold_lists([0, 0, 0, 0, 2, 1, 1, 1, 1], a_s, b_s)
+    Traceback (most recent call last):
+        ...
+    ValueError: 2 appears in source_order but there is no lists[2]
+
+    If the elements of the lists in `lists` are all ints equal to
+    the `i` of `list[i]`, any valid `source order` will return a 
+    list identical to `source_order`. This allows us to randomly 
+    generate a large number of tests:
+
+    >>> for _ in range(10000):
+    ...     zeros = [0] * np.random.randint(21)
+    ...     ones = [1] * np.random.randint(21)
+    ...     source_order = zeros + ones
+    ...     np.random.shuffle(source_order)
+    ...     assert unfold_lists(source_order, zeros, ones)==source_order, f'fail on {source_order}'
+    >>> for _ in range(10000):
+    ...     zeros = [0] * np.random.randint(21)
+    ...     ones = [1] * np.random.randint(21)
+    ...     twos = [2] * np.random.randint(21)
+    ...     threes = [3] * np.random.randint(21)
+    ...     source_order = zeros + ones + twos + threes
+    ...     np.random.shuffle(source_order)
+    ...     assert unfold_lists(source_order, zeros, ones, twos, threes)==source_order, f'fail on {source_order}'
+    """
+    # This will be easier to perform the needed calculations
+    # on `source_order` if it's an np.ndarray 
+    source_order = np.array(source_order, dtype=int)
+    # if lists is actually just one list, return a copy,
+    # as long as source_order has no errors - which in 
+    # this case means it is a list of falsy values of
+    # equal length to the one list in lists 
+    if len(lists)==1 and not any(source_order) and len(source_order)==len(lists[0]):
+        return list[lists[0]]
+    # raise if, for some index `i` of lists, the length
+    # of lists[i] is different from the number of occurences
+    # of `i` in `source_order`
+    # -- `zip(*np.unique(source_order, return_counts=True))` gives
+    # tuples of an index i and its freqency of occurence
+    # -- the first disjunct catches the case where an index i
+    # occurs that isn't even in `lists`
+    # -- the second disjunct catches the case where lists[i]
+    # exists, but the count doesn't match the length
+    # -- the walrus operator `:=` catches the list of booleans
+    # that indicates which indices have problems, which can
+    # then be used to generate an informative error message 
+    if any(probs := [(i >= len(lists) or (len(lists[i]) != ct)) for i, ct in zip(*np.unique(source_order, return_counts=True))]):
+        # Make a record, `errs` of all lists with problems
+        errs = []
+        # Note: probs is a list off bools that are True for
+        # all indices where the corresponding index of `lists`
+        # corresponds to a list with a problem 
+        for i, prob in enumerate(probs):
+            if prob:
+                # We distinguish the case (if i <len(lists)) where 
+                # the list exists but is under- or over-represented
+                # in source_order, and (else) the case where it 
+                # does not exist, but is represented spuriously in
+                # source_order
+                errs.append(
+                    (
+                        f"List {i} is of length {len(lists[i])} but " +
+                        f"`{i}` appears {np.sum(source_order==i)} times" + 
+                        " in source_order"
+                    ) if i < len(lists) else (
+                        f"{i} appears in source_order but there is no" +
+                        f" lists[{i}]"
+                    )
                 )
-            else:
-                pass
+        # When all the error messages are gathered, concatenate
+        # them, colon-separated, and raise
+        raise ValueError(': '.join(errs))
+    # work from shallow copies of the lists, because the
+    # list comprehension pops from lists, and if the same
+    # lists are still needed elsewhere, it would be bad for
+    # them to suddenly be empty 
+    list_copies = [list(ls) for ls in lists]
+    # each value of source_order is an index of `lists`: in
+    # the returned list, each value is the head ideam of the
+    # list in `lists` at that index, which is popped so it is
+    # then removed from the (copy of the) list 
+    return [list_copies[source].pop(0) for source in source_order]
 
 
 def _i(item):

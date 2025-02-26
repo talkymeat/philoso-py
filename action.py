@@ -21,7 +21,6 @@ from gymnasium.spaces.utils import flatten, unflatten, flatten_space
 from gymnasium.spaces import Dict, Discrete, Box, MultiBinary, MultiDiscrete, Space
 from torch.distributions import Bernoulli, Categorical, Normal
 
-from icecream import ic
 
 def min_dim(t: torch.Tensor) -> int:
     return len([d for d in t.shape if d > 1])
@@ -85,51 +84,11 @@ class Action(ABC):
     @abstractmethod
     def do(self, *args, **kwargs):
         pass
-        # subspace sizes prepended with 0
-        sspw0 = np.cumsum([0] + [
-            flatten_space(ss).shape[0] for ss in self.action_space.values()
-        ])
-        # slice objects to divide the logits according to their destined subspace
-        return [slice(sspw0[i], sspw0[i+1]) for i in range(len(sspw0)-1)]
     
     @cached_property
     def distributions(self):
         return {k: space_2_distro(ss) for k, ss in self.action_space.items()}
-        pass
-        # if len(self.logit_slicers)==1:
-        #     return logits
-        # if len(logits.shape)==1:
-        #     return [logits[s] for s in self.logit_slicers]
-        # else:
-        #     dims = []
-        #     for i, dim in enumerate(logits.shape):
-        #         if dim==0:
-        #             raise ValueError(f'Oh no, an empty tensor, {logits}')
-        #         if dim>1:
-        #             dims.append(i)
-        #     if len(dims)==1:
-        #         slicers = [
-        #             [
-        #                 (s if i==dims[0] else slice(None)) 
-        #                 for i 
-        #                 in range(len(logits.shape))
-        #             ] 
-        #             for s 
-        #             in self.logit_slicers
-        #         ]
-        #         return [logits[s] for s in slicers]
-        #     else:
-        #         slicers = [
-        #             ([slice(None)]*(len(logits.shape)-1))+[s]
-        #             for s 
-        #             in self.logit_slicers
-        #         ]
-        #         return [logits[s] for s in slicers]
-                
-                # ValueError(
-                #     f'slice_logits cannot slice arrays with more than one '+
-                #     f' significant (greater than 1) dimension: {logits}'
-                # )
+
     
     @property
     def logit_dims(self):
@@ -148,20 +107,6 @@ class Action(ABC):
                         "right on it."
                     )
         return dims
-        return OrderedDict({
-            k: distro(
-                torch.reshape(sllogits, shape)
-                if shape
-                else sllogits
-            )
-            for k, distro, sllogits, shape
-            in zip(
-                self.action_space.keys(),
-                self.distributions, 
-                self.slice_logits(logits),
-                self.logit_dims
-            )
-        })
     
     def logits_2_distros(self, logits: dict):
         return OrderedDict({
@@ -790,7 +735,7 @@ class StoreMem(Action):
         ):
         for gp_reg, mem_loc in zip(gp_registers, memory_locations):
             if self.gptb_list[gp_reg]:
-                tree_data = ic(self.gptb_list[gp_reg].best)
+                tree_data = self.gptb_list[gp_reg].best
                 if tree_data['tree'] is not None:
                     data = {k: v for k, v in tree_data['data'].items() if k in self.vars}
                     self.memory.insert_tree(tree_data['tree'], journal=_i(mem_loc[0]), pos=_i(mem_loc[1]), **data)
@@ -799,7 +744,7 @@ class StoreMem(Action):
                     print(f'>>>> Agent {self.ac.name} tried to remember a tree from a GP with no stored best')
             else:
                 print(f'>>>> Agent {self.ac.name} tried to remember a tree from an empty GP slot')
-            # no else, do nothing if it tries to pull from an empty slot
+            # no else action, do nothing if it tries to pull from an empty slot
 
 class Publish(Action):
     # location of mem to be published

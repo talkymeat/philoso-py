@@ -8,18 +8,27 @@ from action import Action
 from collections import OrderedDict
 from icecream import ic
 from typing import Sequence
+from jsonable import SimpleJSONable
 
 def filter_and_stack(ser: pd.Series, permute: Sequence[int], mask: Sequence[bool]):
     filtered = ser[permute][mask]
     acts: torch.Tensor = torch.stack(tuple(filtered))
     return acts
 
-class Agent:
+
+
+
+
+class Agent(SimpleJSONable):
+    addr = ['agent_templates', '$prefix']
+    kwargs = ('device',)
+
     def __init__(self, 
         ac:AgentController, # remember, ac is a gymnasium.env
         rng:np.random.Generator,
         device:str="cpu",
-        network_class:type[ActorCriticNetwork]=ActorCriticNetwork
+        network_class:type[ActorCriticNetwork]=ActorCriticNetwork,
+        **kwargs
     ):
         self.rng=rng
         self.device = device
@@ -30,13 +39,8 @@ class Agent:
         self.net_class=network_class
 
     @classmethod
-    def from_json(cls, json, rng=None, controller=None, prefix=None, network_class=None):
-        args = [controller, rng]
-        kwargs = {
-            'device': json[['agent_templates', prefix, 'device']],
-            'network_class': network_class
-        }
-        return cls(*args, **kwargs)
+    def from_json(cls, json_, controller, rng, prefix=None, network_class=None):
+        return super().from_json(json_, controller, rng, prefix=prefix, network_class=network_class)
     
     @property
     def json(self)->dict:

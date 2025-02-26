@@ -17,9 +17,8 @@ def _print(*args, **kwargs):
 
 class Reward(SimpleJSONable, ABC):
     @property
-    @abstractmethod
-    def __name__(cls):
-        raise NotImplementedError
+    def __name__(self):
+        return self.__class__.__name__
 
     def __init__(self, 
             model,
@@ -54,24 +53,9 @@ class Reward(SimpleJSONable, ABC):
         }
 
     @classmethod
-    def from_json(cls, json_, *args, model=None, **kwargs):
-        json_ = HD(json_)
+    def from_json(cls, json_, model, *args, **kwargs):
         cls.addr = ['reward_params', cls.__name__]
-        return cls(
-            model,
-            *[
-                json_.get(cls.addr+[arg], None) 
-                for arg 
-                in cls.args
-            ],
-            *(json_.get(cls.addr+[cls.stargs], ()) if cls.stargs else ()),
-            **{
-                kwarg: json_[cls.addr+[kwarg]] 
-                for kwarg 
-                in cls.kwargs 
-                if cls.addr+[kwarg] in json_
-            }
-        )
+        return super().from_json(json_, model, *args, **kwargs)
 
 
 class Curiosity(Reward):
@@ -121,8 +105,8 @@ class Curiosity(Reward):
     >>> aeq(model.rewards[0]()['a0'], 0.25)
     True
     """
-    __name__ = 'Curiosity'
     args = ["def_fitness", "first_finding_bonus"]
+    arg_source_order = [True, False, False]
 
     def __init__(self, 
             model,
@@ -182,7 +166,6 @@ class Renoun(Reward):
     ...     'mutation_rate': 0.3, 'wt_fitness': 1.0, 'max_size': 55, 'raw_fitness': 0.9, 
     ...     'temp_coeff': 0.5, 'size': 13, 'obs_start':9.9, 'obs_num': 100, 'elitism':0.1}
     """
-    __name__ = 'Renoun'
 
     def __init__(self, 
             model,
@@ -195,7 +178,6 @@ class Renoun(Reward):
 
 
 class GuardrailCollisions(Reward):
-    __name__ = 'GuardrailCollisions'
 
     def __init__(self, 
             model,
@@ -210,7 +192,6 @@ class GuardrailCollisions(Reward):
 
 
 class Punches(Reward):
-    __name__ = 'Punches'
 
     def __init__(self, 
             model,

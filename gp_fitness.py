@@ -12,6 +12,7 @@ from functools import wraps
 from utils import collect
 from grapher import Grapher
 import torch
+from jsonable import SimpleJSONable
 
 from icecream import ic
 
@@ -123,7 +124,7 @@ class ScoreboardPipelineElement:
         elif not (self.arg_keys or self.out_key):
             # If neither 'key' exists, it's the 'Other' case...
             self.fn(sb, **self.spem_kwargs)
-        elif not (self.arg_keys or self.out_key):
+        elif not (self.arg_keys and self.out_key):
             # If only one, it's invalid
             raise ValueError(
                 'If `fn` exists, either both `out_key` and `arg_keys` must ' +
@@ -197,7 +198,7 @@ class ScoreboardPipelineElement:
             adds: str|list[str], 
             dels: str|list[str]
         ):
-        """If no calues are given for the 'key' attributes, the element must
+        """If no values are given for the 'key' attributes, the element must
         be hard-coded with values for it to pass during validation. Rules are 
         specified below for how to handle cases where the changes to the set of
         columns in the scoreboard are non-deterministic. The goal is always to 
@@ -503,18 +504,6 @@ penalty = from_tmp('penalty', default=1)
 survive = from_tmp('survive', default=True)
 hasnans = from_tmp('hasnans', default=False)
 
-# @scoreboard_pipeline_element(out_key='penalty')
-# def penalty(tree: GPNonTerminal, **kwargs):
-#     """Trees receive penalties during processing for things like OverflowErrors 
-#     and ZeroDivisionErrors. Penalties are applied by dividing the tree's fitness,
-#     so the default 'no penalty' value is zero
-#     """
-#     return tree.metadata.get('penalty', 1.0)
-
-# @scoreboard_pipeline_element(out_key='kill')
-# def kill(tree: GPNonTerminal, **kwargs):
-#     return tree.metadata.get('kill', False)
-
 @flexi_pipeline_element()
 def divide(num: float, denom: float, **kwargs):
     """Divides one column by another, and replaces any `inf` values (from dividing 
@@ -604,17 +593,16 @@ def clear(*to_clear: str, except_for: str|list[str]=None):
         dels = to_clear if to_clear else ['<ALL>'] + [f"-{exn}" for exn in except_for])
     return clr
 
-class SimpleGPScoreboardFactory:
+class SimpleGPScoreboardFactory(SimpleJSONable):
+    addr = ['sb_factory_params']
+    args = ('best_outvals', 'dv')
+    kwargs = ('def_fitness',)
+
     def __init__(self, best_outvals, dv, def_fitness: str='irmse'):
         self.def_fitness = def_fitness
         self.best_outvals = best_outvals
         self.dv = dv
-
-    @classmethod
-    def from_json(cls, json):
-        defit = {'def_fitness': json[['sb_factory_params', 'def_fitness']]} if ['sb_factory_params', 'def_fitness'] in json else {}
-        return cls(*[json[['sb_factory_params', pram]] for pram in ['best_outvals', 'dv']], **defit)
-    
+ 
     @property
     def json(self):
         return {

@@ -1,9 +1,11 @@
 import unittest
+import sys
+import io
 
 from jsonable import *
 from agent_controller import AgentController
 from agent import Agent
-from gp_fitness import SimpleGPScoreboardFactory, SimplerGPScoreboardFactory
+from gp_fitness import SimplerGPScoreboardFactory
 from philoso_py import ModelFactory
 from repository import Publication
 from reward import Curiosity, Renoun, GuardrailCollisions
@@ -12,6 +14,23 @@ from model_time import ModelTime
 from hd import HierarchicalDict as HD
 import numpy as np
 from gp import GPTreebank
+
+
+def shhhh(test):
+    """Decorator to make sure tests run without the classes
+    being tested outputting printout
+    """
+    def shushed(*args, **kwargs):
+        # Suppress unwanted printout:
+        suppress_text = io.StringIO()
+        sys.stdout = suppress_text
+        sys.stderr = suppress_text
+        # run test
+        test(*args, **kwargs)
+        # Release output streams:
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
+    return shushed
 
 paramarama = {
     "seed": 666,
@@ -558,6 +577,7 @@ class TestJSONables(unittest.TestCase):
         params = self.paramarama if params is None else params
         return self.mf.from_json(params)
 
+    @shhhh
     def test_model_from_json(self):
         m1 = self.make_model_from_json()
         self.assertIsInstance(m1.world, SineWorld)
@@ -587,6 +607,7 @@ class TestJSONables(unittest.TestCase):
         self.assertEqual(len(rset), 3)
         self.assertEqual(m1.out_dir, 'output/l/')
 
+    @shhhh
     def test_model_json(self):
         mjson = HD(self.make_model_from_json().json)
         for j in range(3):
@@ -695,8 +716,8 @@ class TestJSONables(unittest.TestCase):
                     'obs_stop', 'obs_num'
                 ]
             )
-            self.assertIsNone(
-                mjson[['agent_templates', 'a', 'controller', 'guardrail_base_penalty']]
+            self.assertAlmostEqual(
+                mjson[['agent_templates', 'a', 'controller', 'guardrail_base_penalty']], 1.0
             )
             self.assertEqual(
                 mjson[['agent_templates', 'a', 'controller', 'ping_freq']], 5

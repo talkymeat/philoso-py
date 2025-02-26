@@ -23,17 +23,34 @@ from observation import Observation, GPObservation, Remembering, LitReview
 from mutators import random_mutator_factory
 from sb_statfuncs import mean, mode, std, infage, nanage, Quantile
 from icecream import ic
+from jsonable import SimpleJSONable
 
 @dataclass
 class Result:
     best_tree: Tree 
     fitness: float
 
+def print_locals(locfn):
+    print('X'*80)
+    for k, v in locfn().items():
+        print(k)
+        print(v)
+    print('X'*80)
     
-class AgentController(Env):
+class AgentController(Env, SimpleJSONable):
+    addr = ["agent_templates", "$prefix", "controller"]
+    args = ("mem_rows", "mem_tables", 'dv', "def_fitness", "out_dir", "record_obs_len")
+    kwargs = (
+        "max_readings", "num_treebanks", "short_term_mem_size", "value", "max_volume", 
+        "max_max_size", "max_max_depth",  "theta", "gp_vars_core", "gp_vars_more", 
+        "ping_freq", "guardrail_base_penalty", "mem_col_types"
+    )
+    arg_source_order = (1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0)
+
     @classmethod
     def from_json(cls, 
-                json_, 
+                json_: dict, 
+                *args,
                 world=None,
                 time=None, 
                 name=None, 
@@ -45,97 +62,53 @@ class AgentController(Env):
                 gp_system=None,
                 sb_statfuncs=None,
                 rng=None,
-                mutators: Sequence[Callable]=None
+                mutators: Sequence[Callable]=None,
+                **kwargs
             ):
         """A classmethod which creates an `AgentController` based on a JSON
         object, plus a number of other objects created by the `ModelFactory`
         """
-        json_args = [
-            json_[[
-                "agent_templates", 
-                prefix, 
-                "controller", 
-                pram
-            ]]
-            for pram
-            in [
-                "mem_rows",
-                "mem_tables",
-                'dv',
-                "def_fitness",
-                "out_dir",
-                "record_obs_len"
-            ]
-        ]
-        args = [
-            world, time, name
-        ] + json_args[:4] + [
-            sb_factory, tree_factory_classes, rng, 
-            json_.get("agent_indices", agent_indices), 
-            repository
-        ] + json_args[4:]
-        kwargs = {
-            **{
-                pram: json_.get([
-                    "agent_templates", prefix, "controller", pram
-                ])
-                for pram
-                in [
-                    "max_readings",
-                    "num_treebanks",
-                    "short_term_mem_size",
-                    "value",
-                    "max_volume",
-                    "max_max_size",
-                    "max_max_depth", 
-                    "theta",
-                    "gp_vars_core",
-                    "gp_vars_more",
-                    "ping_freq",
-                    "guardrail_base_penalty",
-                    "mem_col_types"
-                ]
-            },
-            **{
-                "gp_system": gp_system,
-                "mutators":  mutators,
-                "prefix": prefix
-            }
-        }
+        addr = cls.make_addr(locals())
+        kwargs_ = {}
         # gets all the statfuncs explicitly listed in json
-        kwargs['sb_statfuncs'] = [
+        kwargs_['sb_statfuncs'] = [
             sb_statfuncs[sbsf['name']] if len(sbsf)==1 else sb_statfuncs[sbsf['name']](**sbsf)
             for sbsf
-            in json_[["agent_templates", prefix, "controller", "sb_statfuncs"]]
+            in json_[addr+["sb_statfuncs"]]
         ] 
         # generates a number of quantile statfuncs all at once from the int value
         # "sb_statfuncs_quantiles"
-        kwargs['sb_statfuncs'] += sb_statfuncs['Quantile'].multi(
+        kwargs_['sb_statfuncs'] += sb_statfuncs['Quantile'].multi(
             json_.get(
-                ["agent_templates", prefix, "controller", "sb_statfuncs_quantiles"], 
+                addr+["sb_statfuncs_quantiles"], 
                 0
             )
         )
-        kwargs['mutators'] = [
+        kwargs_['mutators'] = [
             mutators[mut['name']] if len(mut)==1 else mutators[mut['name']](**mut)
             for mut
-            in json_[["agent_templates", prefix, "controller", "mutators"]]
+            in json_[addr+["mutators"]]
         ] 
-        if isinstance(kwargs["mem_col_types"], dict):
-            kwargs["mem_col_types"] = {
-                k: np.dtype(v) for k, v in kwargs["mem_col_types"].items()
+        kwargs_["mem_col_types"] = json_[addr+["mem_col_types"]]
+        if isinstance(kwargs_["mem_col_types"], dict):
+            kwargs_["mem_col_types"] = {
+                k: np.dtype(v) for k, v in kwargs_["mem_col_types"].items()
             }
-        elif isinstance(kwargs["mem_col_types"], list):
-            kwargs["mem_col_types"] = [
-                np.dtype(v) for v in kwargs["mem_col_types"]
+        elif isinstance(kwargs_["mem_col_types"], list):
+            kwargs_["mem_col_types"] = [
+                np.dtype(v) for v in kwargs_["mem_col_types"]
             ]
-        elif isinstance(kwargs["mem_col_types"], str):
-            kwargs["mem_col_types"] = np.dtype(kwargs["mem_col_types"])
+        elif isinstance(kwargs_["mem_col_types"], str):
+            kwargs_["mem_col_types"] = np.dtype(kwargs_["mem_col_types"])
         else:
             raise TypeError(
                 "`mem_col_types` should be a dict[str, str], a list[str], or a str"
             )
-        return cls(*args, **kwargs)
+        return super().from_json(
+            json_, world, time, name, sb_factory, tree_factory_classes, rng, 
+            json_.get("agent_indices", agent_indices), repository, 
+            *args, prefix=prefix, **kwargs, **kwargs_
+        )
     
     @property
     def json(self) -> dict:

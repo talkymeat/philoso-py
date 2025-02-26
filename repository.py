@@ -17,6 +17,7 @@ from m import MDict
 from functools import reduce
 from icecream import ic
 from utils import simplify
+from jsonable import SimpleJSONable
 
 class PublicationRewardFunc(Protocol):
     """Typically, reward should be positive if the submission is successfully
@@ -213,12 +214,15 @@ class Archive(TypeLabelledTreebank): #M #P
                              + f'name: you gave {idx}, of type {type(idx)}.')
     
 
-        
-class Publication(Archive):
+class Publication(Archive, SimpleJSONable):
     REWARD_FUNCS = {
         'ranked': rank_reward_func_factory
     } # other possibilities: sd, time-lagged sd, composite XXX
     ESSENTIAL_COLS = ['credit', 't', 'exists', 'tree']
+    addr = ['publication_params']
+    args = ['rows']
+    kwargs = ['tables', 'reward', 'value', 'decay'] 
+    arg_source_order = (1, 0, 1, 1)
 
     def __init__(self, 
             cols: Sequence[str],  #M #P
@@ -274,16 +278,16 @@ class Publication(Archive):
         self.value = value
 
     @classmethod
-    def from_json(cls, json, time=None, agent_names=None):
+    def from_json(cls, json_, *args, time=None, agent_names=None, **kwargs):
         if not time or not isinstance(time, ModelTime):
             raise AttributeError('A ModelTime object must be passed as `time`')
         if not agent_names or not isinstance(agent_names, dict) or sum([(not (isinstance(name, str) and isinstance(i, int))) for name, i in agent_names.items()]):
             raise AttributeError('A dict mapping strings to ints must be passed as `agent_names`')
-        cols = json.get(
-            ['publication_params', 'cols'], 
+        cols = json_.get(
+            cls.addr + ['cols'], 
             (
-                json.get(['publication_params', 'gp_vars_core'], []) 
-                + json.get(['publication_params', 'gp_vars_more'], [])
+                json_.get(['publication_params', 'gp_vars_core'], []) 
+                + json_.get(['publication_params', 'gp_vars_more'], [])
             )
         )
         if not cols:
@@ -291,28 +295,10 @@ class Publication(Archive):
                 "publication_params must have at least one of " +
                 "'cols', 'gp_vars_core', and 'gp_vars_more'"
             )
-        args = [
-            cols,
-            json[['publication_params', 'rows']],
-            time,
-            agent_names
-        ]
-        kwargs = {
-            pram: json[['publication_params', pram]] 
-            for pram 
-            in [
-                'tables', 
-                'reward', 
-                'value', 
-                'decay'
-            ] 
-            if [
-                'publication_params', 
-                pram
-            ] in json
-        }
-        if ['publication_params', 'types'] in json:
-            types = json[['publication_params', 'types']]
+        args_ = [cols, time, agent_names]
+        kwargs_ = {}
+        if cls.addr + ['types'] in json_:
+            types = json_[['publication_params', 'types']]
             if isinstance(types, dict):
                 types = {k: np.dtype(v) for k, v in types.items()}
             elif isinstance(types, list):
@@ -323,8 +309,8 @@ class Publication(Archive):
                 raise TypeError(
                     '`types` must be a dict of strings, a list of strings, a string, or None'
                 )
-            kwargs['types'] = types
-        return cls(*args, **kwargs)
+            kwargs_['types'] = types
+        return super().from_json(json_, *args_, *args, **kwargs_, **kwargs)
 
     @property
     def json(self) -> dict:

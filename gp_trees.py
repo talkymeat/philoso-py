@@ -281,41 +281,41 @@ class GPNonTerminal(NonTerminal):
             # create a dummy treebank, and then it won't be None. 
             treebank = self.treebank.__class__()
         if _max_size is None:
-            _max_size = ic(treebank.max_size)
-        _max_depth = ic(treebank.max_depth)
-        _, to_copy = ic(self.gp_operator(None, self))
-        child_sizes = ic([c.size() for c in self])
-        size = ic(self.size())
+            _max_size = treebank.max_size
+        _max_depth = treebank.max_depth
+        _, to_copy = self.gp_operator(None, self)
+        child_sizes = [c.size() for c in self]
+        size = self.size()
         gp_copied_children = []
         for i, c in enumerate(self):
-            extra_size = ic(_max_size - size)
-            allowed_child_size = ic(extra_size + child_sizes[i])
-            allowed_child_depth = ic(_max_depth - (_at_depth+1))
-            c_copy = ic(self.xo_operator(
+            extra_size = _max_size - size
+            allowed_child_size = extra_size + child_sizes[i]
+            allowed_child_depth = _max_depth - (_at_depth+1)
+            c_copy = self.xo_operator(
                 None, c, 
                 _max_size  = allowed_child_size,
                 _max_depth = allowed_child_depth,
                 **kwargs
-            ))[1]
-            c_copy = ic(c_copy.copy_out(
+            )[1]
+            c_copy = c_copy.copy_out(
                 treebank, 
                 gp_copy=gp_copy, 
                 _max_size  = allowed_child_size,
                 _at_depth = _at_depth + 1,
                 **kwargs
-            ))
+            )
             gp_copied_children.append(c_copy)
-            c_size = ic(c_copy.size())
+            c_size = c_copy.size()
             size += c_size - child_sizes[i]
-            child_sizes[i] = ic(c_size)
-            ic(max([c.depth() for c in gp_copied_children]))
-        return ic(treebank.N(
+            child_sizes[i] = c_size
+            # ic(max([c.depth() for c in gp_copied_children]))
+        return treebank.N(
             treebank,
             to_copy.label if treebank == to_copy.treebank else treebank.get_label(to_copy.label.class_id),
             *gp_copied_children,
             operator = to_copy._operator,
             metadata = {**deepcopy(to_copy.metadata), **{'__no_xo__': True}}
-        ) )
+        )
     
     def __call__(self, **kwargs):
         try:
@@ -480,7 +480,7 @@ class Variable(GPTerminal):
             treebank = self.treebank.__class__()
             # XXX How to make sure TB has right OPS?
         # return the copy Terminal, with `treebank=treebank`
-        _, to_copy = ic(self.gp_operator(None, self)) if gp_copy else (None, self)
+        _, to_copy = self.gp_operator(None, self) if gp_copy else (None, self)
         return Variable(
             treebank,
             to_copy.label if treebank == to_copy.treebank else treebank.get_label(to_copy.label.class_id),  ##-OK both, raw val

@@ -872,6 +872,15 @@ class HierarchicalDict(dict):
         else:
             return s
         
+    def update(self, other: dict):
+        """
+        """
+        for k, v in other.items():
+            if isinstance(v, dict) and k in self and isinstance(self[k], dict):
+                self[k].update(v)
+            else:
+                self[k] = v
+        
     
 def main():
     import doctest

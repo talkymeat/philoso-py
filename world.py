@@ -15,9 +15,10 @@ from dataclasses import dataclass
 from utils import list_transpose, linear_interpolated_binned_means
 from rl_bases import Actionable
 from hd import HierarchicalDict as HD
+from jsonable import SimpleJSONable
 
 
-class World(Actionable):
+class World(Actionable, SimpleJSONable):
     """Abstract Base Class defining the 'world' that agents observe and reason
     about. An philoso.py `World` can be any collection of state which can be
     updated in time-steps according to deterministic or probabilistic rules and
@@ -26,11 +27,6 @@ class World(Actionable):
 
     def __init__(self, *args, seed: int|np.random.Generator|None=None, **kwargs):
         self.np_random = np.random.Generator(np.random.PCG64(seed))
-
-    @classmethod
-    @abstractmethod
-    def from_json(cls, json) -> 'World':
-        pass
 
     @abstractmethod
     def __call__(self, *args: Any, **kwargs: Any) -> Observatory:
@@ -99,6 +95,14 @@ class World(Actionable):
 
 
 class VectorWorld(World):
+    args = ('length', 'initial_conditions', 'max_observation_size')
+    kwargs = ('cell_type', 'seed', 'transposal_probability', 'jitter_stdev')
+    arg_source_order = (0, 0, 1, 0, 0)
+
+    # XXX TEST ME
+    def from_json(json_, *args, fn_list=None, **kwargs):
+        return super().from_json(json_, fn_list, *args, **kwargs)
+
     """The simplest World subclass: the world is a linked list of numbers,
     which at each time-step adds a new number calculated from the existing
     members of the list to the head of the list, and if the length has reached
@@ -886,6 +890,11 @@ class VectorWorld(World):
 
 # this contains a bunch of gymnasium.spaces stuff that isn't needed
 class SineWorld(World):
+    addr = ['world_params']
+    args = ['radius', 'max_observation_size', 'noise_sd']
+    stargs = 'sine_wave_params'
+    kwargs = ['seed', 'speed', 'dtype', 'iv', 'dv']
+
     @dataclass
     class SineWave:
         wavelength: float = 1.0
@@ -954,19 +963,19 @@ class SineWorld(World):
             'dv': self.dv
         }
 
-    @classmethod
-    def from_json(cls, json: HD):
-        args = [
-            json[['world_params', pram]] for pram in [
-                'radius', 'max_observation_size', 'noise_sd'
-            ]
-        ] + json[['world_params', 'sine_wave_params']]
-        kwargs = {
-            k: json[['world_params', k]] for k in [
-                'seed', 'speed', 'dtype', 'iv', 'dv'
-            ] if ['world_params', k] in json
-        }
-        return cls(*args, **kwargs)
+    # @classmethod
+    # def from_json(cls, json: HD):
+    #     args = [
+    #         json[['world_params', pram]] for pram in [
+    #             'radius', 'max_observation_size', 'noise_sd'
+    #         ]
+    #     ] + json[['world_params', 'sine_wave_params']]
+    #     kwargs = {
+    #         k: json[['world_params', k]] for k in [
+    #             'seed', 'speed', 'dtype', 'iv', 'dv'
+    #         ] if ['world_params', k] in json
+    #     }
+    #     return cls(*args, **kwargs)
     
     @property
     def wobf_param_ranges(self) -> tuple[tuple[int, int]]:

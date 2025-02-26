@@ -760,10 +760,7 @@ class ModelFactory:
                 agents += [
                     Agent.from_json(
                         json_,
-                        prefix=nom,
-                        network_class=network_class,
-                        rng=dancing_chaos_at_the_heart_of_the_world,
-                        controller=AgentController.from_json(
+                        AgentController.from_json(
                             json_, 
                             world=world,
                             time=time,
@@ -777,7 +774,10 @@ class ModelFactory:
                             mutators=self.mutators,
                             sb_statfuncs=self.sb_statfuncs,
                             rng=dancing_chaos_at_the_heart_of_the_world
-                        )
+                        ),
+                        dancing_chaos_at_the_heart_of_the_world,
+                        prefix=nom,
+                        network_class=network_class,
                     ) for i in range(json_.get(['agent_templates', nom, 'n'], 1))
                 ]
         # Note, networks must be made *after* all agents have been made,
@@ -920,7 +920,7 @@ if __name__ == "__main__":
     # model.run(100, 100)
     # model.run(2, 10_000)
     # model.run(days, steps_per_day) # 
-    ModelFactory().run_json('model1.json')
+    ModelFactory().run_json('model_json/model1.json')
     # ModelFactory().save_json_and_run(
     #     example_model(
     #         seed=69, 

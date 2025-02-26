@@ -1,7 +1,10 @@
 from abc import ABC, abstractmethod
 from hd import HierarchicalDict as HD
+from utils import unfold_lists
 from typing import Callable
 from icecream import ic
+
+
 
 ic.enable()
 
@@ -21,6 +24,7 @@ class JSONable(ABC):
     def json(self) -> dict:
         pass
 
+
 class SimpleJSONable(JSONable):
     """Partial implementation of JSONable, with the bare bones of
     a universal `from_json` implementation, and the `json` property 
@@ -28,24 +32,30 @@ class SimpleJSONable(JSONable):
     """
     addr: list[str] = []
     args: tuple[str] = ()
+    arg_source_order: list[bool]=None
     stargs: str|None = None
     kwargs: tuple[str] = ()
 
     @classmethod
     def from_json(cls, json_, *args, **kwargs):
+        json_ = HD(json_)
+        addr = cls.make_addr(locals())
+        json_args = [
+            json_.get(addr+[arg], None) for arg in cls.args
+        ]
+        if cls.arg_source_order is None:
+            cls.arg_source_order = [False] * len(json_args) + [True] * len(args)
+        inst_args = unfold_lists(cls.arg_source_order, json_args, args)
         return cls(
-            *[
-                json_.get(cls.addr+[arg], None) 
-                for arg 
-                in cls.args
-            ],
-            *(json_.get(cls.addr+[cls.stargs], ()) if cls.stargs else ()),
+            *inst_args,
+            *(json_.get(addr+[cls.stargs], ()) if cls.stargs else ()),
             **{
-                kwarg: json_[cls.addr+[kwarg]] 
+                kwarg: json_[addr+[kwarg]] 
                 for kwarg 
                 in cls.kwargs 
-                if cls.addr+[kwarg] in json_
-            }
+                if addr+[kwarg] in json_ and kwarg not in kwargs
+            },
+            **kwargs
         )
 
     @property
@@ -53,8 +63,10 @@ class SimpleJSONable(JSONable):
     def json(self) -> dict:
         pass
 
-nw = 0
-ini = 0
+    @classmethod
+    def make_addr(cls, locals_: dict):
+        return [locals_.get(k[1:], locals_.get('kwargs', k[1:]).get(k[1:], k[1:])) if isinstance(k, str) and k.startswith('$') else k for k in cls.addr]
+
 
 class JSONableFunc(JSONable):
     """Decorator class, used to wrap a function f, such that
@@ -62,8 +74,6 @@ class JSONableFunc(JSONable):
     and JSONable(f).json returns a dict containing only the mapping 
     `{'name': f.__name__}`
     """
-    nw = 0
-    ini = 0
 
     def __new__(cls, f):
         """Create a new `JSONableFunc` if `f` is not a `JSONableFunc`;
