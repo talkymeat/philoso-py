@@ -16,8 +16,9 @@ from collections import deque
 from m import MDict
 from functools import reduce
 from icecream import ic
-from utils import simplify
+from utils import simplify, InsufficientPostgraduateFundingError
 from jsonable import SimpleJSONable
+from pathlib import Path
 
 class PublicationRewardFunc(Protocol):
     """Typically, reward should be positive if the submission is successfully
@@ -82,6 +83,31 @@ class Archive(TypeLabelledTreebank): #M #P
             'tables': len(self.tables), 
             'value': self.value, 
         }
+    
+    def save(self, rootname: Path, ext: str):
+        saveable_dfs = [
+            pd.DataFrame(
+                {'tree': table['tree'].apply(lambda t: str(t))}
+            ).join(
+                table[table.columns[table.columns != 'tree']]
+            ) for table in self.tables
+        ]
+        for i, sdf in enumerate(saveable_dfs):
+            fname = f"{rootname}_{i}.{ext}"
+            match ext:
+                case 'csv':
+                    sdf.to_csv(fname)
+                case 'parquet':
+                    sdf.to_parquet(fname)
+                case _:
+                    raise InsufficientPostgraduateFundingError(
+                        "Xan Cochran would love to implement additional file " +
+                        "formats to save philoso.py repositories to, but they " +
+                        "first need funding to continue working on philoso.py " +
+                        "for a PhD. Award them a funded studentship and " +
+                        "they'll get right on it. For now, only csv and " +
+                        "parquet are supported"
+                    )
 
     @property
     def json(self) -> dict:

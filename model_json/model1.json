@@ -1,11 +1,11 @@
 {
-    "seed": 666,
+    "seed": 42,
     "iv": "x",
     "dv": "y",
     "def_fitness": "irmse",
-    "out_dir": "output/l/",
+    "out_dir": "output/q/",
     "ping_freq": 5,
-    "output_prefix": "l__",
+    "output_prefix": "q__",
     "days": 100, 
     "steps_per_day": 100,
     "world": "SineWorld",
@@ -29,6 +29,7 @@
     "sb_factory": "SimplerGPScoreboardFactory",
     "sb_factory_params": {
         "best_outvals": [
+            "tree",
             "irmse", 
             "size", 
             "depth", 

@@ -289,3 +289,10 @@ class Agent(SimpleJSONable):
             self.actions,
         )
         self.trainer.train_value(obs_full, returns)
+
+    def save_training_buffer(self, path):
+        saveable = self.training_buffer.map(str)
+        saveable['obs'] = self.training_buffer['obs'].apply(
+            lambda obs: str([x for x in obs])
+        )
+        saveable.to_csv(path)

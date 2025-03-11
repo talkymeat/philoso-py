@@ -361,6 +361,15 @@ class CrossoverMutator(Mutator):
             _max_size = self.max_size
         if _max_depth is None:
             _max_depth = self.max_depth
+        if not _max_depth or _max_size:
+            # NOTE 2 XXX: see note 1 below - this is to catch cases where a crossover
+            # cannot occur because the tree is larger than the maximum size or depth
+            # of the treebank, because of a UseMem call introducing oversized trees.
+            # Note 1 below explains the rationale, but I'm adding this conditional
+            # here to ensure that the mutator doesn't waste a load of time running 
+            # through every subtree in the relevant label just to find that no
+            # subtrees exist with zero size or zero depth. 
+            return val, tree
         if self.mutate_here(tree):
             # The size of mutated trees must be kept within bounds of size and depth:
             # this gp operator is never called on the root node, so the maxima for a
@@ -375,7 +384,6 @@ class CrossoverMutator(Mutator):
             # If there aren't any, never mind, cancel the mutation and use the original
             # subtree
             if not len(complement):
-                ic('bleh')
                 return val, tree
             # shuffle the array and pick the first subtree, using the index i,
             # initialised to 0, to pick it
@@ -394,7 +402,14 @@ class CrossoverMutator(Mutator):
                 # If it doesn't work, increment i and try again
                 i+=1
                 # If we run out of subtrees, then the substitution is impossible,
-                # and the original subtree will be returned
+                # and the original subtree will be returned. 
+                # NOTE 1 XXX This is likely to
+                # be the result of the UseMem and GPNew or GPContinue actions being
+                # run with trees in UseMem that exceed the max_size or max_depth of
+                # the GPTreebank. It was decided that there is no need to prevent 
+                # agents from doing this: either they learn not to, because it's 
+                # bad, or they don't, because they apparently get something from 
+                # doing this IG. 
                 if i>=len(complement):
                     ic('fahhhk')
                     return val, tree
@@ -407,7 +422,6 @@ class CrossoverMutator(Mutator):
                 # n+=1
             if len(subtree)==0:
                 print('wut?')
-
             return val, subtree
         if len(tree)==0:
             print('huh?')
@@ -611,7 +625,7 @@ class SinglePointLeafMutatorFactory(MutatorFactory):
     }
 
 class MutatorMutator:
-    """Swaps out the mutation operaotrs for a tree when called
+    """Swaps out the mutation operators for a tree when called
 
     >>> from test_materials import T6, GP2
     >>> mm = single_leaf_mutator_factory(GP2)

@@ -436,16 +436,7 @@ class GPNew(Action):
                 episode_len = int(_i(episode_len))  ,
                 operators =          tree_factory.op_set,
                 seed =               self.rng,
-                _dir =              (
-                                        self.out_dir     / 
-                                        'gp_out'         / 
-                                        f"{gp_register}" / 
-                                        f"{self.gptb_cts[
-                                            gp_register
-                                        ]}"              / 
-                                        'g0'             / 
-                                        f"t{self.t}"
-                                    ),
+                _dir =               self.out_dir / 'gp_out' / f"reg{gp_register}" / f"count{self.gptb_cts[gp_register]}_gen0_t{self.t}",
                 elitism =         _i(elitism),
                 fitness =            scoreboard,
                 ping_freq =          self.ping_freq,
@@ -614,7 +605,7 @@ class GPContinue(Action):
             gp: GPTreebank = self.gptb_list[gp_register]
             if gp:
                 gp.insert_trees(self.ac.mems_to_use)
-                gp.data_dir = self.out_dir / 'gp_out' / f"{gp_register}" / f"{self.gptb_cts[gp_register]}" / f"g{gp.gens_past}" / f"t{self.t}"
+                gp.data_dir = self.out_dir / 'gp_out' / f"reg{gp_register}" / f"count{self.gptb_cts[gp_register]}_gen{gp.gens_past}_t{self.t}"
                 gp.crossover_rate  = _i(crossover_rate)
                 gp.mutation_rate   = _i(mutation_rate)
                 gp.mutation_sd     = _i(mutation_sd)

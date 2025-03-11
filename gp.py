@@ -118,10 +118,6 @@ class GPTreebank(TypeLabelledTreebank):
             "max_size", "temp_coeff", "pop", "elitism", 'obs_start', 
             'obs_stop', 'obs_num'
         ]
-        # make base filename for saving data. This means the filename will record
-        # when the run started, not when the file was saved. It also means pickle
-        # saves of the run data will overwrite previous pickles.
-        ## XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX XXX
         # If a scoreboard is provided in kwargs, use it << but wait XXX, does the scoreboard come preloaded with an observatory?
         if fitness is not None:
             self.scoreboard = fitness
@@ -166,10 +162,7 @@ class GPTreebank(TypeLabelledTreebank):
     
     @data_dir.setter
     def data_dir(self, _dir):
-        self._data_dir = Path(        ##
-            _dir,               ##
-            (''.join([self.np_random.choice(list(lcase)) for _ in range(8)]))
-        )                            ##
+        self._data_dir = Path(_dir)                            ##
         if not self._data_dir.is_dir():#
             self._data_dir.mkdir(parents=True, exist_ok=True)    ##
 
@@ -300,8 +293,10 @@ class GPTreebank(TypeLabelledTreebank):
             self.update_record(best, i)
             if self.grapher:
                 self.update_plots(i)
-            if ping_freq and (not i or not (i+1)%ping_freq) and i != self.episode_len-1:
-                self.make_parquets(i)
+            # XXX this may be useful for agentless GP, 
+            # XXX maybe make a param to turn it back on
+            # if ping_freq and (not i or not (i+1)%ping_freq) and i != self.episode_len-1:
+            #     self.make_parquets(i)
         if self.grapher:
             self.grapher.save(self.make_filename('plots_1', 'png'))
         return self._last_step()
@@ -431,7 +426,8 @@ class GPTreebank(TypeLabelledTreebank):
         return fpath
 
     def make_parquets(self, i):
-        self.record.to_parquet(self.make_filename('record', 'parquet'))
+        pth = self.make_filename('record', 'parquet')
+        self.record.to_parquet(pth)
         self.scoreboard[[
             col for col in self.scoreboard if col!='tree'
         ]].to_parquet(self.make_filename(f'scoreboard_{i}', 'parquet'))
@@ -446,33 +442,6 @@ class GPTreebank(TypeLabelledTreebank):
         # with open(self.make_filename('final', 'json'), 'w') as file:
         #     json.dump({**{k: v for k, v in self.best.items() if k != 'tree'}, **{'tree': f"{self.best['tree']}"}}, file)
         return self.record.copy(), final_best, best_tree
-
-        ###############################
-        ## Tried and failed to do a pickle in the above XXX
-        ###############################
-             # if final_best is not None:
-            #     print(2, final_best['tree'][0])
-            #     pickle_jar = {
-            #         'gp': self, 
-            #         'tree_factory': tree_factory, 
-            #         'observatory': observatory, 
-            #         'steps': steps, 
-            #         'pop': pop, 
-            #         'dv': dv, 
-            #         'fitness': fitness, 
-            #         'def_fitness': def_fitness,
-            #         'elitism': elitism, 
-            #         'temp_coeff': temp_coeff, 
-            #         'best_outvals': best_outvals, 
-            #         'expt_outvals': expt_outvals, 
-            #         'ping_freq': ping_freq, 
-            #         'to_graph': to_graph, 
-            #         'n': n+1, 
-            #         'scoreboard': scoreboard, 
-            #         'grapher': grapher, 
-            #         'record': record, 
-            #     }
-            #     pickle.dump(pickle_jar, file=open(f'gp_run_{fn}.pickle', 'wb'))
 
 # Things to catch and penalise: 
 # RuntimeWarning: divide by zero encountered in scalar power

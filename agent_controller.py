@@ -7,7 +7,6 @@ from world import World
 from tree_factories import TreeFactory #, CompositeTreeFactory, TreeFactoryFactory
 from gp import GPTreebank
 from trees import Tree
-# from observatories import ObservatoryFactory ## DEL ME XXX
 from guardrails import GuardrailManager
 from dataclasses import dataclass
 from world import World
@@ -152,7 +151,6 @@ class AgentController(Env, SimpleJSONable):
             dv: str,
             def_fitness: str,
             sb_factory: SimpleGPScoreboardFactory, # Needs to be more general XXX TODO
-            # obs_factory: ObservatoryFactory,
             tree_factory_classes: list[type[TreeFactory]],
             rng: np.random.Generator,
             agent_names: dict[str, int],
@@ -165,9 +163,7 @@ class AgentController(Env, SimpleJSONable):
             sb_statfuncs: Sequence[Callable]=None,
             num_treebanks: int = 2,
             short_term_mem_size: int = 5,
-            # fitness_measures = None,
             value: str="fitness", 
-            # max_actions: int = 40, ## ??? XXX
             max_volume: int = 50_000,
             max_max_size: int = 400, ## ??? XXX
             max_max_depth: int = 100, ## ??? XXX
@@ -295,34 +291,6 @@ class AgentController(Env, SimpleJSONable):
         self._observation_space = Dict(
             {k: v.observation_space for k, v in self.observations.items()}
         )
-
-    # def nanage(self, col):
-    #     nange = col.isna().mean()
-    #     if np.isnan(nange):
-    #         print('GARG '*40)
-    #         print(self.name)
-    #         print(col)
-    #         print('+'*100)
-    #         for i, tb in enumerate(self.gptb_list):
-    #             if tb is not None:
-    #                 print(i)
-    #                 print(tb.scoreboard)
-    #         print('BERF '*40)
-    #     return nange
-
-    # def infage(self, col):
-    #     infinge = np.isinf(col).mean()
-    #     if np.isnan(infinge):
-    #         print('POBB '*40)
-    #         print(self.name)
-    #         print(col)
-    #         print('+'*100)
-    #         for i, tb in enumerate(self.gptb_list):
-    #             if tb is not None:
-    #                 print(i)
-    #                 print(tb.scoreboard)
-    #         print('GWEK '*40)
-    #     return infinge
 
     @property
     def observation_space(self):

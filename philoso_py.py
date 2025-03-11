@@ -253,33 +253,34 @@ class Model:
             raise AttributeError("model has no agent rewards")
         if state_file: # loading state a nice thing for later
             pass
-        path_ = Path(self.out_dir)
-        path_.mkdir(parents=True, exist_ok=True)
-        for _ in range(days):
-            print(f'=== DAY {_} ===')
-            asyncio.run(self.day(steps_per_day)) 
+        self.path_ = Path(self.out_dir)
+        self.path_.mkdir(parents=True, exist_ok=True)
+        for day in range(days):
+            print(f'=== DAY {day} ===')
+            asyncio.run(self.day(steps_per_day, day)) 
             self.night()
         for r in self.rewards:
-            r.record.to_parquet(path_ / f'{prefix}{r.__name__}_record.parquet')
+            r.record.to_parquet(self.path_ / f'{prefix}{r.__name__}_record.parquet')
         for i, table in enumerate(self.publications.tables):
             table['tree'] = table['tree'].apply(lambda x: f"{x}")
-            table.to_parquet(path_ / f'{prefix}publication_{i}_end.parquet')
+            table.to_parquet(self.path_ / f'{prefix}publication_{i}_end.parquet')
         for agent in self.agents:
             for i, table in enumerate(agent.ac.memory.tables):
                 table['tree'] = table['tree'].apply(lambda x: f"{x}")
-                table.to_parquet(path_ / f'{prefix}{agent.name}_mem_{i}.parquet')
-            agent.save_nn(f'{path_}/{prefix}{agent.name}_nn_state.pt')
+                table.to_parquet(self.path_ / f'{prefix}{agent.name}_mem_{i}.parquet')
+            agent.save_nn(f'{self.path_}/{prefix}{agent.name}_nn_state.pt')
         pd.DataFrame({
             agent.name: agent.day_rewards for agent in self.agents
-        }).to_parquet(path_ / f'{prefix}day_rewards.parquet')
+        }).to_parquet(self.path_ / f'{prefix}day_rewards.parquet')
+        print("The model is done. Goodbye!")
 
 
-    async def day(self, steps):
+    async def day(self, steps, day):
         print('Good morning!')
         for agent in self.agents:
             agent.morning_routine(steps)
         print('Oh, what a lovely day')
-        for _ in range(steps):
+        for step in range(steps):
             self.not_done = self.agent_name_set.copy()
             self._reward_dict = {}
             shuffled_agents = copy(self.agents)
@@ -320,9 +321,28 @@ class Model:
                             f"{i}, row {j} with size and depth 1. Huhhhhhhh?"
                         )
             self.t.tick()
+        self.daily_journals(day)
         print('What a beautiful sunset!')
         for agent in self.agents:
             agent.evening_routine()
+
+    def daily_journals(self, day):
+        for a in self.agents:
+            base: Path = self.path_ / a.name / 'days'
+            base.mkdir(parents=True, exist_ok=True)
+            a.ac.memory.save(
+                base / f'day_{day}_mems', 
+                'parquet'
+            )
+            a.save_training_buffer(
+                base / f'day_{day}_actions.csv'
+            )
+        pubdir = self.path_ / 'publications'
+        pubdir.mkdir(parents=True, exist_ok=True)
+        self.publications.save(
+            pubdir / f'day_{day}_jrnl',
+            'parquet'
+        )
 
     def night(self):
         print("Good night!")
@@ -914,20 +934,9 @@ class ModelFactory:
             prefix=output_prefix)
 
 if __name__ == "__main__":
-    # model = example_model(seed=69420, ping_freq=10)
-    # model.run(100,100, prefix='k__')
-    # model.run(40, 100)
-    # model.run(100, 100)
-    # model.run(2, 10_000)
-    # model.run(days, steps_per_day) # 
-    ModelFactory().run_json('model_json/model1.json')
-    # ModelFactory().save_json_and_run(
-    #     example_model(
-    #         seed=69, 
-    #         out_dir='output/n', 
-    #         ping_freq=5
-    #     ),
-    #     100,
-    #     100,
-    #     "n__"
-    # )
+    from argparse import ArgumentParser
+    parser = ArgumentParser(prog='philoso-py')
+    parser.add_argument('json_fn')
+    args = parser.parse_args()
+    print('Running:', args.json_fn)
+    ModelFactory().run_json(args.json_fn)
