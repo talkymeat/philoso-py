@@ -632,7 +632,7 @@ class ModelFactory:
             json_ = HD(json_)
         return json_
 
-    def from_json(self, json_: str|dict) -> Model:
+    def from_json(self, json_: str|dict, out_dir: str=None) -> Model:
         """This represents the core functionality of the ModelFactory
         class: it creates a ready-to-run philoso.py `Model` from a 
         JSON input.
@@ -904,7 +904,7 @@ class ModelFactory:
                 prefix=prefix
             )
     
-    def run_json(self, json_: str|dict):
+    def run_json(self, json_: str|dict, out_dir: str=None):
         """This function creates and runs a model from a json file,
         with no arguments other than the json itself
 
@@ -916,6 +916,10 @@ class ModelFactory:
         """
         # Ensure the json is in the HierarchicalDict format
         json_ = self._read_json(json_)
+        # If a target directory for outputs is given, prepend
+        # this to 'out_dir' in json_
+        if out_dir:
+            json_['out_dir'] = out_dir + '/' + json_['out_dir'] 
         # Create the model
         model = self.from_json(json_)
         # retrieve the extra data needed to cal model.run
@@ -937,6 +941,8 @@ if __name__ == "__main__":
     from argparse import ArgumentParser
     parser = ArgumentParser(prog='philoso-py')
     parser.add_argument('json_fn')
+    parser.add_argument('-o', '--outdir')
     args = parser.parse_args()
     print('Running:', args.json_fn)
-    ModelFactory().run_json(args.json_fn)
+    kwargs = {'out_dir': args.outdir} if args.outdir else {}
+    ModelFactory().run_json(args.json_fn, **kwargs)
