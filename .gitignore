@@ -42,12 +42,14 @@ var/
 # Environments
 .env
 .venv
+.idea/
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
 phil_venv/
+
 
 # Installer logs
 pip-log.txt
