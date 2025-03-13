@@ -15,7 +15,7 @@ from torch import optim
 from torch.distributions.categorical import Categorical
 from gymnasium.spaces import Discrete, flatten_space, unflatten
 from icecream import ic
-torch.manual_seed(69)
+
 
 
 # Policy and value model
@@ -28,8 +28,9 @@ class ActorCriticNetwork(nn.Module):
     head(s) corresponding to the chosen action(s) to set the parameters 
     for the action
     """
-    def __init__(self, obs_space_size, actions, device:str="cpu",):
+    def __init__(self, obs_space_size, actions, device:str="cpu", seed=None):
         super().__init__() # manadatory
+        torch.manual_seed(seed)
         # dict for action heads
         self.policy_layers: dict[str, nn.Sequential] = {}
         self.policy_heads: dict[tuple[str], nn.Linear] = {}
