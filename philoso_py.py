@@ -20,6 +20,7 @@ from collections.abc import Sequence
 import asyncio
 from pathlib import Path
 from copy import copy, deepcopy
+from datetime import datetime
 
 # from icecream import ic
 
@@ -259,6 +260,7 @@ class Model:
             print(f'=== DAY {day} ===')
             asyncio.run(self.day(steps_per_day, day)) 
             self.night()
+        # Generate model outputs
         for r in self.rewards:
             r.record.to_parquet(self.path_ / f'{prefix}{r.__name__}_record.parquet')
         for i, table in enumerate(self.publications.tables):
@@ -272,6 +274,7 @@ class Model:
         pd.DataFrame({
             agent.name: agent.day_rewards for agent in self.agents
         }).to_parquet(self.path_ / f'{prefix}day_rewards.parquet')
+
         print("The model is done. Goodbye!")
 
 
@@ -926,6 +929,8 @@ class ModelFactory:
         days = json_['days']
         steps_per_day = json_['steps_per_day']
         output_prefix=json_['output_prefix']
+        # Note the start time
+        start = datetime.now()
         # this call creates a mew JSON file from the model,
         # and runs the model. Note it is still useful to save
         # json from the model, as it may have used default values
@@ -936,6 +941,7 @@ class ModelFactory:
             steps_per_day,
             days,
             prefix=output_prefix)
+        print('model ran for', str(start-datetime.now()))
 
 if __name__ == "__main__":
     from argparse import ArgumentParser
