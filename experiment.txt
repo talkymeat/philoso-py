@@ -1,6 +1,2 @@
-python philoso_py model_json/model_aa.json -o /disk/scratch/xan
-python philoso_py model_json/model_ab.json -o /disk/scratch/xan
-python philoso_py model_json/model_ac.json -o /disk/scratch/xan
-python philoso_py model_json/model_ad.json -o /disk/scratch/xan
-python philoso_py model_json/model_ae.json -o /disk/scratch/xan
-python philoso_py model_json/model_af.json -o /disk/scratch/xan
+python philoso_py model_json/model1.json -o /disk/scratch/xan
+python philoso_py model_json/model1_gpu.json -o /disk/scratch/xan
