@@ -1,12 +1,11 @@
 {
-    "seed": 42,
     "iv": "x",
     "dv": "y",
     "def_fitness": "irmse",
-    "out_dir": "output/q/",
+    "out_dir": "output/cpu/",
     "ping_freq": 5,
-    "output_prefix": "q__",
-    "days": 100, 
+    "output_prefix": "cpu__",
+    "days": 10, 
     "steps_per_day": 100,
     "world": "SineWorld",
     "world_params": {

@@ -1,12 +1,11 @@
 {
-    "seed": 666,
     "iv": "x",
     "dv": "y",
     "def_fitness": "irmse",
-    "out_dir": "output/l/",
+    "out_dir": "output/gpu/",
     "ping_freq": 5,
-    "output_prefix": "l__",
-    "days": 100, 
+    "output_prefix": "gpu__",
+    "days": 10, 
     "steps_per_day": 100,
     "world": "SineWorld",
     "world_params": {
