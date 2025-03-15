@@ -84,7 +84,8 @@ set -e
 # N.B. disk could be at /disk/scratch_big, or /disk/scratch_fast. Check
 # yourself using an interactive session, or check the docs:
 #     http://computing.help.inf.ed.ac.uk/cluster-computing
-SCRATCH_DISK=/disk/scratch
+# SCRATCH_DISK=/disk/scratch
+SCRATCH_DISK=/home # womp womp scratch is full and unwritable
 SCRATCH_HOME=${SCRATCH_DISK}/${USER}
 mkdir -p ${SCRATCH_HOME}
 
@@ -125,7 +126,7 @@ src_path=/afs/inf.ed.ac.uk/user/s04/s0454279/CodeToJoy/philoso-py
 
 # # input data directory path on the scratch disk of the node
 dest_path=${SCRATCH_HOME}/philoso-py
-mkdir -p ${dest_path}  # make it if required
+# mkdir -p ${dest_path}  # make it if required
 
 # # Important notes about rsync:
 # # * the --compress option is going to compress the data before transfer to send
