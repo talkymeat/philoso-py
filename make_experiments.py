@@ -7,7 +7,8 @@ def main(start=None, end=None):
     # The home dir on the node's scratch disk
     USER = os.getenv('USER')
     # This may need changing to e.g. /disk/scratch_fast depending on the cluster
-    SCRATCH_DISK = '/disk/scratch'  
+    # SCRATCH_DISK = '/disk/scratch'  
+    SCRATCH_DISK = '/home' # womp womp scratch isn't working
     SCRATCH_HOME = f'{SCRATCH_DISK}/{USER}/philoso-py'
 
     list_jsons = sorted(glob('model_json/*'))
@@ -37,4 +38,4 @@ if __name__ == '__main__':
     main(start=s, end=e)
 
 # RUN WITH THIS COMMAND:
-# sbatch --array=1-2%2 / --time=0-06:00:00 --gres=gpu:2 --partition=PGR-Standard --mem 14000 --nodes=1 --output=/disk/scratch/s0454279/philoso-py/output/logs/slurm-%A_%a.out --error=/disk/scratch/%u/philoso-py/output/errors/slurm-%A_%a.out --cpus-per-task=1 run_models.sh experiment.txt
+# sbatch --array=1-2%2 --time=0-06:00:00 --gres=gpu:2 --partition=PGR-Standard --mem 14000 --nodes=1 --output=/home/s0454279/philoso-py/output/logs/slurm-%A_%a.out --error=/home/s0454279/philoso-py/output/errors/slurm-%A_%a.out --cpus-per-task=1 run_models.sh experiment.txt
