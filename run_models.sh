@@ -76,25 +76,29 @@ echo "Setting up bash enviroment"
 
 # Make available all commands on $PATH as on headnode
 source ~/.bashrc
-
+echo "Make available all commands on $PATH as on headnode"
 # Make script bail out after first error
 set -e
+echo "Make script bail out after first error"
 
 # Make your own folder on the node's scratch disk
 # N.B. disk could be at /disk/scratch_big, or /disk/scratch_fast. Check
 # yourself using an interactive session, or check the docs:
 #     http://computing.help.inf.ed.ac.uk/cluster-computing
 # SCRATCH_DISK=/disk/scratch
+echo "echo echo echo"
 SCRATCH_DISK=/home # womp womp scratch is full and unwritable
 SCRATCH_HOME=${SCRATCH_DISK}/${USER}
+echo "echo echo echo echo"
 mkdir -p ${SCRATCH_HOME}
+echo "echo echo echo echo echo"
 
 # Create and activate your conda environment
 CONDA_ENV_NAME=philos_env
-
+echo "my conda dont want none"
 # ~20 minutes
 conda update conda
-
+echo "unless your packages are up to date, hun"
 # create venv, ~20 minutes
 conda create -n ${CONDA_ENV_NAME} python=3.12.2 -f requirements.txt
 
