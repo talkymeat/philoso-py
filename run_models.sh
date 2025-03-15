@@ -18,7 +18,7 @@
 # ```
 # run_experiment -b slurm_arrayjob.sh -e experiments.txt -m 12
 # ```
-
+echo "Hellote"
 
 # ====================
 # Options for sbatch

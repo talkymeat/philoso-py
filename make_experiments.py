@@ -12,7 +12,7 @@ def main(start=None, end=None):
 
     list_jsons = sorted(glob('model_json/*'))
 
-    with open("experiment.txt", "w") as expts_file:
+    with open("experiments.txt", "w") as expts_file:
         for json_f in list_jsons[slice(start, end)]:
             print(
                 f'python philoso_py {json_f} -o {SCRATCH_HOME}',
@@ -35,3 +35,6 @@ if __name__ == '__main__':
             if range_[1] != '':
                 e = int(range_[1])
     main(start=s, end=e)
+
+# RUN WITH THIS COMMAND:
+# sbatch --array=1-2%2 / --time=0-06:00:00 --gres=gpu:2 --partition=PGR-Standard --mem 14000 --nodes=1 --output=/disk/scratch/s0454279/philoso-py/output/logs/slurm-%A_%a.out --error=/disk/scratch/%u/philoso-py/output/errors/slurm-%A_%a.out --cpus-per-task=1 run_models.sh experiment.txt
