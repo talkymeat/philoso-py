@@ -98,10 +98,14 @@ ENV_NAME=philos_env
 echo "upgrading pip"
 # ~20 minutes
 pip install --upgrade pip
-echo "upgrading virtualenv"
-pip install --upgrade virtualenv
 # create venv, ~20 minutes
-conda create -n ${ENV_NAME} python=3.12.2 -f requirements.txt
+echo "make environment with python 3.10"
+virtualenv -p "/opt/conda/bin/python3.10" "${ENV_NAME}"
+echo "activate env"
+source "${ENV_NAME}/bin/activate"
+which python
+echo "install packages"
+pip install -r requirements.txt
 
 echo "Activating virtual environment: ${ENV_NAME}"
 conda activate ${ENV_NAME}
