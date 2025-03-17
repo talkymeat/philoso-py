@@ -730,7 +730,7 @@ class StoreMem(Action):
                 if tree_data['tree'] is not None:
                     data = {k: v for k, v in tree_data['data'].items() if k in self.vars}
                     self.memory.insert_tree(tree_data['tree'], journal=_i(mem_loc[0]), pos=_i(mem_loc[1]), **data)
-                    print(f'>>>> Agent {self.ac.name} remembered a tree with fitness {data['fitness']}')
+                    print(f'>>>> Agent {self.ac.name} remembered a tree with fitness {data["fitness"]}')
                 else:
                     print(f'>>>> Agent {self.ac.name} tried to remember a tree from a GP with no stored best')
             else:
@@ -774,7 +774,7 @@ class Publish(Action):
             if tree_data['tree'] is not None:
                 data = {k: v for k, v in tree_data['data'].items() if k in self.vars}
                 self.repo.insert_tree(tree_data['tree'], self.ac.name, journal=journal_num, data=data)
-                print(f'>>>> Agent {self.ac.name} published a tree with fitness {data['fitness']} to journal {journal_num}')
+                print(f'>>>> Agent {self.ac.name} published a tree with fitness {data["fitness"]} to journal {journal_num}')
             else:
                 print(f'>>>> Agent {self.ac.name} tried to publish a tree from a GP with no stored best')
         else:
@@ -839,11 +839,11 @@ class Read(Action):
             journal_locs: Sequence[tuple[int, int]],
             *args, **kwargs
         ):
-        tree_data = [self.repo[*loc] for loc in journal_locs]
+        tree_data = [self.repo[loc] for loc in journal_locs]
         for td, mem_loc in zip(tree_data, memory_locs):
             if td['tree'] is not None:
                 self.memory.insert_tree(td['tree'], journal=_i(mem_loc[0]), pos=_i(mem_loc[1]), **td[self.vars])
-                print(f'Agent {self.ac.name} read tree {td['tree']}')
+                print(f'Agent {self.ac.name} read tree {td["tree"]}')
 
 class PunchSelfInFace(Action):
     def __init__(self, controller) -> None:

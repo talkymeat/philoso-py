@@ -94,16 +94,17 @@ mkdir -p ${SCRATCH_HOME}
 echo "echo echo echo echo echo"
 
 # Create and activate your conda environment
-CONDA_ENV_NAME=philos_env
-echo "my conda dont want none"
+ENV_NAME=philos_env
+echo "upgrading pip"
 # ~20 minutes
-conda update conda
-echo "unless your packages are up to date, hun"
+pip install --upgrade pip
+echo "upgrading virtualenv"
+pip install --upgrade virtualenv
 # create venv, ~20 minutes
-conda create -n ${CONDA_ENV_NAME} python=3.12.2 -f requirements.txt
+conda create -n ${ENV_NAME} python=3.12.2 -f requirements.txt
 
-echo "Activating conda environment: ${CONDA_ENV_NAME}"
-conda activate ${CONDA_ENV_NAME}
+echo "Activating virtual environment: ${ENV_NAME}"
+conda activate ${ENV_NAME}
 
 
 # =================================

@@ -274,7 +274,6 @@ class Model:
         pd.DataFrame({
             agent.name: agent.day_rewards for agent in self.agents
         }).to_parquet(self.path_ / f'{prefix}day_rewards.parquet')
-
         print("The model is done. Goodbye!")
 
 

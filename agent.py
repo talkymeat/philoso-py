@@ -73,7 +73,7 @@ class Agent(SimpleJSONable):
         self.nn = self.net_class( # put a factory class here, from param
             flatten_space(self.ac.observation_space).shape[0],
             self.ac.actions,
-            seed = self.rng.r.integers(-10**12, 10**12)
+            seed = self.rng.integers(-10**12, 10**12)
             # {k: flatten_space(sp).shape[0] for k, sp in self.ac.action_space.items()}
         )
         self.nn.obs_sp = self.ac._observation_space
