@@ -16,7 +16,7 @@ def main(start=None, end=None):
     with open("experiments.txt", "w") as expts_file:
         for json_f in list_jsons[slice(start, end)]:
             print(
-                f'python philoso_py {json_f} -o {SCRATCH_HOME}',
+                f'python philoso_py.py {json_f} -o {SCRATCH_HOME}',
                 file=expts_file
             )
 
