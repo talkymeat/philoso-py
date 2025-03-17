@@ -94,18 +94,18 @@ mkdir -p ${SCRATCH_HOME}
 echo "echo echo echo echo echo"
 
 # Create and activate your conda environment
-ENV_NAME=philos_env
-# create venv, ~20 minutes
-echo "make environment with python 3.10"
-/opt/conda/bin/python3.10 -m venv "${ENV_NAME}"
-echo "activate env"
+# ENV_NAME=philos_env
+# # create venv, ~20 minutes
+# echo "make environment with python 3.10"
+# /opt/conda/bin/python3.10 -m venv "${ENV_NAME}"
+# echo "activate env"
 source "${ENV_NAME}/bin/activate"
-which python
-echo "upgrading pip"
-# ~20 minutes
-pip install --upgrade pip
-echo "install packages"
-pip install -r requirements.txt
+# which python
+# echo "upgrading pip"
+# # ~20 minutes
+# pip install --upgrade pip
+# echo "install packages"
+# pip install -r requirements.txt
 
 
 
