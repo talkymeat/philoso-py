@@ -50,6 +50,7 @@ var/
 .idea/
 env/
 venv/
+philos_env/
 ENV/
 env.bak/
 venv.bak/
