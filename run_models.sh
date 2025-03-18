@@ -94,7 +94,7 @@ mkdir -p ${SCRATCH_HOME}
 echo "echo echo echo echo echo"
 
 # Create and activate your conda environment
-# ENV_NAME=philos_env
+ENV_NAME=philos_env
 # # create venv, ~20 minutes
 # echo "make environment with python 3.10"
 # /opt/conda/bin/python3.10 -m venv "${ENV_NAME}"
