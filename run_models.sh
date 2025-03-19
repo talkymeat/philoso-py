@@ -69,6 +69,7 @@ echo "Job started: $dt"
 
 
 echo `nvidia-smi`
+echo `ls /disk/scratch`
 # ===================
 # Environment setup
 # ===================
@@ -91,7 +92,7 @@ echo "echo echo echo"
 SCRATCH_DISK=/home # womp womp scratch is full and unwritable
 SCRATCH_HOME=${SCRATCH_DISK}/${USER}
 echo "echo echo echo echo"
-mkdir -p ${SCRATCH_HOME}ls
+mkdir -p ${SCRATCH_HOME}
 echo "echo echo echo echo echo"
 
 # Create and activate your conda environment
