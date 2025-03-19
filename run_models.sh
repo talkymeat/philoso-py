@@ -134,13 +134,13 @@ source "${ENV_NAME}/bin/activate"
 # the scratch space on the nodes, see:
 #     http://computing.help.inf.ed.ac.uk/cluster-tips
 
-echo "Not moving data to $SCRATCH_HOME because philoso-py doesn't use training data"
+echo "Not moving data to $SCRATCH_HOME because philoso_py doesn't use training data"
 
 # data directory path on the DFS
-src_path=/afs/inf.ed.ac.uk/user/s04/s0454279/CodeToJoy/philoso-py
+src_path=/afs/inf.ed.ac.uk/user/s04/s0454279/CodeToJoy/philoso_py
 
 # # input data directory path on the scratch disk of the node
-dest_path=${SCRATCH_HOME}/philoso-py
+dest_path=${SCRATCH_HOME}/philoso_py
 # mkdir -p ${dest_path}  # make it if required
 # # Important notes about rsync:
 # # * the --compress option is going to compress the data before transfer to send
@@ -181,8 +181,10 @@ experiment_text_file=$1
 
 echo "Moving output data back to DFS"
 
-out_src_path=${SCRATCH_HOME}/philoso-py/output
+out_src_path=${SCRATCH_HOME}/philoso_py/output
 out_dest_path=${src_path}/output
+echo `ls ${out_src_path}`
+echo `ls ${src_path}`
 rsync --archive --update --compress --progress ${out_src_path}/ ${out_dest_path}
 
 
