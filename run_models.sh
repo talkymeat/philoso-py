@@ -87,9 +87,9 @@ echo "Make script bail out after first error"
 # N.B. disk could be at /disk/scratch_big, or /disk/scratch_fast. Check
 # yourself using an interactive session, or check the docs:
 #     http://computing.help.inf.ed.ac.uk/cluster-computing
-# SCRATCH_DISK=/disk/scratch
+SCRATCH_DISK=/disk/scratch
 echo "echo echo echo"
-SCRATCH_DISK=/home # womp womp scratch is full and unwritable
+# SCRATCH_DISK=/home # womp womp scratch is full and unwritable
 SCRATCH_HOME=${SCRATCH_DISK}/${USER}
 echo "Let's make ${SCRATCH_HOME}"
 mkdir -p ${SCRATCH_HOME}
