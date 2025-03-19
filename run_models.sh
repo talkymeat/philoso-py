@@ -94,6 +94,7 @@ SCRATCH_HOME=${SCRATCH_DISK}/${USER}
 echo "echo echo echo echo"
 mkdir -p ${SCRATCH_HOME}
 echo "echo echo echo echo echo"
+echo `ls /disk/scratch`
 
 # Create and activate your conda environment
 ENV_NAME=philos_env
