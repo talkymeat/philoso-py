@@ -68,6 +68,7 @@ dt=$(date '+%d/%m/%Y %H:%M:%S')
 echo "Job started: $dt"
 
 
+echo `nvidia-smi`
 # ===================
 # Environment setup
 # ===================
@@ -134,7 +135,6 @@ src_path=/afs/inf.ed.ac.uk/user/s04/s0454279/CodeToJoy/philoso-py
 # # input data directory path on the scratch disk of the node
 dest_path=${SCRATCH_HOME}/philoso-py
 # mkdir -p ${dest_path}  # make it if required
-nvidia-smi
 # # Important notes about rsync:
 # # * the --compress option is going to compress the data before transfer to send
 # #   as a stream. THIS IS IMPORTANT - transferring many files is very very slow
