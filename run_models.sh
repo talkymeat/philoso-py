@@ -90,7 +90,7 @@ echo "echo echo echo"
 SCRATCH_DISK=/home # womp womp scratch is full and unwritable
 SCRATCH_HOME=${SCRATCH_DISK}/${USER}
 echo "echo echo echo echo"
-mkdir -p ${SCRATCH_HOME}
+mkdir -p ${SCRATCH_HOME}ls
 echo "echo echo echo echo echo"
 
 # Create and activate your conda environment
@@ -134,7 +134,7 @@ src_path=/afs/inf.ed.ac.uk/user/s04/s0454279/CodeToJoy/philoso-py
 # # input data directory path on the scratch disk of the node
 dest_path=${SCRATCH_HOME}/philoso-py
 # mkdir -p ${dest_path}  # make it if required
-
+nvidia-smi
 # # Important notes about rsync:
 # # * the --compress option is going to compress the data before transfer to send
 # #   as a stream. THIS IS IMPORTANT - transferring many files is very very slow
@@ -160,10 +160,10 @@ dest_path=${SCRATCH_HOME}/philoso-py
 # inclusive.
 
 experiment_text_file=$1
-COMMAND="`sed \"${SLURM_ARRAY_TASK_ID}q;d\" ${experiment_text_file}`"
-echo "Running provided command: ${COMMAND}"
-eval "${COMMAND}"
-echo "Command ran successfully!"
+# COMMAND="`sed \"${SLURM_ARRAY_TASK_ID}q;d\" ${experiment_text_file}`"
+# echo "Running provided command: ${COMMAND}"
+# eval "${COMMAND}"
+# echo "Command ran successfully!"
 
 
 # ======================================
