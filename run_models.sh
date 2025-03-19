@@ -95,6 +95,11 @@ echo "Let's make ${SCRATCH_HOME}"
 mkdir -p ${SCRATCH_HOME}
 echo "and let's check it"
 echo `ls /disk/scratch`
+echo "Let's make ${SCRATCH_HOME}/philoso_py/output"
+mkdir -p ${SCRATCH_HOME}/philoso_py/output
+echo "and let's check it"
+echo `ls ${SCRATCH_HOME}/philoso_py/`
+echo -n $"And now for something completely different\n" > ${SCRATCH_HOME}/philoso_py/output/different.txt
 
 # Create and activate your conda environment
 ENV_NAME=philos_env
@@ -129,7 +134,7 @@ source "${ENV_NAME}/bin/activate"
 # the scratch space on the nodes, see:
 #     http://computing.help.inf.ed.ac.uk/cluster-tips
 
-echo "Not moving data to $SCRATCH_DISK because philoso-py doesn't use training data"
+echo "Not moving data to $SCRATCH_HOME because philoso-py doesn't use training data"
 
 # data directory path on the DFS
 src_path=/afs/inf.ed.ac.uk/user/s04/s0454279/CodeToJoy/philoso-py
