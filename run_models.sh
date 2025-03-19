@@ -91,9 +91,9 @@ echo "Make script bail out after first error"
 echo "echo echo echo"
 SCRATCH_DISK=/home # womp womp scratch is full and unwritable
 SCRATCH_HOME=${SCRATCH_DISK}/${USER}
-echo "echo echo echo echo"
+echo "Let's make ${SCRATCH_HOME}"
 mkdir -p ${SCRATCH_HOME}
-echo "echo echo echo echo echo"
+echo "and let's check it"
 echo `ls /disk/scratch`
 
 # Create and activate your conda environment
