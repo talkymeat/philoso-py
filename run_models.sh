@@ -99,7 +99,6 @@ echo "Let's make ${SCRATCH_HOME}/philoso_py/output"
 mkdir -p ${SCRATCH_HOME}/philoso_py/output
 echo "and let's check it"
 echo `ls ${SCRATCH_HOME}/philoso_py/`
-echo -n $"And now for something completely different\n" > ${SCRATCH_HOME}/philoso_py/output/different.txt
 
 # Create and activate your conda environment
 ENV_NAME=philos_env
@@ -137,7 +136,7 @@ source "${ENV_NAME}/bin/activate"
 echo "Not moving data to $SCRATCH_HOME because philoso_py doesn't use training data"
 
 # data directory path on the DFS
-src_path=/afs/inf.ed.ac.uk/user/s04/s0454279/CodeToJoy/philoso_py
+src_path=/home/s0454279/philoso_py
 
 # # input data directory path on the scratch disk of the node
 dest_path=${SCRATCH_HOME}/philoso_py
@@ -167,10 +166,10 @@ dest_path=${SCRATCH_HOME}/philoso_py
 # inclusive.
 
 experiment_text_file=$1
-# COMMAND="`sed \"${SLURM_ARRAY_TASK_ID}q;d\" ${experiment_text_file}`"
-# echo "Running provided command: ${COMMAND}"
-# eval "${COMMAND}"
-# echo "Command ran successfully!"
+COMMAND="`sed \"${SLURM_ARRAY_TASK_ID}q;d\" ${experiment_text_file}`"
+echo "Running provided command: ${COMMAND}"
+eval "${COMMAND}"
+echo "Command ran successfully!"
 
 
 # ======================================
