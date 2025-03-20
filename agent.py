@@ -31,7 +31,7 @@ class Agent(SimpleJSONable):
         **kwargs
     ):
         self.rng=rng
-        self.device = device
+        self.device = f'{device}:0' if device=='cuda' else device
         self.done = False
         self.day_rewards = []
         # This df gets wiped at the start of each rollout
