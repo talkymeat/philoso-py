@@ -1,2 +1,2 @@
-python philoso_py model_json/model1.json -o /disk/scratch/xan/philoso-py
-python philoso_py model_json/model1_gpu.json -o /disk/scratch/xan/philoso-py
+python philoso_py.py model_json/model1.json -o /disk/scratch/s0454279/philoso-py
+python philoso_py.py model_json/model1_gpu.json -o /disk/scratch/s0454279/philoso-py

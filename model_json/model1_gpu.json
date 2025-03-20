@@ -72,7 +72,7 @@
         "a": {
             "n": 8,
             "network_class": "ActorCriticNetworkTanh",
-            "device": "cuda ",
+            "device": "cuda",
             "controller": {
                 "mem_rows": 6,
                 "mem_tables": 3,

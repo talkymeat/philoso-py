@@ -31,7 +31,7 @@ class Agent(SimpleJSONable):
         **kwargs
     ):
         self.rng=rng
-        self.device = f'{device}:0' if device=='cuda' else device
+        self.device = device
         self.done = False
         self.day_rewards = []
         # This df gets wiped at the start of each rollout
@@ -78,22 +78,12 @@ class Agent(SimpleJSONable):
         )
         self.nn.obs_sp = self.ac._observation_space
         # ic.disable()
+        print(self.device)
         self.nn.to(self.device)
         # Set up the training buffer with a multi-index
         self.policy_names = [('choice')]
         for k, head in self.nn.policy_heads.items():
             self.policy_names += [(k, kk) for kk in head.keys()]
-        # +list(self.nn.policy_layers.keys())
-        # self.training_buffer_keys = [
-        #     'obs', 'value', 'reward', ('act', 'choice'), ('log_prob', 'choice')
-        # ] + [
-        #     (a_lp, *polname)
-        #     for a_lp 
-        #     in ['act', 'log_prob']
-        #     for polname
-        #     in self.policy_names
-        # ]
-        # # XXX uncomment remove the above once debugging is done
         self.training_buffer_keys = [
             'obs', 'value', 'reward'
         ] + [
