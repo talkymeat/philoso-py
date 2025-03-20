@@ -137,7 +137,7 @@ class Agent(SimpleJSONable):
         obs = torch.tensor(
             [self.obs], dtype=torch.float64
         ).to(self.device)
-        warn(f"XGHSRW Device is '{obs.device}'")
+        warn(f"XGHSRW! Obs device is '{obs.device}, nn.device is {self.nn.device}'")
         choice, choice_log_prob, action_logits, val = self.nn(obs)
         # set the observaton, plus the act and obs for `choice`
         training_instance = {
