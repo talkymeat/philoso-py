@@ -9,6 +9,7 @@ from collections import OrderedDict
 from icecream import ic
 from typing import Sequence
 from jsonable import SimpleJSONable
+from warnings import warn
 
 def filter_and_stack(ser: pd.Series, permute: Sequence[int], mask: Sequence[bool]):
     filtered = ser[permute][mask]
@@ -134,8 +135,9 @@ class Agent(SimpleJSONable):
         # choice is a simpler task as it's just a single Categorical, not a Dict
         print(f'{self.name} is up next')
         obs = torch.tensor(
-            [self.obs], dtype=torch.float64, device=self.device
-        )
+            [self.obs], dtype=torch.float64
+        ).to(self.device)
+        warn(f"Device is {obs.device}")
         choice, choice_log_prob, action_logits, val = self.nn(obs)
         # set the observaton, plus the act and obs for `choice`
         training_instance = {
