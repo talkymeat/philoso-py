@@ -77,7 +77,7 @@ class Agent(SimpleJSONable):
             seed = self.rng.integers(-10**12, 10**12),
             device = self.device
         ) #.to(self.device)
-        warn(f'HHHHHH {self.nn.device} {self.device}')
+        warn(f'HHHHHH\n{type(self.nn)} {self.nn.device} {self.device}')
         self.nn.obs_sp = self.ac._observation_space
         # ic.disable()
         print(self.device)
