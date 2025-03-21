@@ -76,11 +76,11 @@ class Agent(SimpleJSONable):
             self.ac.actions,
             seed = self.rng.integers(-10**12, 10**12)
             # {k: flatten_space(sp).shape[0] for k, sp in self.ac.action_space.items()}
-        )
+        ).to(self.device)
         self.nn.obs_sp = self.ac._observation_space
         # ic.disable()
         print(self.device)
-        self.nn.to(self.device)
+        # self.nn.to(self.device)
         # Set up the training buffer with a multi-index
         self.policy_names = [('choice')]
         for k, head in self.nn.policy_heads.items():
