@@ -32,8 +32,7 @@ class Agent(SimpleJSONable):
         **kwargs
     ):
         self.rng=rng
-        self.device = device
-        warn(f'GAGAGAG {device}')
+        self.device = device # COrrect value XXX
         self.done = False
         self.day_rewards = []
         # This df gets wiped at the start of each rollout
@@ -75,9 +74,9 @@ class Agent(SimpleJSONable):
         self.nn = self.net_class( # put a factory class here, from param
             flatten_space(self.ac.observation_space).shape[0],
             self.ac.actions,
-            seed = self.rng.integers(-10**12, 10**12)
-            # {k: flatten_space(sp).shape[0] for k, sp in self.ac.action_space.items()}
-        ).to(self.device)
+            seed = self.rng.integers(-10**12, 10**12),
+            device = self.device
+        ) #.to(self.device)
         warn(f'HHHHHH {self.nn.device} {self.device}')
         self.nn.obs_sp = self.ac._observation_space
         # ic.disable()
