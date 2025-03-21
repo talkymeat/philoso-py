@@ -50,7 +50,6 @@ class ActorCriticNetwork(nn.Module):
             ['read']
         ]
         self.action_choice_space = Discrete(len(self.action_choices))
-        self.device = device
         # The following is an alternative scheme for actions options, in which 
         # `read_to_gp` adds trees directly to the treebank for a gp
         # self.action_choices = [
@@ -70,6 +69,16 @@ class ActorCriticNetwork(nn.Module):
         # chared with the value (critic) head, the choice head,
         # and all action heads
         self.make_layers(obs_space_size, actions)
+        self.device = device
+
+    @property
+    def device(self):
+        return self._device
+
+    @device.setter
+    def device(self, device):
+        self._device = device
+        self.to(device = device)
 
     def make_layers(self, obs_space_size, actions):
         self.shared_layers = nn.Sequential(
