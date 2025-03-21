@@ -33,6 +33,7 @@ class Agent(SimpleJSONable):
     ):
         self.rng=rng
         self.device = device
+        warn(f'GAGAGAG {device}')
         self.done = False
         self.day_rewards = []
         # This df gets wiped at the start of each rollout
@@ -77,6 +78,7 @@ class Agent(SimpleJSONable):
             seed = self.rng.integers(-10**12, 10**12)
             # {k: flatten_space(sp).shape[0] for k, sp in self.ac.action_space.items()}
         ).to(self.device)
+        warn(f'HHHHHH {self.nn.device} {self.device}')
         self.nn.obs_sp = self.ac._observation_space
         # ic.disable()
         print(self.device)
