@@ -2,7 +2,7 @@ from philoso_py import ModelFactory
 
 model = ModelFactory().from_json('model_json/model1_gpu.json')
 
-for name, net in model.agents[0].nn.policy_heads.items():
+for name, net in model.agents[0].nn.policy_layers.items():
     print(name) 
     for param in net.parameters():
         print('---', param.device)
