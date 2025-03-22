@@ -78,7 +78,7 @@ class ActorCriticNetwork(nn.Module):
     @device.setter
     def device(self, device):
         self._device = device
-        self.to(device = device)
+        self.to(device = torch.device(device))
 
     def make_layers(self, obs_space_size, actions):
         self.shared_layers = nn.Sequential(
