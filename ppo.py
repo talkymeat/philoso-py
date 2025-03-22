@@ -28,12 +28,15 @@ class ActorCriticNetwork(nn.Module):
     head(s) corresponding to the chosen action(s) to set the parameters 
     for the action
     """
+
+    NORMALISER = nn.ReLU
+
     def __init__(self, obs_space_size, actions, device:str="cpu", seed=None):
         super().__init__() # manadatory
         torch.manual_seed(seed)
         # dict for action heads
-        self.policy_layers: dict[str, nn.Sequential] = {}
-        self.policy_heads: dict[tuple[str], nn.Linear] = {}
+        self.policy_layers: OrderedDict[str, nn.Sequential] = OrderedDict()
+        self.policy_heads: OrderedDict[tuple[str], nn.Linear] = OrderedDict()
 
         # needed to find this bug! :\
         torch.autograd.set_detect_anomaly(True)
@@ -83,32 +86,35 @@ class ActorCriticNetwork(nn.Module):
     def make_layers(self, obs_space_size, actions):
         self.shared_layers = nn.Sequential(
             nn.Linear(obs_space_size, 64).double(),
-            nn.ReLU().double(), 
+            self.NORMALISER().double(), 
             nn.Linear(64, 64).double(), 
-            nn.ReLU().double()) 
+            self.NORMALISER().double()) 
         
         # choice head
         self.policy_layers['choice'] = nn.Sequential(
             nn.Linear(64, 64).double(), 
-            nn.ReLU().double(), 
+            self.NORMALISER().double(), 
             nn.Linear(64, self.action_choice_space.n).double()) 
-        
+        self.add_module('choice', self.policy_layers['choice'])
+
         # action heads
         for name, action in actions.items():
             self.policy_layers[name] = nn.Sequential(
                 nn.Linear(64, 64).double(),
-                nn.ReLU().double()
+                self.NORMALISER().double()
             )
-            head_dict = {}
+            self.add_module(name, self.policy_layers[name])
+            head_dict = OrderedDict()
             for head_name, sub_space in action.action_space.items():
                 size = flatten_space(sub_space).shape[0]
                 head_dict[head_name] = nn.Linear(64, size).double()
+                self.add_module(f'{name}____{head_name}', head_dict[head_name])
             self.policy_heads[name] = head_dict
         
         # value (critic) head
         self.value_layers = nn.Sequential(
             nn.Linear(64, 64).double(),  
-            nn.ReLU().double(),
+            self.NORMALISER().double(),
             nn.Linear(64, 1).double()) 
 
     def value(self, obs):
@@ -185,37 +191,38 @@ class ActorCriticNetworkTanh(ActorCriticNetwork):
     head(s) corresponding to the chosen action(s) to set the parameters 
     for the action
     """
+    NORMALISER = nn.Tanh
 
-    def make_layers(self, obs_space_size, actions):
-        self.shared_layers = nn.Sequential(
-            nn.Linear(obs_space_size, 64).double(),
-            nn.Tanh().double(), 
-            nn.Linear(64, 64).double(), 
-            nn.Tanh().double()) 
+    # def make_layers(self, obs_space_size, actions):
+    #     self.shared_layers = nn.Sequential(
+    #         nn.Linear(obs_space_size, 64).double(),
+    #         nn.Tanh().double(), 
+    #         nn.Linear(64, 64).double(), 
+    #         nn.Tanh().double()) 
         
-        # choice head
-        self.policy_layers['choice'] = nn.Sequential(
-            nn.Linear(64, 64).double(), 
-            nn.Tanh().double(), 
-            nn.Linear(64, self.action_choice_space.n).double()) 
+    #     # choice head
+    #     self.policy_layers['choice'] = nn.Sequential(
+    #         nn.Linear(64, 64).double(), 
+    #         nn.Tanh().double(), 
+    #         nn.Linear(64, self.action_choice_space.n).double()) 
         
-        # action heads
-        for name, action in actions.items():
-            self.policy_layers[name] = nn.Sequential(
-                nn.Linear(64, 64).double(),
-                nn.Tanh().double()
-            )
-            head_dict = {}
-            for head_name, sub_space in action.action_space.items():
-                size = flatten_space(sub_space).shape[0]
-                head_dict[head_name] = nn.Linear(64, size).double()
-            self.policy_heads[name] = head_dict
+    #     # action heads
+    #     for name, action in actions.items():
+    #         self.policy_layers[name] = nn.Sequential(
+    #             nn.Linear(64, 64).double(),
+    #             nn.Tanh().double()
+    #         )
+    #         head_dict = {}
+    #         for head_name, sub_space in action.action_space.items():
+    #             size = flatten_space(sub_space).shape[0]
+    #             head_dict[head_name] = nn.Linear(64, size).double()
+    #         self.policy_heads[name] = head_dict
         
-        # value (critic) head
-        self.value_layers = nn.Sequential(
-            nn.Linear(64, 64).double(),  
-            nn.Tanh().double(),
-            nn.Linear(64, 1).double()) 
+    #     # value (critic) head
+    #     self.value_layers = nn.Sequential(
+    #         nn.Linear(64, 64).double(),  
+    #         nn.Tanh().double(),
+    #         nn.Linear(64, 1).double()) 
 
 class PPOTrainer():
     """Performs PPO training of ActorCriticNetwork"""
