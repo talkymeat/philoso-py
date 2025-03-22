@@ -11,3 +11,5 @@ for agent in model.agents:
         for nom, head in net.items():
             for param in head.parameters():
                 assert param.device[:4] == 'cuda'
+
+print('devices test OK')
