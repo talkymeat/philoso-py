@@ -662,7 +662,7 @@ class UseMem(Action):
         # XXX this comes in the wrong shape and I don't know why
         # XXX investigate later TODO
         # XXX I think it's fixed now?
-        in_vals['mb'] = unflatten(self.action_space['mb'], in_vals['mb'])
+        in_vals['mb'] = unflatten(self.action_space['mb'], to_numpy(in_vals['mb']))
         locations = []
         for i, x in enumerate(in_vals['mb']):
             for j, y in enumerate(x):
