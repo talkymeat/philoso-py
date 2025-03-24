@@ -60,7 +60,7 @@ def space_2_distro(space: Space):
         )
 
 def to_numpy(arr: Sequence) -> np.nd_array:
-    if isinstance(arr, np.nd_array):
+    if isinstance(arr, np.ndarray):
         return arr
     elif isinstance(arr, torch.Tensor) and arr.device != 'cpu':
         return arr.cpu().numpy()
