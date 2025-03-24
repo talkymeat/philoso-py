@@ -59,6 +59,14 @@ def space_2_distro(space: Space):
             f'not {type(space).__name__}'
         )
 
+def to_numpy(arr: Sequence) -> np.nd_array:
+    if isinstance(arr, np.nd_array):
+        return arr
+    elif isinstance(arr, torch.Tensor) and arr.device != 'cpu':
+        return arr.cpu().numpy()
+    else:
+        return np.array(arr)
+
 
 class Action(ABC):
     def __init__(self, 
@@ -315,6 +323,8 @@ class GPNew(Action):
         gp_register = int(in_vals['gp_register'][0])
         raws = in_vals['long_box'][0]
         arr = (torch.tanh(raws) + 1)/2
+        raws = to_numpy(raws)
+        arr = to_numpy(arr)
         pop, max_size, episode_len = self.size_factor_cuboid(*arr[:3])
         pop = self.guardrails['pop'](raws[0], pop)
         max_size = self.guardrails['max_size'](raws[1], max_size)
@@ -541,6 +551,8 @@ class GPContinue(Action):
         # parent class to GPNew
         raws = in_vals['misc_box'][0]
         arr = (torch.tanh(raws) + 1)/2
+        raws = to_numpy(raws)
+        arr = to_numpy(arr)
         if self.gptb_list[in_vals['gp_register'].item()]:
             gp_register = in_vals['gp_register'].item()
             crossover_rate = self.guardrails['crossover_rate'](raws[0], arr[0]) # no scaling
