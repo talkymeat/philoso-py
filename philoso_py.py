@@ -940,7 +940,7 @@ class ModelFactory:
             steps_per_day,
             days,
             prefix=output_prefix)
-        print('model ran for', str(start-datetime.now()))
+        print('model ran for', str(datetime.now()-start))
 
 if __name__ == "__main__":
     from argparse import ArgumentParser
