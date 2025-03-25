@@ -136,7 +136,7 @@ source "${ENV_NAME}/bin/activate"
 echo "Not moving data to $SCRATCH_HOME because philoso_py doesn't use training data"
 
 # data directory path on the DFS
-src_path=/home/s0454279/philoso_py
+src_path=/home/s0454279/philoso-py
 
 # # input data directory path on the scratch disk of the node
 dest_path=${SCRATCH_HOME}/philoso_py

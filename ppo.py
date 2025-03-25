@@ -31,7 +31,7 @@ class ActorCriticNetwork(nn.Module):
 
     NORMALISER = nn.ReLU
 
-    def __init__(self, obs_space_size, actions, device:str="cpu", seed=None):
+    def __init__(self, obs_space_size, actions, device:str="cpu", dtype=None, seed=None):
         super().__init__() # manadatory
         torch.manual_seed(seed)
         # dict for action heads
@@ -73,6 +73,7 @@ class ActorCriticNetwork(nn.Module):
         # and all action heads
         self.make_layers(obs_space_size, actions)
         self.device = device
+        self.dtype  = dtype
 
     @property
     def device(self):
@@ -83,39 +84,52 @@ class ActorCriticNetwork(nn.Module):
         self._device = device
         self.to(device = torch.device(device))
 
+    @property
+    def dtype(self):
+        return self._dtype
+
+    @device.setter
+    def dtype(self, dtype):
+        self._dtype = dtype
+        self.to(dtype = dtype)
+
+    # All these layers had calls to .double(), e.g
+    # `nn.Linear(obs_space_size, 64).double()`
+    # changing that to a .to(dtype) call on the whole
+    # Module
     def make_layers(self, obs_space_size, actions):
         self.shared_layers = nn.Sequential(
-            nn.Linear(obs_space_size, 64).double(),
-            self.NORMALISER().double(), 
-            nn.Linear(64, 64).double(), 
-            self.NORMALISER().double()) 
+            nn.Linear(obs_space_size, 64),
+            self.NORMALISER(), 
+            nn.Linear(64, 64), 
+            self.NORMALISER()) 
         
         # choice head
         self.policy_layers['choice'] = nn.Sequential(
-            nn.Linear(64, 64).double(), 
-            self.NORMALISER().double(), 
-            nn.Linear(64, self.action_choice_space.n).double()) 
+            nn.Linear(64, 64), 
+            self.NORMALISER(), 
+            nn.Linear(64, self.action_choice_space.n)) 
         self.add_module('choice', self.policy_layers['choice'])
 
         # action heads
         for name, action in actions.items():
             self.policy_layers[name] = nn.Sequential(
-                nn.Linear(64, 64).double(),
-                self.NORMALISER().double()
+                nn.Linear(64, 64),
+                self.NORMALISER()
             )
             self.add_module(name, self.policy_layers[name])
             head_dict = OrderedDict()
             for head_name, sub_space in action.action_space.items():
                 size = flatten_space(sub_space).shape[0]
-                head_dict[head_name] = nn.Linear(64, size).double()
+                head_dict[head_name] = nn.Linear(64, size)
                 self.add_module(f'{name}____{head_name}', head_dict[head_name])
             self.policy_heads[name] = head_dict
         
         # value (critic) head
         self.value_layers = nn.Sequential(
-            nn.Linear(64, 64).double(),  
-            self.NORMALISER().double(),
-            nn.Linear(64, 1).double()) 
+            nn.Linear(64, 64),  
+            self.NORMALISER(),
+            nn.Linear(64, 1)) 
 
     def value(self, obs):
         z = self.shared_layers(obs)

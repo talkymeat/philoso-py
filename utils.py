@@ -6,6 +6,7 @@ import numpy as np
 from typing import Any, Callable
 from functools import reduce
 import torch
+import re
 
 
 def scale_to_sum(arr: np.ndarray, _sum=1) -> np.ndarray:
@@ -348,6 +349,41 @@ def simplify(ls_: list):
 
 def name_dict(*vals) -> dict:
     return {v.__name__: v for v in vals}
+
+def str_to_torch_dtype(type_s:str) -> torch.dtype:
+    """Takes a string input and checks that it corresponds to a
+    valid torch dtype: if it does, return the dtype: raise
+    otherwise
+    
+    >>> import torch
+    >>> str_to_torch_dtype('float16')
+    torch.float16
+    >>> str_to_torch_dtype('complex128')
+    torch.complex128
+    >>> str_to_torch_dtype('float_16; print("banana"*2**100**100**100**100**100**100**100**100**100)')
+    Traceback (most recent call last):
+    ...
+    ValueError: 'float_16; print("banana"*2**100**100**100**100**100**100**100**100**100)' is an invalid string
+    >>> str_to_torch_dtype('banana')
+    Traceback (most recent call last):
+    ...
+    ValueError: 'banana' is not a valid torch dtype
+    >>> str_to_torch_dtype('Tensor')
+    Traceback (most recent call last):
+    ...
+    ValueError: 'Tensor' is not a valid torch dtype
+    """
+    if re.fullmatch(r'[a-zA-Z_]\w*', type_s):
+        try:
+            dt_ = eval(f'torch.{type_s}')
+        except AttributeError:
+            raise ValueError(f"'{type_s}' is not a valid torch dtype")
+        if isinstance(dt_, torch.dtype):
+            return dt_
+        else:
+            raise ValueError(f"'{type_s}' is not a valid torch dtype")
+    else:
+        raise ValueError(f"'{type_s}' is an invalid string")
 
 def main():
     import doctest

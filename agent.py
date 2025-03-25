@@ -9,7 +9,7 @@ from collections import OrderedDict
 from icecream import ic
 from typing import Sequence
 from jsonable import SimpleJSONable
-from warnings import warn
+from utils import str_to_torch_dtype
 
 def filter_and_stack(ser: pd.Series, permute: Sequence[int], mask: Sequence[bool]):
     filtered = ser[permute][mask]
@@ -17,22 +17,21 @@ def filter_and_stack(ser: pd.Series, permute: Sequence[int], mask: Sequence[bool
     return acts
 
 
-
-
-
 class Agent(SimpleJSONable):
     addr = ['agent_templates', '$prefix']
-    kwargs = ('device',)
+    kwargs = ('device', 'dtype')
 
     def __init__(self, 
         ac:AgentController, # remember, ac is a gymnasium.env
         rng:np.random.Generator,
         device:str="cpu",
         network_class:type[ActorCriticNetwork]=ActorCriticNetwork,
+        dtype:str|torch.dtype='float32',
         **kwargs
     ):
         self.rng=rng
-        self.device = device # COrrect value XXX
+        self.device = device 
+        self.network_dtype = dtype if isinstance(dtype, torch.dtype) else str_to_torch_dtype(dtype)
         self.done = False
         self.day_rewards = []
         # This df gets wiped at the start of each rollout
@@ -48,6 +47,7 @@ class Agent(SimpleJSONable):
         return {
             'controller': self.ac.json,
             'device': self.device,
+            'dtype': str(self.network_dtype).split('.')[-1],
             'network_class': self.net_class.__name__,
             'seed': self.rng.bit_generator.seed_seq.entropy,
             'network_params': {
@@ -75,13 +75,12 @@ class Agent(SimpleJSONable):
             flatten_space(self.ac.observation_space).shape[0],
             self.ac.actions,
             seed = self.rng.integers(-10**12, 10**12),
-            device = self.device
-        ) #.to(self.device)
-        warn(f'HHHHHH\n{type(self.nn)} {self.nn.device} {self.device}')
+            device = self.device,
+            dtype = self.network_dtype
+        ) 
         self.nn.obs_sp = self.ac._observation_space
         # ic.disable()
         print(self.device)
-        # self.nn.to(self.device)
         # Set up the training buffer with a multi-index
         self.policy_names = [('choice')]
         for k, head in self.nn.policy_heads.items():
@@ -136,9 +135,8 @@ class Agent(SimpleJSONable):
         # choice is a simpler task as it's just a single Categorical, not a Dict
         print(f'{self.name} is up next')
         obs = torch.tensor(
-            [self.obs], dtype=torch.float64
+            [self.obs], dtype=self.network_dtype
         ).to(self.device)
-        warn(f"XGHSRW! Obs device is '{obs.device}, nn.device is {self.nn.device}'")
         choice, choice_log_prob, action_logits, val = self.nn(obs)
         # set the observaton, plus the act and obs for `choice`
         training_instance = {
