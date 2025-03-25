@@ -214,12 +214,12 @@ class Agent(SimpleJSONable):
         gaeses = {}
         obs_full = torch.tensor(
             self.training_buffer[('obs')][permute_idxs],
-            dtype=torch.float64, 
+            dtype=self.network_dtype, 
             device=self.device
         )
         gaes_full = torch.tensor(
             self.training_buffer[('value')][permute_idxs],
-            dtype=torch.float64, 
+            dtype=self.network_dtype, 
             device=self.device
         )
         for pol_name in self.policy_names:
@@ -236,7 +236,7 @@ class Agent(SimpleJSONable):
                 )
                 act_log_probs[pol_name] = torch.tensor(
                     list(self.training_buffer[('log_prob', pol_name)][permute_idxs]),
-                    dtype=torch.float64, 
+                    dtype=self.network_dtype, 
                     device=self.device
                 )
                 # no mask needed, as 'choice' is used at every step
@@ -258,18 +258,18 @@ class Agent(SimpleJSONable):
                     self.training_buffer[('act', *pol_name)], 
                     permute_idxs, 
                     mask
-                ) # .to(self.device, dtype=torch.float64) XXX ???
+                ) # .to(self.device, dtype=self.network_dtype) XXX ???
                 act_log_probs[pol_name] = filter_and_stack(
                     self.training_buffer[('log_prob', *pol_name)], 
                     permute_idxs, 
                     mask
-                ) # .to(self.device, dtype=torch.float64) XXX ???
+                ) # .to(self.device, dtype=self.network_dtype) XXX ???
                 obses[pol_name] = obs_full[mask]
                 gaeses[pol_name] = gaes_full[mask]
 
         # Value data
         returns = discount_rewards(self.training_buffer[('reward')])[permute_idxs]
-        returns = torch.tensor(returns, dtype=torch.float64, device=self.device)
+        returns = torch.tensor(returns, dtype=self.network_dtype, device=self.device)
 
         # Train model
         self.trainer.train_policy(
