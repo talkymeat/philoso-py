@@ -140,6 +140,6 @@
         "GuardrailCollisions": {}
     },
     "def_fitness": "irmse",
-    "days": 100,
+    "days": 50,
     "steps_per_day": 100
 }
