@@ -95,10 +95,10 @@ echo "Let's make ${SCRATCH_HOME}"
 mkdir -p ${SCRATCH_HOME}
 echo "and let's check it"
 echo `ls /disk/scratch`
-echo "Let's make ${SCRATCH_HOME}/philoso_py/output"
-mkdir -p ${SCRATCH_HOME}/philoso_py/output
+echo "Let's make ${SCRATCH_HOME}/philoso-py/output"
+mkdir -p ${SCRATCH_HOME}/philoso-py/output
 echo "and let's check it"
-echo `ls ${SCRATCH_HOME}/philoso_py/`
+echo `ls ${SCRATCH_HOME}/philoso-py/`
 
 # Create and activate your conda environment
 ENV_NAME=philos_env
@@ -133,13 +133,13 @@ source "${ENV_NAME}/bin/activate"
 # the scratch space on the nodes, see:
 #     http://computing.help.inf.ed.ac.uk/cluster-tips
 
-echo "Not moving data to $SCRATCH_HOME because philoso_py doesn't use training data"
+echo "Not moving data to $SCRATCH_HOME because philoso-py doesn't use training data"
 
 # data directory path on the DFS
 src_path=/home/s0454279/philoso-py
 
 # # input data directory path on the scratch disk of the node
-dest_path=${SCRATCH_HOME}/philoso_py
+dest_path=${SCRATCH_HOME}/philoso-py
 # mkdir -p ${dest_path}  # make it if required
 # # Important notes about rsync:
 # # * the --compress option is going to compress the data before transfer to send
@@ -180,7 +180,7 @@ echo "Command ran successfully!"
 
 echo "Moving output data back to DFS"
 
-out_src_path=${SCRATCH_HOME}/philoso_py/output
+out_src_path=${SCRATCH_HOME}/philoso-py/output
 out_dest_path=${src_path}/output
 echo `ls ${out_src_path}`
 echo `ls ${src_path}`

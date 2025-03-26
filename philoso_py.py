@@ -617,7 +617,7 @@ class ModelFactory:
         json_ : dict|HierarchicalDict|str
             JSON data (in `str`, `dict`, or `HierarchicalDict` formats) 
             or a str giving the location of a JSON file to provide all 
-            the parameters needed to create a philoso_py Model
+            the parameters needed to create a philoso.py Model
 
         Returns
         -------
@@ -645,7 +645,7 @@ class ModelFactory:
         json_ : dict|HierarchicalDict|str
             JSON data (in `str`, `dict`, or `HierarchicalDict` formats) 
             or a str giving the location of a JSON file to provide all 
-            the parameters needed to create a philoso_py Model
+            the parameters needed to create a philoso.py Model
 
         Returns
         -------
