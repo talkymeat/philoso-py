@@ -69,6 +69,7 @@
     "agent_templates": {
         "a": {
             "device": "cuda",
+            "dtype": "float64",
             "controller": {
                 "tree_factory_classes": [
                     "SimpleRandomAlgebraicTreeFactory"

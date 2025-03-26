@@ -7,8 +7,8 @@ def main(start=None, end=None):
     # The home dir on the node's scratch disk
     USER = os.getenv('USER')
     # This may need changing to e.g. /disk/scratch_fast depending on the cluster
-    # SCRATCH_DISK = '/disk/scratch'  
-    SCRATCH_DISK = '/home' # womp womp scratch isn't working
+    SCRATCH_DISK = '/disk/scratch'  
+    # SCRATCH_DISK = '/home' # womp womp scratch isn't working
     SCRATCH_HOME = f'{SCRATCH_DISK}/{USER}/philoso-py'
 
     list_jsons = sorted(glob('model_json/*'))
