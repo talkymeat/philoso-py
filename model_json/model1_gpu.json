@@ -1,6 +1,7 @@
 {
     "iv": "x",
     "dv": "y",
+    "dtype": "float32",
     "def_fitness": "irmse",
     "out_dir": "output/gpu/",
     "ping_freq": 5,

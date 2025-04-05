@@ -2,6 +2,7 @@
     "seed": null,
     "iv": "x",
     "dv": "y",
+    "dtype": "float32",
     "out_dir": "output/ah/",
     "ping_freq": 5,
     "output_prefix": "ah__",
@@ -59,7 +60,7 @@
     "publication_params": {
         "reward": "ranked",
         "value": "value",
-        "types": "float64",
+        "types": "float32",
         "rows": 10,
         "tables": 2
     },
@@ -75,7 +76,7 @@
                 ],
                 "record_obs_len": 50,
                 "max_readings": 3,
-                "mem_col_types": "float64",
+                "mem_col_types": "float32",
                 "value": "value",
                 "mutators": [
                     {

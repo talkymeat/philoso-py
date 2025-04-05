@@ -45,7 +45,7 @@ def make_jsons(alts: dict, cartesians: Container[str], prefix: str|IDCoder):
         pref = prefix if isinstance(prefix, str) else next(prefix)
         j['out_dir'] = j['out_dir'].replace('*', pref)
         j['output_prefix'] = j['output_prefix'].replace('*', pref)
-        yield j, f'model_{pref}.json'
+        yield j, f'model_json/model_{pref}.json'
     # return jsons
 
 def count_jsons(alts: dict, all_cartesians: Container[Container[str]]):
@@ -55,7 +55,7 @@ def count_jsons(alts: dict, all_cartesians: Container[Container[str]]):
         for val in rene:
             prod *= len(alts[val])
         sum_ += prod
-    return ic(sum_)
+    return sum_
 
 def make_all_jsons(alts: dict, all_cartesians: Container[Container[str]], chars=ascii_lowercase):
     n_chars = len(chars)

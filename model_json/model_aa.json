@@ -2,6 +2,7 @@
     "seed": null,
     "iv": "x",
     "dv": "y",
+    "dtype": "float32",
     "out_dir": "output/aa/",
     "ping_freq": 5,
     "output_prefix": "aa__",
@@ -59,7 +60,7 @@
     "publication_params": {
         "reward": "ranked",
         "value": "value",
-        "types": "float64",
+        "types": "float32",
         "rows": 10,
         "tables": 2
     },
@@ -69,14 +70,13 @@
     "agent_templates": {
         "a": {
             "device": "cuda",
-            "dtype": "float64",
             "controller": {
                 "tree_factory_classes": [
                     "SimpleRandomAlgebraicTreeFactory"
                 ],
                 "record_obs_len": 50,
                 "max_readings": 3,
-                "mem_col_types": "float64",
+                "mem_col_types": "float32",
                 "value": "value",
                 "mutators": [
                     {
@@ -140,6 +140,6 @@
         "GuardrailCollisions": {}
     },
     "def_fitness": "irmse",
-    "days": 50,
+    "days": 100,
     "steps_per_day": 100
 }
