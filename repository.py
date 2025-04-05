@@ -47,13 +47,15 @@ class Archive(TypeLabelledTreebank): #M #P
             model_time: ModelTime,  #M? #P
             *args,
             types: Sequence[np.dtype]|Mapping[str, np.dtype]|np.dtype|None=None,  #M #P
+            dtype: np.dtype=None,
             tables: int=1,  #M #P
             value: str="fitness",  #P
             max_size: int = 1000,
             max_depth: int = 1000
         ):
+        self.dtype = np.dtype(dtype).type
         if types is None:
-            types = np.float64
+            types = self.dtype
         self.types = types
         self._initialise_df(rows, cols, types)
         self._init_multi_dfs(tables)
@@ -131,27 +133,32 @@ class Archive(TypeLabelledTreebank): #M #P
     
     @property
     def noncore_types(self):
-        return simplify([str(dtype) for dtype in self.noncore.dtypes])
+        return simplify([str(dtype_) for dtype_ in self.noncore.dtypes])
 
     def observe(self):
-        return np.array([self.observe_journal(journal) for journal in self.tables])
+        return np.array([self.observe_journal(journal) for journal in self.tables], dtype=self.dtype)
 
     def observe_journal(self, journal: pd.DataFrame) -> np.ndarray:
-        obs = np.array(journal.loc[:, (journal.columns != 'tree') & (journal.columns != 'exists')], dtype=np.float64)
+        obs = np.array(journal.loc[:, (journal.columns != 'tree') & (journal.columns != 'exists')], dtype=self.dtype)
         obs[:, 0] = obs[:, 0] - self._t()
         return obs
 
     def _initialise_df(self, rows, cols, types, *args):
-        def_type = types if isinstance(type, np.dtype) else np.float64  #M #P
-        types = types if isinstance(types, (Mapping, Sequence)) else {}
+        def_type = types if isinstance(types, (np.dtype, type)) else self.dtype  #M #P
+        types = (
+            types 
+            if isinstance(types, (Mapping, Sequence)) 
+            and not isinstance(types, str) 
+            else {}
+        )
         df_core = pd.DataFrame({
             't': np.zeros(rows, dtype=np.int32),
             'exists': np.zeros(rows, dtype=bool),
             'tree': [None]*rows
         })
         if isinstance(types, Mapping):
-            df_data_cols = pd.DataFrame({head: np.zeros(rows, dtype=types.get(head, def_type)) for head in cols})
-        elif isinstance(types, Sequence):
+            df_data_cols = pd.DataFrame({head: np.zeros(rows, dtype=ic(types.get(head, def_type))) for head in cols})
+        elif isinstance(types, Sequence) and not isinstance(types, str):
             if len(types)==len(cols):
                 df_data_cols = pd.DataFrame({head: np.zeros(rows, dtype=type) for head, type in zip(cols, types)})
             else:
@@ -169,7 +176,7 @@ class Archive(TypeLabelledTreebank): #M #P
     def _init_multi_dfs(self, tables):
         if len(self.tables) > 1:
             raise ValueError(
-                "_init_multi_df should only be called on a n Archive if it currently has only"
+                "_init_multi_df should only be called on an Archive if it currently has only"
                 + " one DataFrame"
             )
         self.tables += [self.tables[0].copy() for _ in range(tables-1)]
@@ -193,6 +200,7 @@ class Archive(TypeLabelledTreebank): #M #P
         data['tree'] = tree.copy_out(treebank=self)
         data['exists'] = True
         data['t'] = self._t()
+        data = {k: v if k=='tree' else self[k].dtype.type(v) for k, v in data.items()}
         return data
 
     def _get_journal(self, journal):
@@ -247,7 +255,7 @@ class Publication(Archive, SimpleJSONable):
     ESSENTIAL_COLS = ['credit', 't', 'exists', 'tree']
     addr = ['publication_params']
     args = ['rows']
-    kwargs = ['tables', 'reward', 'value', 'decay'] 
+    kwargs = ['tables', 'reward', 'value', 'decay', 'dtype'] 
     arg_source_order = (1, 0, 1, 1)
 
     def __init__(self, 
@@ -256,6 +264,7 @@ class Publication(Archive, SimpleJSONable):
             model_time: ModelTime,  #M? #P
             agent_names: dict[str, int], #P
             types: Sequence[np.dtype]|Mapping[str, np.dtype]|np.dtype|None=None,  #M #P
+            dtype: np.dtype|str|None=None,
             tables: int=1,  #M #P
             value: str="fitness",  #P
             reward: PublicationRewardFunc|str|None=None,  #P
@@ -264,7 +273,8 @@ class Publication(Archive, SimpleJSONable):
         super().__init__(
             cols+([] if 'credit' in cols else ['credit']), 
             rows, 
-            model_time, 
+            model_time,
+            dtype=dtype, 
             value=value, 
             types=types, 
             tables=tables
@@ -301,6 +311,7 @@ class Publication(Archive, SimpleJSONable):
         else:
             raise ValueError(f"Reward function '{self._reward}' not a string or a Callable")
         self._agents = pd.DataFrame({'agent': [], 'reward': []}) # P
+        self._agents['reward'] = self._agents['reward'].astype(self.dtype)
         self.value = value
 
     @classmethod
@@ -324,7 +335,7 @@ class Publication(Archive, SimpleJSONable):
         args_ = [cols, time, agent_names]
         kwargs_ = {}
         if cls.addr + ['types'] in json_:
-            types = json_[['publication_params', 'types']]
+            types = json_[cls.addr + ['types']]
             if isinstance(types, dict):
                 types = {k: np.dtype(v) for k, v in types.items()}
             elif isinstance(types, list):
@@ -363,7 +374,7 @@ class Publication(Archive, SimpleJSONable):
             if self._agents[user.name] is not user:
                 raise UserIDCollision(id=user.name)
             return
-        self._agents.loc[user.name] = {'agent': user, 'reward': 0.0}     
+        self._agents.loc[user.name] = {'agent': user, 'reward': self.dtype(0.0)}  
         
     def _assign_tree_to_agent(self, agent_name, **vals): # P
         vals['credit'] = self.agent_names[agent_name]
@@ -401,9 +412,10 @@ class Publication(Archive, SimpleJSONable):
             self._agents.loc[agent_name, 'reward'] += self._reward(**data, reject=True) 
             return # "you suck"
         else:
-            # SUCCESS
+            # SUCCESS cucumber choc leeks
             # calculate rewards to others
             rewards = tree.tree_map_reduce(sum_all, agent_name, map_any=calculate_credit) 
+            
             # calculate self reward
             index = (_journal[self.value] > data[self.value]).sum()
             own_reward = self._reward(index, **data)
@@ -425,15 +437,15 @@ class Publication(Archive, SimpleJSONable):
                 dead_tree.delete()
                 rewards += MDict({dt_author: dt_reward})
             _journal.drop(last, inplace=True)
-            # Push punishments & rewards to buffer
             rewards += MDict({agent_name: own_reward}) 
+        # Push punishments & rewards to buffer
         for id, rew in rewards.items():
-            self._agents.loc[id, 'reward'] += rew
+            self._agents.loc[id, 'reward'] += self.dtype(rew)
             # XXX handle case where repo is not yet full
 
     def rewards(self):
         rews = MDict({row.name: row['reward'] for row in self._agents.iloc})
-        self._agents['reward'] = np.zeros(len(self._agents), dtype=np.float64)
+        self._agents['reward'] = np.zeros(len(self._agents), dtype=self.dtype)
         return rews
 
 

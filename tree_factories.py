@@ -436,14 +436,14 @@ class RandomPolynomialFactory(TreeFactory):
         self._treebank = treebank
         self.T = treebank.T
         self.N = treebank.N
-        self.max_size = treebank.max_size
-        self.max_depth = treebank.max_depth
+        self.max_size = treebank.max_size if treebank.max_size else self.max_size
+        self.max_depth = treebank.max_depth if treebank.max_depth else self.max_depth
 
     def __call__(
             self, 
             *vars: str, 
             treebank: Treebank=None, 
-            coefficients: Mapping[float, tuple[tuple[str], tuple[int]]]=None
+            coefficients: Mapping[tuple[tuple[str], tuple[int]], float]=None
         ) -> Tree:
         """Generates `gp_tree` representations of polynomials of a given order 
         (specified at `__init__`) and set of variables `*vars` with either random

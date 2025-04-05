@@ -1860,11 +1860,11 @@ class NonTerminal(Tree):
         (`map_non_terminal`) may be given, or a single mapping function (`map_all`):
         The following logic is followed:
 
-        *   If `map_all` is given, any functions given to `map_terminal` or 
+        *   If `map_any` is given, any functions given to `map_terminal` or 
             `map_non_terminal` are ignored
-        *   If `map_all` is not given, `map_terminal` and `map_non_terminal` are used,
+        *   If `map_any` is not given, `map_terminal` and `map_non_terminal` are used,
             if they exist. 
-        *   If `map_all` is not given, and one or both of `map_terminal` and 
+        *   If `map_any` is not given, and one or both of `map_terminal` and 
             `map_non_terminal` do not exist, and identity function will be used in place
             of the missing function(s)
 

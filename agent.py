@@ -9,7 +9,7 @@ from collections import OrderedDict
 from icecream import ic
 from typing import Sequence
 from jsonable import SimpleJSONable
-from utils import str_to_torch_dtype
+from utils import torchify_dtype
 
 def filter_and_stack(ser: pd.Series, permute: Sequence[int], mask: Sequence[bool]):
     filtered = ser[permute][mask]
@@ -26,12 +26,12 @@ class Agent(SimpleJSONable):
         rng:np.random.Generator,
         device:str="cpu",
         network_class:type[ActorCriticNetwork]=ActorCriticNetwork,
-        dtype:str|torch.dtype='float32',
+        dtype:str|torch.dtype|np.dtype='float32',
         **kwargs
     ):
         self.rng=rng
         self.device = device 
-        self.network_dtype = dtype if isinstance(dtype, torch.dtype) else str_to_torch_dtype(dtype)
+        self.network_dtype = dtype if isinstance(dtype, torch.dtype) else torchify_dtype(dtype)
         self.done = False
         self.day_rewards = []
         # This df gets wiped at the start of each rollout
@@ -181,7 +181,13 @@ class Agent(SimpleJSONable):
         # line commented out above triggers torch to try to convert the tensors
         # to numpy arrays, which then errors because they have requires_grad=True
         for k, v in training_instance.items():
-            self.training_buffer[k][self.steps_done] = v
+            try:
+                self.training_buffer.at[self.steps_done, k] = v
+            except ValueError as e:
+                print(k)
+                print(v)
+                print('kv'*400)
+                raise e
 
         self.obs = next_obs
         self.day_reward = self.day_reward + reward

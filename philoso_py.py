@@ -30,7 +30,6 @@ import pandas as pd
 import json
 import re
 
-
 class Model:
     def __init__(self,
         world: World,
@@ -41,7 +40,7 @@ class Model:
         #rewards: list[Reward]=None,
         time: ModelTime=None,
         ping_freq=10, 
-        out_dir=None
+        out_dir=None,
     ):
         self.world = world
         self.agents: Container[Agent] = agents

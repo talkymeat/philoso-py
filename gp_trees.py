@@ -3,8 +3,6 @@ from mutators import MutatorFactory, CrossoverMutator, Mutator, NullMutator
 import pandas as pd
 import numpy as np
 from copy import copy
-# from treebanks import TypeLabelledTreebank
-# from gp import GPTreebank
 from tree_errors import OperatorError
 from typing import TypeAlias
 from size_depth import SizeDepth
@@ -15,17 +13,11 @@ import warnings
 from copy import deepcopy
 DEBUG = True
 
-class D:
-    TYPES = {
-        int: np.int64,
-        float: np.float64,
-        complex: np.complex128,
-        str: np.string_,
-        bool: np.bool_
-    }
+class _D:
+    TYPES = {}
 
-    def f(self, *arg):
-        return None
+    # def f(self, val):
+    #     return val # None 
     
     def __new__(cls, val):
         if isinstance(val, str):
@@ -33,9 +25,39 @@ class D:
                 val=eval(val)
             except Exception:
                 pass
-        _val = D.TYPES.get(type(val), cls.f)(val)
-        return val if _val is None else _val
+        return cls.TYPES.get(type(val), lambda x: x)(val)
+        # return val if _val is None else _val
 
+class D64(_D):
+    TYPES = {
+        int: np.int64,
+        float: np.float64,
+        complex: np.complex128,
+        str: np.bytes_,
+        bool: np.bool_
+    }
+
+class D32(_D):
+    TYPES = {
+        int: np.int32,
+        float: np.float32,
+        complex: np.complex64,
+        str: np.bytes_,
+        bool: np.bool_
+    }
+
+class D16(_D): 
+    """Note: there is no numpy dtype `complex32`; don't use D16 if you need 
+    complex numbers
+    """
+    TYPES = {
+        int: np.int16,
+        float: np.float16,
+        str: np.bytes_,
+        bool: np.bool_
+    }
+
+D = D32
 
 class GPNonTerminal(NonTerminal):
     """GPNonTerminals carry operators, and take valid return types of their operators
@@ -148,11 +170,17 @@ class GPNonTerminal(NonTerminal):
         >>> df = pd.DataFrame({'x': [1.0, 1.0], 'y': [1.0, 1.0]})
         >>> def incr_gen(t):
         ...     t.metadata['gen'] += 1
-        >>> def _all_meta(t):
+        >>> def _all_meta(t, g=None):
+        ...     if hasattr(t, 'metadata'):
+        ...         assert not t.metadata.get('__no_xo__', False)
+        ...         if g is None:
+        ...             g = t.metadata['gen']
+        ...             print(g)
+        ...         else:
+        ...             assert g == t.metadata['gen']
         ...     if hasattr(t, 'children'):
         ...         for c in t:
-        ...             _all_meta(c)
-        ...     if hasattr(t, 'metadata'):
+        ...             _all_meta(c, g=g)
         >>> for _ in range(10):
         ...     new_trees = []
         ...     for t in trees:
@@ -165,6 +193,16 @@ class GPNonTerminal(NonTerminal):
         ...     for t in new_trees:
         ...         t.meta_set_recursive(__no_xo__=False)
         ...     trees = new_trees
+        0
+        1
+        2
+        3
+        4
+        5
+        6
+        7
+        8
+        9
         >>> for t in trees:
         ...     assert t.tree_map_reduce(max, map_any=lambda x: x.metadata['gen']) < 11
         """
@@ -255,11 +293,17 @@ class GPNonTerminal(NonTerminal):
         >>> df = pd.DataFrame({'x': [1.0, 1.0], 'y': [1.0, 1.0]})
         >>> def incr_gen(t):
         ...     t.metadata['gen'] += 1
-        >>> def _all_meta(t):
+        >>> def _all_meta(t, g=None):
+        ...     if hasattr(t, 'metadata'):
+        ...         assert not t.metadata.get('__no_xo__', False)
+        ...         if g is None:
+        ...             g = t.metadata['gen']
+        ...             print(g)
+        ...         else:
+        ...             assert g == t.metadata['gen']
         ...     if hasattr(t, 'children'):
         ...         for c in t:
-        ...             _all_meta(c)
-        ...     if hasattr(t, 'metadata'):
+        ...             _all_meta(c, g=g)
         >>> for _ in range(10):
         ...     new_trees = []
         ...     for t in trees:
@@ -272,6 +316,16 @@ class GPNonTerminal(NonTerminal):
         ...     for t in new_trees:
         ...         t.meta_set_recursive(__no_xo__=False)
         ...     trees = new_trees
+        0
+        1
+        2
+        3
+        4
+        5
+        6
+        7
+        8
+        9
         >>> for t in trees:
         ...     assert t.tree_map_reduce(max, map_any=lambda x: x.metadata['gen']) < 11
         """

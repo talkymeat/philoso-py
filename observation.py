@@ -19,9 +19,11 @@ def clean_df(df: pd.DataFrame, scale=1_000_000):
 class Observation(ABC):
     def __init__(self, 
             controller,
+            dtype: np.dtype|str = np.float64,
             *args
         ) -> None:
         self.ac = controller
+        self.dtype = np.dtype(dtype) if isinstance(dtype, str) else dtype
 
     def __call__(self) -> torch.Tensor:
         return self.process_observation(*self.observe())
@@ -46,9 +48,10 @@ class GPObservation(Observation):
             controller, 
             sb_statfuncs: Sequence[Callable],
             record_len: int,
+            dtype: np.dtype|str = np.float64,
             *args
         ) -> None:
-        super().__init__(controller, *args)
+        super().__init__(controller, dtype, *args)
         self.gptb_list: list[GPTreebank] = self.ac.gptb_list
         self.gp_vars_out = self.ac.gp_vars_out
         self.gp_vars_core = self.ac.gp_vars_core
@@ -83,7 +86,7 @@ class GPObservation(Observation):
                 len(self.gptb_list),
                 len(self.gp_vars_out)
             ),
-            dtype='float64'
+            dtype=self.dtype # 'float 64'
         )
         gp_scoreboards = Box(
             low=-np.inf, 
@@ -93,7 +96,7 @@ class GPObservation(Observation):
                 len(self.gp_vars_core), 
                 len(self.sb_statfuncs)
             ),
-            dtype='float64'
+            dtype=self.dtype # 'float 64'
         )
         gp_records = Box(
             low=-np.inf, 
@@ -103,7 +106,7 @@ class GPObservation(Observation):
                 len(self.gp_vars_core), 
                 self.record_len
             ),
-            dtype='float64'
+            dtype=self.dtype # 'float 64'
         )
         return Tuple([gp_best_vals, gp_scoreboards, gp_records])
 
@@ -121,13 +124,13 @@ class GPObservation(Observation):
         return np.nan_to_num(
             np.array([
                 (
-                    np.array([best.get(var, 0.0) for var in self.gp_vars_out], dtype=np.float64) 
+                    np.array([best.get(var, 0.0) for var in self.gp_vars_out], dtype=self.dtype) 
                     if best is not None
-                    else np.zeros(len(self.gp_vars_out), dtype=np.float64)
+                    else np.zeros(len(self.gp_vars_out), dtype=self.dtype)
                 ) for best in bests
             ]), 
             nan=0.0
-        ).clip(np.finfo(np.float64).min/4.0, np.finfo(np.float64).max/4.0)
+        ).clip(np.finfo(self.dtype).min/4.0, np.finfo(self.dtype).max/4.0)
 
     def process_scoreboards(self, scoreboards):
         return np.array([
@@ -139,7 +142,7 @@ class GPObservation(Observation):
                         if var in sb 
                         else np.zeros(
                             len(self.sb_statfuncs), 
-                            dtype=np.float64
+                            dtype=self.dtype
                         )
                     ) 
                     for var 
@@ -153,7 +156,7 @@ class GPObservation(Observation):
             ) 
             for sb 
             in scoreboards
-        ], dtype=np.float64).clip(np.finfo(np.float64).min/4.0, np.finfo(np.float64).max/4.0)
+        ], dtype=self.dtype).clip(np.finfo(self.dtype).min/4.0, np.finfo(self.dtype).max/4.0)
     
     def process_records(self, records: list[pd.DataFrame]):
         return np.array([
@@ -175,7 +178,7 @@ class GPObservation(Observation):
             )
             for rec 
             in records
-        ], dtype=np.float64).clip(np.finfo(np.float64).min/4.0, np.finfo(np.float64).max/4.0)
+        ], dtype=self.dtype).clip(np.finfo(self.dtype).min/4.0, np.finfo(self.dtype).max/4.0)
 
     def observe(self, *args, **kwargs) -> tuple:
         gp_best_vals = [(gp.best if gp else None) for gp in self.gptb_list]
@@ -186,6 +189,7 @@ class GPObservation(Observation):
 class Remembering(Observation):
     def __init__(self, 
             controller, 
+            dtype: np.dtype|str = np.float64,
             *args
         ) -> None:
         super().__init__(controller, *args)
@@ -202,7 +206,7 @@ class Remembering(Observation):
         return Box(
             low=-np.inf, 
             high=np.inf,
-            dtype='float64', 
+            dtype=self.dtype, 
             shape=(
                 len(self.repo.tables),
                 self.repo.tables[0].shape[0],
@@ -215,12 +219,12 @@ class Remembering(Observation):
         
     def process_repo_data(self, repo: list[pd.DataFrame]):
         try:
-            return np.array([clean_df(table[self.gp_vars_core]) for table in repo])
+            return np.array([clean_df(table[self.gp_vars_core]) for table in repo], dtype=self.dtype)
         except KeyError:
             for table in repo:
                 for key in self.gp_vars_core:
                     if key not in table:
-                        table[key] = np.zeros(len(table))
+                        table[key] = np.zeros(len(table), dtype=self.dtype)
             return self.process_observation(repo)
 
     def observe(self, *args, **kwargs) -> tuple:
@@ -229,6 +233,7 @@ class Remembering(Observation):
 class LitReview(Remembering):
     def __init__(self, 
             controller, 
+            dtype: np.dtype|str = np.float64,
             *args
         ) -> None:
         super().__init__(controller, *args)

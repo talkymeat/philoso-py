@@ -12,7 +12,9 @@ from functools import wraps
 from utils import collect
 from grapher import Grapher
 import torch
+import numpy as np
 from jsonable import SimpleJSONable
+import warnings
 
 from icecream import ic
 
@@ -34,7 +36,7 @@ class ScoreboardPipelineElement:
     Callable dataclass.
 
     To allow the Scoreboard to validate the pipeline before running, a set of 
-    exist properties that track how the pipeline changes the set of columns in 
+    properties exist that track how the pipeline changes the set of columns in 
     the scoreboard. In most cases, this can be worked out from the attributes, 
     but in some cases, where no calues of `arg_keys` and `out_key` are given
     and `fn` operates on the whole dataframe, they can't; so additional 
@@ -64,12 +66,14 @@ class ScoreboardPipelineElement:
             values that are stored in a parameter dictionary in GPScoreboard
         spem_kwargs (dict[strings, Any]): a dict containing any values specified
             at time of creation which need to be present for `fn` to be called
+        dtype (np.dtype): casts output to given dtype, if provided
     """
     arg_keys: tuple[str]|str
     out_key: str
     vec: bool = False
     fn: Callable = None
     spem_kwargs: dict = None
+    dtype: np.dtype|str|None = None
 
     def __post_init__(self):
         """A housekeeping method that tidies the data a bit after 
@@ -80,6 +84,8 @@ class ScoreboardPipelineElement:
         """
         self.arg_keys = collect(self.arg_keys, tuple, empty_if_none=True)
         self.spem_kwargs = self.spem_kwargs if self.spem_kwargs else {}
+        if isinstance(self.dtype, str):
+            self.dtype = np.dtype(str)
         if 'tree' in self.arg_keys:
             self.vec = False
         if len(self.arg_keys) != 1 and self.fn is None:
@@ -107,6 +113,9 @@ class ScoreboardPipelineElement:
         3)  Other: `fn` is called on the whole dataframe, `fn` must be non-null,
             but `arg_keys` and `out_key` must be empty.
         """
+        # I really want dtype to only ever be a numpy dtype
+        if isinstance(self.dtype, str):
+            self.dtype = np.dtype(str)
         # This method behaves differently depending on the existence of three
         # optional attributes, `arg_keys`, `out_keys` (together 'the keys) and
         # `fn` 
@@ -133,18 +142,27 @@ class ScoreboardPipelineElement:
         # At this stage, all three optional attributes are known to exist.
         # `vec` Should be set to true if `fn` uses vectorisation to operate
         # directly on whole columns 
-        elif self.vec:
-            sb[self.out_key] = self.fn(**sb[list(self.arg_keys)], **kwargs, **self.spem_kwargs)
-        # If it can't, `vec` should be false, and `apply` will be used to go row
-        # by row 
         else:
-            sb[self.out_key] = sb.apply(lambda row: self.fn(**row, **kwargs, **self.spem_kwargs), axis=1)
+            if self.vec:
+                sb[self.out_key] = (
+                    self.fn(**sb[list(self.arg_keys)], **kwargs, **self.spem_kwargs)
+                )
+            # If it can't, `vec` should be false, and `apply` will be used to go row
+            # by row 
+            else:
+                sb[self.out_key] = sb.apply(lambda row: self.fn(**row, **kwargs, **self.spem_kwargs), axis=1)
+            if self.dtype:
+                sb[self.out_key] = sb[self.out_key].astype(self.dtype)
 
 
     def __str__(self):
         """Returns a string representation of the ScoreboardPipelineElement"""
         return f"ScoreboardPipelineElement(arg_keys={self.arg_keys}, out_key='{self.out_key}', vec={self.vec}, fn={self.fn.__name__ if self.fn else 'None'})"
     
+    def to(self, dtype: np.dtype|str|None):
+        if dtype:
+            self.dtype = dtype if isinstance(dtype, np.dtype) else np.dtype(dtype)
+        return self
 
     @property
     def requires(self) -> list[str]:
@@ -429,22 +447,26 @@ def r(tree: GPNonTerminal, target: pd.Series=None, ivs=None, **kwargs):
     if np.isnan(est).any() or np.isinf(est).any():
         return -1.0
     err_ct = 0
-    while True:
-        # If est has very high values, the sum of values may overflow the
-        # numpy float64 dtype, in which case an error will be raised. This
-        # loop guards against this, by trying halving the values and trying
-        # again. However, we need to guard against the possibility of other
-        # causes of ValueError, so if more than 20 halvings doesn't fix the
-        # problem, or NaNs are detected, the error will be raised.
-        try:
-            return stats.pearsonr(target, est).statistic
-        except ValueError as e: 
-            err_ct += 1
-            # Note: target is pd.Series, est is np.ndarray
-            if target.isna().any() or np.isnan(est).any() or err_ct > 20:
-                raise e
-            est /= 2
-            target /= 2 
+    with warnings.catch_warnings(record=True) as w:
+        warnings.filterwarnings("error")
+        while True:
+            # If est has very high values, the sum of values may overflow the
+            # relevant numpy float dtype, in which case an error will be raised. This
+            # loop guards against this, by trying halving the values and trying
+            # again. However, we need to guard against the possibility of other
+            # causes of ValueError, so if more than 20 halvings doesn't fix the
+            # problem, or NaNs are detected, the error will be raised.
+            try:
+                return stats.pearsonr(target, est).statistic # XXX XXX
+            except stats.NearConstantInputWarning:
+                return 0
+            except ValueError as e: 
+                err_ct += 1
+                # Note: target is pd.Series, est is np.ndarray
+                if target.isna().any() or np.isnan(est).any() or err_ct > 20:
+                    raise e
+                est /= 2
+                target /= 2 
 
 
 @scoreboard_pipeline_element(out_key='sae')
@@ -598,10 +620,13 @@ class SimpleGPScoreboardFactory(SimpleJSONable):
     args = ('best_outvals', 'dv')
     kwargs = ('def_fitness',)
 
-    def __init__(self, best_outvals, dv, def_fitness: str='irmse'):
+    def __init__(self, best_outvals, dv, def_fitness: str='irmse', int_dtype=None, float_dtype=None):
         self.def_fitness = def_fitness
         self.best_outvals = best_outvals
         self.dv = dv
+        self.int_dtype = int_dtype
+        self.float_dtype = float_dtype
+
  
     @property
     def json(self):
@@ -625,40 +650,40 @@ class SimpleGPScoreboardFactory(SimpleJSONable):
             "weights": _weights
         }
         pipeline          = [   clear(except_for='tree'), 
-                                size, 
-                                depth]
+                                size.to(self.int_dtype), 
+                                depth.to(self.int_dtype)]
         match self.def_fitness:
             case 'imse':
-                pipeline += [   mse]
+                pipeline += [   mse.to(self.float_dtype)]
             case 'irmse':
-                pipeline += [   mse, 
-                                rmse]
+                pipeline += [   mse.to(self.float_dtype), 
+                                rmse.to(self.float_dtype)]
             case 'isae':
-                pipeline += [   sae]
-        pipeline         += [   safe_inv(self.def_fitness[1:]),
-                                scale(self.def_fitness, out_key='value'),
-                                r]
+                pipeline += [   sae.to(self.float_dtype)]
+        pipeline         += [   safe_inv(self.def_fitness[1:]).to(self.float_dtype),
+                                scale(self.def_fitness, out_key='value').to(self.float_dtype),
+                                r.to(self.float_dtype)]
         if weights is not None:
-            pipeline     += [   safe_inv('size'), 
-                                safe_inv('depth'), 
-                                weighted_sum(self.def_fitness, 'isize', 'idepth')]
+            pipeline     += [   safe_inv('size').to(self.float_dtype), 
+                                safe_inv('depth').to(self.float_dtype), 
+                                weighted_sum(self.def_fitness, 'isize', 'idepth').to(self.float_dtype)]
             def_2_fitness = f"ws_{self.def_fitness}_isize_idepth"
         else: 
-            pipeline     += [   copy(self.def_fitness, out_key=f"{self.def_fitness}_cp")]
+            pipeline     += [   copy(self.def_fitness, out_key=f"{self.def_fitness}_cp").to(self.float_dtype)]
             def_2_fitness = f"{self.def_fitness}_cp"
-        pipeline         += [   multiply(def_2_fitness, 'r', out_key='raw_fitness'), 
-                                heat, 
+        pipeline         += [   multiply(def_2_fitness, 'r', out_key='raw_fitness').to(self.float_dtype), 
+                                heat.to(self.float_dtype), 
                                 rename("fitness", 'pre_fitness_1')]
         # if temp_coeff: 
         #     pipeline     += [rename(def_2_fitness, 'raw_fitness'), heat, rename("fitness", 'pre_fitness_1')]
         # else:
         #     pipeline     += [rename(def_2_fitness, 'pre_fitness_1')]
         pipeline         += [   hasnans, 
-                                penalty, 
-                                divide('pre_fitness_1', 'penalty', out_key='pre_fitness_2'),
+                                penalty.to(self.float_dtype), 
+                                divide('pre_fitness_1', 'penalty', out_key='pre_fitness_2').to(self.float_dtype),
                                 survive, 
-                                multiply('pre_fitness_2', 'survive', out_key='pre_fitness_3'),
-                                nan_zero('pre_fitness_3', out_key='fitness')]
+                                multiply('pre_fitness_2', 'survive', out_key='pre_fitness_3').to(self.float_dtype),
+                                nan_zero('pre_fitness_3', out_key='fitness').to(self.float_dtype)]
         def_outputs = collect(self.best_outvals, list) if self.best_outvals else None
         dv = self.dv # XXX JAAAAAANK
         for arg, val in (
@@ -924,6 +949,7 @@ class GPScoreboard(pd.DataFrame):
             **kwargs
         ):
         trees = pd.Series(trees)
+        self.drop(self.columns, axis=1, inplace=True)
         self['tree'] = trees
         # If the run is a continuation of a previous run, but the 
         # agent is adding a tree from memory, assigning `trees` to

@@ -6,7 +6,7 @@ from icecream import ic
 
 
 
-ic.enable()
+ic.disable()
 
 class JSONable(ABC):
     """In order to make it easy to recreate a model from JSON, some 
@@ -50,7 +50,7 @@ class SimpleJSONable(JSONable):
             *inst_args,
             *(json_.get(addr+[cls.stargs], ()) if cls.stargs else ()),
             **{
-                kwarg: json_[addr+[kwarg]] 
+                kwarg: json_[addr+[kwarg]]
                 for kwarg 
                 in cls.kwargs 
                 if addr+[kwarg] in json_ and kwarg not in kwargs

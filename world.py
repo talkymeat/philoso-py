@@ -903,15 +903,17 @@ class SineWorld(World):
         # speed ## XXX
 
         def __call__(self, x):
-            return np.sin(
-                (
-                    x * (2*np.pi/self.wavelength)
-                )+(
-                    self.phase*(
-                        np.pi * 0.5
+            return (
+                    np.sin(
+                    (
+                        x * (2*np.pi/self.wavelength)
+                    )+(
+                        self.phase*(
+                            np.pi * 0.5
+                        )
                     )
-                )
-            ) * self.amplitude
+                ) * self.amplitude
+            ).astype(x.dtype)
         
         def step(self, incr: float):
             self.phase += incr
@@ -928,7 +930,7 @@ class SineWorld(World):
             *sine_wave_params: Collection[float],
             seed: int|np.random.Generator|None = None,
             speed: float = 0.0,
-            dtype: np.dtype = np.float32,
+            dtype: np.dtype|str = np.float32,
             iv: str = 'x',
             dv: str = 'y'
         ):
@@ -938,7 +940,7 @@ class SineWorld(World):
         self.max_observation_size = max_observation_size
         self.noise_sd = noise_sd
         self.speed = speed
-        self.dtype = dtype
+        self.dtype = np.dtype(dtype)
         self.iv = iv
         self.dv = dv
         self._act_param_names = ['start', 'stop', 'num'] # XXX add to other Actionables
@@ -958,24 +960,11 @@ class SineWorld(World):
             'sine_wave_params': [sw.json for sw in self.sine_waves],
             'seed': self.np_random.bit_generator.seed_seq.entropy,
             'speed': self.speed,
-            'dtype': str(np.dtype(self.dtype)),
+            'dtype': str(self.dtype).split('.')[-1],
             'iv': self.iv,
             'dv': self.dv
         }
 
-    # @classmethod
-    # def from_json(cls, json: HD):
-    #     args = [
-    #         json[['world_params', pram]] for pram in [
-    #             'radius', 'max_observation_size', 'noise_sd'
-    #         ]
-    #     ] + json[['world_params', 'sine_wave_params']]
-    #     kwargs = {
-    #         k: json[['world_params', k]] for k in [
-    #             'seed', 'speed', 'dtype', 'iv', 'dv'
-    #         ] if ['world_params', k] in json
-    #     }
-    #     return cls(*args, **kwargs)
     
     @property
     def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
@@ -1022,7 +1011,7 @@ class SineWorld(World):
         sample = np.zeros(shape=(num,), dtype=self.dtype)
         for sin in self.sine_waves:
             sample += sin(data[self.iv])
-        noise = self.np_random.normal(loc=0.0, scale=self.noise_sd, size=(num,))
+        noise = self.np_random.normal(loc=0.0, scale=self.noise_sd, size=(num,)).astype(self.dtype)
         data[self.dv] = sample+noise
         return data
 
@@ -1036,7 +1025,7 @@ class SineWorld(World):
                 sw.step(self.speed)
     
     def __call__(
-            self, start: float, stop: float, num: int,  **kwargs: Any
+            self, start: float, stop: float, num: int, **kwargs: Any
         ) -> Observatory:
         if start > stop:
             start, stop = stop, start

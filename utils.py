@@ -271,7 +271,7 @@ def unfold_lists(source_order, *lists):
     """
     # This will be easier to perform the needed calculations
     # on `source_order` if it's an np.ndarray 
-    source_order = np.array(source_order, dtype=int)
+    source_order = np.array(ic(source_order), dtype=int)
     # if lists is actually just one list, return a copy,
     # as long as source_order has no errors - which in 
     # this case means it is a list of falsy values of
@@ -320,12 +320,12 @@ def unfold_lists(source_order, *lists):
     # list comprehension pops from lists, and if the same
     # lists are still needed elsewhere, it would be bad for
     # them to suddenly be empty 
-    list_copies = [list(ls) for ls in lists]
+    list_copies = ic([list(ls) for ls in lists])
     # each value of source_order is an index of `lists`: in
     # the returned list, each value is the head ideam of the
     # list in `lists` at that index, which is popped so it is
     # then removed from the (copy of the) list 
-    return [list_copies[source].pop(0) for source in source_order]
+    return [list_copies[source].pop(0) for source in ic(source_order)]
 
 
 def _i(item):
@@ -350,40 +350,42 @@ def simplify(ls_: list):
 def name_dict(*vals) -> dict:
     return {v.__name__: v for v in vals}
 
-def str_to_torch_dtype(type_s:str) -> torch.dtype:
+def torchify_dtype(dtype:str|type|np.dtype) -> torch.dtype:
     """Takes a string input and checks that it corresponds to a
     valid torch dtype: if it does, return the dtype: raise
     otherwise
     
-    >>> import torch
-    >>> str_to_torch_dtype('float16')
+    >>> torchify_dtype('float16')
     torch.float16
-    >>> str_to_torch_dtype('complex128')
+    >>> torchify_dtype('complex128')
     torch.complex128
-    >>> str_to_torch_dtype('float_16; print("banana"*2**100**100**100**100**100**100**100**100**100)')
+    >>> torchify_dtype('float_16; print("banana"*2**100**100**100**100**100**100**100**100**100)')
     Traceback (most recent call last):
     ...
     ValueError: 'float_16; print("banana"*2**100**100**100**100**100**100**100**100**100)' is an invalid string
-    >>> str_to_torch_dtype('banana')
+    >>> torchify_dtype('banana')
     Traceback (most recent call last):
     ...
     ValueError: 'banana' is not a valid torch dtype
-    >>> str_to_torch_dtype('Tensor')
+    >>> torchify_dtype('Tensor')
     Traceback (most recent call last):
     ...
     ValueError: 'Tensor' is not a valid torch dtype
     """
-    if re.fullmatch(r'[a-zA-Z_]\w*', type_s):
+    if not isinstance(dtype, str):
+        dtype = str(np.dtype(dtype))
+    dtype = dtype.split('.')[-1]
+    if re.fullmatch(r'[a-zA-Z_]\w*', dtype):
         try:
-            dt_ = eval(f'torch.{type_s}')
+            dt_ = eval(f'torch.{dtype}')
         except AttributeError:
-            raise ValueError(f"'{type_s}' is not a valid torch dtype")
+            raise ValueError(f"'{dtype}' is not a valid torch dtype")
         if isinstance(dt_, torch.dtype):
             return dt_
         else:
-            raise ValueError(f"'{type_s}' is not a valid torch dtype")
+            raise ValueError(f"'{dtype}' is not a valid torch dtype")
     else:
-        raise ValueError(f"'{type_s}' is an invalid string")
+        raise ValueError(f"'{dtype}' is an invalid string")
 
 def main():
     import doctest

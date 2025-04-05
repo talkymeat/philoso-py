@@ -42,4 +42,10 @@ could we use Correlation Coefficient for fitness?
 reward for read (by other)
 
 record outputs & obses
- -3.73777879e+307, -2.13410986e+307, -3.08914040e+307, -2.72954727e+306]
+       -3.73777879e+307, -2.13410986e+307, -3.08914040e+307, -2.72954727e+306]
+
+--------
+
+THINGS TO DISCUSS
+
+32-bit vs 64-bit

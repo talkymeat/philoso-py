@@ -8,6 +8,7 @@
     "days": 10, 
     "steps_per_day": 100,
     "world": "SineWorld",
+    "dtype": "float32",
     "world_params": {
         "radius": 50,
         "max_observation_size": 100,
@@ -73,7 +74,6 @@
             "n": 8,
             "network_class": "ActorCriticNetworkTanh",
             "device": "mps",
-            "dtype": "float32",
             "controller": {
                 "mem_rows": 6,
                 "mem_tables": 3,

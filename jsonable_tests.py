@@ -36,6 +36,7 @@ paramarama = {
     "seed": 666,
     "iv": "x",
     "dv": "y",
+    "dtype": "float32",
     "def_fitness": "irmse",
     "out_dir": "output/l/",
     "ping_freq": 5,
@@ -98,7 +99,7 @@ paramarama = {
         "tables": 2,
         "reward": "ranked",
         "value": "value",
-        "types": "float64"
+        # "types": "float 64"
     },
     "agent_populations": [
         "a"
@@ -116,7 +117,7 @@ paramarama = {
                 ],
                 "record_obs_len": 50,
                 "max_readings": 3,
-                "mem_col_types": "float64",
+                # "mem_col_types": "float 64",
                 "value": "value",
                 "mutators": [
                     {
@@ -233,7 +234,7 @@ class TestJSONables(unittest.TestCase):
         self.assertEqual(world.sine_waves[1].phase, 0)
         self.assertEqual(world.np_random.bit_generator.seed_seq.entropy, 666)
         self.assertEqual(int(world.speed), 0)
-        self.assertEqual(str(world.dtype.__name__), 'float32')
+        self.assertEqual(str(world.dtype), 'float32')
         self.assertEqual(world.iv, 'x')
         self.assertEqual(world.dv, 'y')
 
@@ -292,7 +293,7 @@ class TestJSONables(unittest.TestCase):
             }
         )
         self.assertEqual(len(noncore_df), 10)
-        self.assertEqual(pub.noncore_types, 'float64')
+        self.assertEqual(pub.noncore_types, 'float32')
         self.assertEqual(len(pub.tables), 2)
         self.assertEqual(pub.value, 'value')
         self.assertEqual(
@@ -318,7 +319,7 @@ class TestJSONables(unittest.TestCase):
             }
         )
         self.assertEqual(json_['rows'], 10)
-        self.assertEqual(json_['types'], 'float64')
+        # self.assertEqual(json_['types'], 'float 64')
         self.assertEqual(json_['tables'], 2)
         self.assertEqual(json_['value'], 'value')
         self.assertEqual(
@@ -637,7 +638,7 @@ class TestJSONables(unittest.TestCase):
                 ]
             )
             self.assertEqual(mjson[['publication_params', 'rows']], 10)
-            self.assertEqual(mjson[['publication_params', 'types']], 'float64')
+            # self.assertEqual(mjson[['publication_params', 'types']], 'float 64')
             self.assertEqual(mjson[['publication_params', 'tables']], 2)
             self.assertEqual(mjson[['publication_params', 'reward']], 'ranked')
             self.assertAlmostEqual(mjson[['publication_params', 'decay']], 0.95)
@@ -665,7 +666,7 @@ class TestJSONables(unittest.TestCase):
                 mjson[['agent_templates', 'a', 'controller', 'max_readings']], 3
             )
             self.assertEqual(
-                mjson[['agent_templates', 'a', 'controller', 'mem_col_types']], 'float64'
+                mjson[['agent_templates', 'a', 'controller', 'mem_col_types']], 'float32'
             )   
             self.assertEqual(
                 mjson[['agent_templates', 'a', 'controller', 'gp_system']], 'GPTreebank'

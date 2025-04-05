@@ -42,7 +42,7 @@ class AgentController(Env, SimpleJSONable):
     kwargs = (
         "max_readings", "num_treebanks", "short_term_mem_size", "value", "max_volume", 
         "max_max_size", "max_max_depth",  "theta", "gp_vars_core", "gp_vars_more", 
-        "ping_freq", "guardrail_base_penalty", "mem_col_types"
+        "ping_freq", "guardrail_base_penalty", "mem_col_types", "dtype"
     )
     arg_source_order = (1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0)
 
@@ -88,7 +88,9 @@ class AgentController(Env, SimpleJSONable):
             for mut
             in json_[addr+["mutators"]]
         ] 
-        kwargs_["mem_col_types"] = json_[addr+["mem_col_types"]]
+        kwargs_["mem_col_types"] = json_.get(addr+["mem_col_types"], None)
+        if kwargs_["mem_col_types"] == None:
+            kwargs_["mem_col_types"] = json_['dtype']
         if isinstance(kwargs_["mem_col_types"], dict):
             kwargs_["mem_col_types"] = {
                 k: np.dtype(v) for k, v in kwargs_["mem_col_types"].items()
@@ -174,6 +176,7 @@ class AgentController(Env, SimpleJSONable):
             ping_freq=5,
             mutators: Sequence[Callable]=None,
             prefix: str=None,
+            dtype: np.dtype|str = np.float32,
             *args, **kwargs
         ):
         """What should be in __init__, and what in reset?
@@ -199,6 +202,7 @@ class AgentController(Env, SimpleJSONable):
         self.ping_freq = ping_freq
         self.short_term_mem_size = short_term_mem_size
         self.record_obs_len = record_obs_len
+        self.dtype = np.dtype(dtype) if isinstance(dtype, str) else dtype
         self.guardrail_manager = GuardrailManager(base_penalty=guardrail_base_penalty)
         self.meta = {}
         self.tmp = {}
@@ -230,6 +234,7 @@ class AgentController(Env, SimpleJSONable):
             rows       = mem_rows,  
             model_time = self.t,  
             types      = mem_col_types,  
+            dtype  = self.dtype,
             tables     = mem_tables,
             value      = value, 
             max_size   = max_max_size,
@@ -284,10 +289,15 @@ class AgentController(Env, SimpleJSONable):
         self.observations: dict[str, Observation] = {}
         self.observations['gp_obs']      = GPObservation(self,
                                                 self.sb_statfuncs,
-                                                self.record_obs_len
+                                                self.record_obs_len,
+                                                dtype=self.dtype
                                             )
-        self.observations['remembering'] = Remembering(self)
-        self.observations['lit_review']  = LitReview(self)
+        self.observations['remembering'] = Remembering(self, 
+                                                dtype=self.dtype
+                                            )
+        self.observations['lit_review']  = LitReview(self, 
+                                                dtype=self.dtype
+                                            )
         self._observation_space = Dict(
             {k: v.observation_space for k, v in self.observations.items()}
         )
@@ -403,8 +413,4 @@ class AgentController(Env, SimpleJSONable):
     def close():
         pass
 
-
-
-
-print('OK')
 

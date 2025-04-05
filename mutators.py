@@ -302,6 +302,7 @@ class CrossoverMutator(Mutator):
         >>> import pandas as pd
         >>> import operators as ops
         >>> rng = np.random.Generator(np.random.PCG64())
+        >>> s = ic(f'Seed: {rng.bit_generator.seed_seq.entropy}')
         >>> ms, md = 300, 70
         >>> gp = GPTreebank(
         ...     mutation_rate = 0.2, 
@@ -321,21 +322,22 @@ class CrossoverMutator(Mutator):
         >>> deepness = []
         >>> # Simple GP that selects for big-valued outputs, but subject to max values for tree size & depth
         >>> for _ in range(2000):
+        ...     old_tmax = tmax
         ...     tmax = None
         ...     valmax = -np.inf
         ...     for t in trees:
+        ...         ic.enable()
         ...         val = t(**df)
         ...         if isinstance(val, np.ndarray):
         ...             val = val.sum()
         ...         if val is None:
-        ...             print(val)
-        ...             print(t)
+        ...             print(ic(val))
+        ...             print(icmuta(t))
         ...         elif valmax < val:
         ...             tmax = t
         ...             valmax = val
         ...     if tmax is None:
-        ...         ic.enable()
-        ...         print(ic('tmax is None'))
+        ...         tmax = old_tmax
         ...     newtrees = []
         ...     for ___ in range(5):
         ...         newtrees.append(tmax.copy(gp_copy=True))
@@ -358,19 +360,19 @@ class CrossoverMutator(Mutator):
         # Randomly decide whether or not to cross over
         # mutate_here is an overrideable method of the base class
         if _max_size is None:
-            _max_size = self.max_size
+            _max_size = ic(self.max_size)
         if _max_depth is None:
-            _max_depth = self.max_depth
-        if not _max_depth or _max_size:
-            # NOTE 2 XXX: see note 1 below - this is to catch cases where a crossover
-            # cannot occur because the tree is larger than the maximum size or depth
-            # of the treebank, because of a UseMem call introducing oversized trees.
-            # Note 1 below explains the rationale, but I'm adding this conditional
-            # here to ensure that the mutator doesn't waste a load of time running 
-            # through every subtree in the relevant label just to find that no
-            # subtrees exist with zero size or zero depth. 
-            return val, tree
+            _max_depth = ic(self.max_depth)
         if self.mutate_here(tree):
+            if not (_max_depth or _max_size):
+                # NOTE 2 XXX: see note 1 below - this is to catch cases where a crossover
+                # cannot occur because the tree is larger than the maximum size or depth
+                # of the treebank, because of a UseMem call introducing oversized trees.
+                # Note 1 below explains the rationale, but I'm adding this conditional
+                # here to ensure that the mutator doesn't waste a load of time running 
+                # through every subtree in the relevant label just to find that no
+                # subtrees exist with zero size or zero depth. 
+                return val, tree
             # The size of mutated trees must be kept within bounds of size and depth:
             # this gp operator is never called on the root node, so the maxima for a
             # a given tree node is calculated by the parent, allowing for the amount
@@ -411,7 +413,7 @@ class CrossoverMutator(Mutator):
                 # bad, or they don't, because they apparently get something from 
                 # doing this IG. 
                 if i>=len(complement):
-                    ic('fahhhk')
+                    # ic('fahhhk')
                     return val, tree
                 subtree = complement[i]
                 if subtree.metadata.get('__no_xo__', False):
@@ -511,6 +513,11 @@ class MutatorFactory:
     """
 
     types = {
+        np.int16: IntMutator,
+        np.float16: FloatMutator,
+        np.int32: IntMutator,
+        np.float32: FloatMutator,
+        np.complex64: ComplexMutator,
         np.int64: IntMutator,
         np.float64: FloatMutator,
         np.complex128: ComplexMutator,
@@ -585,7 +592,7 @@ class NullMutatorFactory(MutatorFactory):
     ...     t6_copy = T6.copy(gp_copy=True)
     ...     mut_arr = np.array(t6_copy())
     ...     t6_copy.delete()
-    ...     assert (raw_arr == mut_arr).sum() == 3
+    ...     assert (raw_arr == mut_arr).sum() == 3, (raw_arr == mut_arr).sum()
     ...     sum_arr = sum_arr + mut_arr
     >>> mean_arr = sum_arr/n
     >>> targ_arr = np.array([6.0, 11.0, 30.0+15.0j, 0.75])
@@ -596,6 +603,11 @@ class NullMutatorFactory(MutatorFactory):
     >>> assert np.abs(np.real(targ_arr[3])-np.real(mean_arr[3])) < eta, np.real(targ_arr[3])-np.real(mean_arr[3])
     """
     types = {
+        np.int16: NullMutator,
+        np.float16: NullMutator,
+        np.int32: NullMutator,
+        np.float32: NullMutator,
+        np.complex64: NullMutator,
         np.int64: NullMutator,
         np.float64: NullMutator,
         np.complex128: NullMutator,
@@ -618,6 +630,11 @@ class SinglePointLeafMutatorFactory(MutatorFactory):
     ...     assert (raw_arr == np.array(T6.copy(gp_copy=True)())).sum() == 3
     """
     types = {
+        np.int16: TagTriggeredIntMutator,
+        np.float16: TagTriggeredFloatMutator,
+        np.int32: TagTriggeredIntMutator,
+        np.float32: TagTriggeredFloatMutator,
+        np.complex64: TagTriggeredComplexMutator,
         np.int64: TagTriggeredIntMutator,
         np.float64: TagTriggeredFloatMutator,
         np.complex128: TagTriggeredComplexMutator,
@@ -628,7 +645,7 @@ class MutatorMutator:
     """Swaps out the mutation operators for a tree when called
 
     >>> from test_materials import T6, GP2
-    >>> mm = single_leaf_mutator_factory(GP2)
+    >>> # mm = single_leaf_mutator_factory(GP2)
     >>> raw_arr = np.array(T6())
     >>> mm = single_leaf_mutator_factory(GP2)
     >>> mm()

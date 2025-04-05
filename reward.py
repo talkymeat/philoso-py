@@ -16,19 +16,24 @@ def _print(*args, **kwargs):
         print(*args, **kwargs)
 
 class Reward(SimpleJSONable, ABC):
+    args = ['dtype']
+    arg_source_order = [True, False]
+
     @property
     def __name__(self):
         return self.__class__.__name__
 
     def __init__(self, 
             model,
+            dtype,
             *args
         ) -> None:
         self.model = model
+        self.dtype = np.dtype(dtype).type
         self.record = pd.DataFrame({
             f'{ag.name}__{self.__name__}': []
             for ag in self.model.agents
-        })
+        }).astype(self.dtype)
 
     def __call__(self) -> MDict[str, float]:
         return self.process_reward(self.get_reward_data())
@@ -49,7 +54,8 @@ class Reward(SimpleJSONable, ABC):
     @property
     def json(self)->dict:
         return {
-            "name": self.__name__
+            "name": self.__name__,
+            "dtype": str(self.dtype).split('.')[-1]
         }
 
     @classmethod
@@ -105,16 +111,17 @@ class Curiosity(Reward):
     >>> aeq(model.rewards[0]()['a0'], 0.25)
     True
     """
-    args = ["def_fitness", "first_finding_bonus"]
-    arg_source_order = [True, False, False]
+    args = ['dtype', "def_fitness", "first_finding_bonus"]
+    arg_source_order = [True, False, False, False]
 
     def __init__(self, 
             model,
+            dtype,
             def_fitness: str,
             first_finding_bonus: float,
             *args
         ) -> None:
-        super().__init__(model)
+        super().__init__(model, dtype)
         #self.agent_names: dict[str, int] = self.model.agent_names
         self.agents: dict[str, 'Agent'] = {a.name: a for a in self.model.agents}
         self.best_mean_fitness_dict = {k: 0.0 for k in self.agents.keys()}
@@ -167,11 +174,12 @@ class Renoun(Reward):
     ...     'temp_coeff': 0.5, 'size': 13, 'obs_start':9.9, 'obs_num': 100, 'elitism':0.1}
     """
 
-    def __init__(self, 
-            model,
-            *args
-        ) -> None:
-        super().__init__(model)
+    # def __init__(self, 
+    #         model,
+    #         dtype,
+    #         *args
+    #     ) -> None:
+    #     super().__init__(model, dtype)
 
     def get_reward_data(self):
         return self.model.publications.rewards()
@@ -181,9 +189,10 @@ class GuardrailCollisions(Reward):
 
     def __init__(self, 
             model,
+            dtype,
             *args
         ) -> None:
-        super().__init__(model)
+        super().__init__(model, dtype)
         #self.agent_names: dict[str, int] = self.model.agent_names
         self.agent_gms: dict[str, 'GuardrailManager'] = {a.name: a.ac.guardrail_manager for a in self.model.agents}
     
@@ -193,11 +202,12 @@ class GuardrailCollisions(Reward):
 
 class Punches(Reward):
 
-    def __init__(self, 
-            model,
-            *args
-        ) -> None:
-        super().__init__(model)
+    # def __init__(self, 
+    #         model,
+    #         dtype,
+    #         *args
+    #     ) -> None:
+    #     super().__init__(model, dtype)
         #self.agent_names: dict[str, int] = self.model.agent_names
     
     def get_reward_data(self):

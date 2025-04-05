@@ -4,6 +4,7 @@ deactivate/
 .fig_tmp/
 svg_test/
 toyxmpl/
+old_sad_code/
 scratch*.ipynb
 Untitled*.ipynb
 *.parquet
@@ -16,6 +17,9 @@ experiments.txt
 experiment.txt
 
 .DS_Store
+
+# VSCode
+.vscode/
 
 # Jupyter Notebooks
 notebooks/
