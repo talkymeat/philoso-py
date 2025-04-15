@@ -625,11 +625,14 @@ class ModelFactory:
 
         """
         if not isinstance(json_, HD):
+            if isinstance(json_, Path):
+                json_ = str(json_)
             if isinstance(json_, str):
                 if json_.strip()[0] in '[{':
                     json_ = json.loads(json_)
-                with open(json_) as f:
-                    json_ = json.load(f)
+                else:
+                    with open(json_) as f:
+                        json_ = json.load(f)
             json_ = HD(json_)
         return json_
 
