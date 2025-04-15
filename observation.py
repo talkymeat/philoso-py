@@ -124,7 +124,7 @@ class GPObservation(Observation):
         return np.nan_to_num(
             np.array([
                 (
-                    np.array([best.get(var, 0.0) for var in self.gp_vars_out], dtype=self.dtype) 
+                    np.array([best['data'].get(var, 0.0) for var in self.gp_vars_out], dtype=self.dtype) 
                     if best is not None
                     else np.zeros(len(self.gp_vars_out), dtype=self.dtype)
                 ) for best in bests
