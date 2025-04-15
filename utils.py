@@ -293,7 +293,7 @@ def unfold_lists(source_order, *lists):
     if any(probs := [(i >= len(lists) or (len(lists[i]) != ct)) for i, ct in zip(*np.unique(source_order, return_counts=True))]):
         # Make a record, `errs` of all lists with problems
         errs = []
-        # Note: probs is a list off bools that are True for
+        # Note: probs is a list of bools that are True for
         # all indices where the corresponding index of `lists`
         # corresponds to a list with a problem 
         for i, prob in enumerate(probs):
@@ -329,9 +329,12 @@ def unfold_lists(source_order, *lists):
 
 
 def _i(item):
-    if isinstance(item, torch.Tensor) and np.prod(item.shape)==1:
-        return item.item()
-    elif isinstance(item, np.ndarray) and np.prod(item.shape)==1:
+    if hasattr(item, 'item') and np.prod(item.shape)==1:
+    # if isinstance(item, torch.Tensor) and np.prod(item.shape)==1:
+    #     print('ok', item.item())
+    #     return item.item()
+    # elif isinstance(item, np.ndarray) and np.prod(item.shape)==1:
+    #     print('np', item.item())
         return item.item()
     else:
         return item

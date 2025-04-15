@@ -85,13 +85,23 @@ class Action(ABC):
 
     @abstractmethod
     def process_action(self, 
-        in_vals: OrderedDict[str, np.ndarray|int|float|bool]
+        in_vals: OrderedDict[str, np.ndarray|int|float|bool], 
+        *args,
+        override: bool = False, 
+        **kwargs
     ):
         pass
 
     @abstractmethod
     def do(self, *args, **kwargs):
         pass
+
+    @abstractmethod
+    def _interpret(self, *args, **kwargs) -> dict:
+        pass
+
+    def interpret(self, act: np.ndarray|OrderedDict|tuple)->dict:
+        return self._interpret(*self.process_action(act, override=True))
     
     @cached_property
     def distributions(self):
@@ -134,7 +144,7 @@ class GPNew(Action):
 
     def __init__(self, 
             controller,
-            obs_factory: World,
+            world: World,
             tree_factory_classes: list[type[TreeFactory]],
             rng: np.random.Generator,
             out_dir: str|Path,
@@ -162,8 +172,8 @@ class GPNew(Action):
         self.num_tf_opts = (
             len(self.tf_options) if len(self.tf_options) > 1 else 0
         ) 
-        self.obs_fac = obs_factory
-        self.num_wobf_params = len(self.obs_fac.wobf_param_ranges)
+        self.world = world
+        self.num_wobf_params = len(self.world.wobf_param_ranges)
         self.rng = rng
         self.out_dir = out_dir if isinstance(out_dir, Path) else Path(out_dir)
         self.t = time
@@ -285,7 +295,7 @@ class GPNew(Action):
             polynomial factory
         """
         gp_register_sp = Discrete(len(self.gptb_list)) 
-        num_wobf_params = len(self.obs_fac.wobf_param_ranges)
+        num_wobf_params = len(self.world.wobf_param_ranges)
         box_len = 9 + self.num_sb_weights + num_wobf_params + (
             len(self.tf_options) if len(self.tf_options) > 1 else 0
         ) + (
@@ -312,13 +322,14 @@ class GPNew(Action):
         for i in range(len(self.mutators)):
             self.guardrails.make(f'mutator_wt_{i}', min=0, max=1)
         self.obs_guardrail_names = []
-        for params in self.obs_fac.wobf_guardrail_params:
+        for params in self.world.wobf_guardrail_params:
             self.obs_guardrail_names.append(params['name'])
             if '_no_make' not in params:
                 self.guardrails.make(**params)
 
     def process_action(self, 
-        in_vals: OrderedDict[str, np.ndarray|int|float|bool]
+        in_vals: OrderedDict[str, np.ndarray|int|float|bool], *args,
+        override: bool = False, **kwargs
     ):
         gp_register = int(in_vals['gp_register'][0])
         raws = in_vals['long_box'][0]
@@ -343,12 +354,12 @@ class GPNew(Action):
         elitism =  int(self.guardrails['elitism'](raws[7+self.num_sb_weights], arr[7+self.num_sb_weights])*pop)
         temp_coeff = self.guardrails['temp_coeff'](raws[8+self.num_sb_weights], arr[8+self.num_sb_weights])*2
         obs_params = arr[
-            9+self.num_sb_weights:9+self.num_sb_weights+len(self.obs_fac.wobf_param_ranges)
+            9+self.num_sb_weights:9+self.num_sb_weights+len(self.world.wobf_param_ranges)
         ]
         obs_params_raw = raws[
-            9+self.num_sb_weights:9+self.num_sb_weights+len(self.obs_fac.wobf_param_ranges)
+            9+self.num_sb_weights:9+self.num_sb_weights+len(self.world.wobf_param_ranges)
         ]
-        obs_args = [scale_unit_to_range(val, *bounds) for val, bounds in zip(obs_params, self.obs_fac.wobf_param_ranges)]
+        obs_args = [scale_unit_to_range(val, *bounds) for val, bounds in zip(obs_params, self.world.wobf_param_ranges)]
         obs_args = tuple([
             self.guardrails[gr_name](raw_param, obs_arg) 
             for raw_param, obs_arg, gr_name 
@@ -356,9 +367,9 @@ class GPNew(Action):
         ])
         tf_weights = arr[
             9+self.num_sb_weights
-            +len(self.obs_fac.wobf_param_ranges)
+            +len(self.world.wobf_param_ranges)
             :9+self.num_sb_weights
-            +len(self.obs_fac.wobf_param_ranges)
+            +len(self.world.wobf_param_ranges)
             +len(self.tf_options)
         ] if len(self.tf_options) > 1 else None
         tf_choices = None
@@ -427,7 +438,7 @@ class GPNew(Action):
         ):
         if isinstance(gp_register, torch.Tensor):
             gp_register = gp_register.item()
-        observatory = self.obs_fac(*[_i(arg) for arg in obs_args])
+        observatory = self.world(*[_i(arg) for arg in obs_args])
         tf_params = [None] # XXX implement this XXX
         tree_factory = self.get_tfs(tf_choices, tf_weights, tf_params, self.rng)
         scoreboard = self.sb_factory(observatory, _i(temp_coeff), sb_weights)
@@ -467,6 +478,51 @@ class GPNew(Action):
             self.gptb_list[gp_register].continue_run()
         else:
             raise ValueError(f"GPTreebank index[{gp_register} out of range]")
+    
+    def _interpret(self, 
+            gp_register: int, 
+            tf_choices: list[int], 
+            tf_weights, 
+            #tf_params, 
+            pop,
+            crossover_rate,
+            mutation_rate,
+            mutation_sd,
+            temp_coeff,
+            max_depth,
+            max_size,
+            #operators, # operators, < derive from TFs
+            elitism,
+            episode_len,
+            sb_weights: np.ndarray[float],
+            obs_args,
+            mutator_weights,
+            *args, **kwargs
+        ):
+        if isinstance(gp_register, torch.Tensor):
+            gp_register = gp_register.item()
+        mw = mutator_weights.tolist()
+        return {
+            'gp_register': gp_register,
+            **self.world.interpret(*[_i(arg) for arg in obs_args]),
+            # 'obs_args': [_i(arg) for arg in obs_args],
+            'tf_choices': tf_choices, 
+            'tf_weights': tf_weights,
+            'temp_coeff': _i(temp_coeff), 
+            'sb_weights': sb_weights,
+            'pop': int(_i(pop)),
+            'crossover_rate': _i(crossover_rate),
+            'mutation_rate': _i(mutation_rate),
+            'mutation_sd': _i(mutation_sd),
+            'max_depth': int(_i(max_depth)),
+            'max_size': int(_i(max_size)),
+            'episode_len': int(_i(episode_len)),
+            'elitism': _i(elitism),
+            **{
+                f'mutator_weights_{i}': w/sum(mw) for i, w in enumerate(mw)
+            }
+        }
+        # tf_params = [None] # XXX implement this XXX
 
     def get_tf(self, idx:int, seed: np.random.Generator, params):
         if idx >= 0 and idx < len(self.tf_options):
@@ -545,7 +601,8 @@ class GPContinue(Action):
         })
 
     def process_action(self, 
-        in_vals: OrderedDict[str, np.ndarray|int|float|bool]
+        in_vals: OrderedDict[str, np.ndarray|int|float|bool], *args,
+        override: bool = False, **kwargs
     ):
         # Some refactoring would be good: this would make a good
         # parent class to GPNew
@@ -553,14 +610,14 @@ class GPContinue(Action):
         arr = (torch.tanh(raws) + 1)/2
         raws = to_numpy(raws)
         arr = to_numpy(arr)
-        if self.gptb_list[in_vals['gp_register'].item()]:
+        if self.gptb_list[in_vals['gp_register'].item()] or override:
             gp_register = in_vals['gp_register'].item()
             crossover_rate = self.guardrails['crossover_rate'](raws[0], arr[0]) # no scaling
             mutation_rate = self.guardrails['mutation_rate'](raws[1], arr[1])  # no scaling
             mutation_sd = self.guardrails['mutation_sd'](raws[2], arr[2])  # no scaling
             elitism =  int(
                 _i(self.guardrails['elitism'](raws[3], arr[3]))*self.gptb_list[gp_register].pop
-            ) if self.gptb_list[gp_register] else -1
+            ) if self.gptb_list[gp_register] else _i(self.guardrails['elitism'](raws[3], arr[3])) if override else -1
             temp_coeff = _i(self.guardrails['temp_coeff'](raws[4], arr[4]))*2
             mut8or_weights = None
             if self.num_mutators > 1:
@@ -638,6 +695,31 @@ class GPContinue(Action):
             # print('=+-+'*30)
             raise ValueError(f"GPTreebank index[{gp_register}] out of range]")
 
+    def _interpret(self, 
+            gp_register: int, 
+            crossover_rate,
+            mutation_rate,
+            mutation_sd,
+            temp_coeff,
+            elitism,
+            mut8or_weights,
+            *args, **kwargs
+        ):
+        if isinstance(gp_register, torch.Tensor):
+            gp_register = gp_register.item()
+        mw =  mut8or_weights.tolist()
+        return {
+            'gp_register': gp_register,
+            'crossover_rate': _i(crossover_rate),
+            'mutation_rate': _i(mutation_rate),
+            'mutation_sd': _i(mutation_sd),
+            'temp_coeff': _i(temp_coeff),
+            'elitism': _i(elitism) ,
+            **{
+                f'mutator_weights_{i}': w/sum(mw) for i, w in enumerate(mw)
+            }
+        }
+
 class UseMem(Action):
     """Retrieves trees from memory for use in GP, up to a maximum
 
@@ -657,7 +739,8 @@ class UseMem(Action):
         )})
 
     def process_action(self, 
-        in_vals: OrderedDict[str, np.ndarray|int|float|bool]
+        in_vals: OrderedDict[str, np.ndarray|int|float|bool], *args,
+        override: bool = False, **kwargs
     ):
         # XXX this comes in the wrong shape and I don't know why
         # XXX investigate later TODO
@@ -680,6 +763,12 @@ class UseMem(Action):
             f"memory with GP: \n" +
             '\n'.join([f'{t}' for t in self.ac.mems_to_use])
         )
+
+    def _interpret(self, 
+            locations: Sequence[tuple[int, int]],
+            *args, **kwargs
+        ):
+        return {'locations': locations}
 
 
 class StoreMem(Action):
@@ -710,7 +799,8 @@ class StoreMem(Action):
         })
 
     def process_action(self, 
-        in_vals: OrderedDict[str, np.ndarray|int|float|bool]
+        in_vals: OrderedDict[str, np.ndarray|int|float|bool], *args,
+        override: bool = False, **kwargs
     ):
         num_gps = len(self.gptb_list)
         # gp_registers_bool = arr[:num_gps]
@@ -749,6 +839,18 @@ class StoreMem(Action):
                 print(f'>>>> Agent {self.ac.name} tried to remember a tree from an empty GP slot')
             # no else action, do nothing if it tries to pull from an empty slot
 
+    def _interpret(self,
+            gp_registers: Sequence[int],
+            memory_locations: Sequence[tuple[int, int]],
+            *args, **kwargs
+        ):
+        d = {f'store_mem_gp_{gp}_{coord}': None for gp in range(len(self.gptb_list)) for coord in ('table', 'row')}
+        for gp, loc in zip(gp_registers, memory_locations):
+            loc = [coord.item() for coord in loc]
+            d[f'store_mem_gp_{gp}_table'] = loc[0]
+            d[f'store_mem_gp_{gp}_row'] = loc[1]
+        return d
+
 class Publish(Action):
     # location of mem to be published
     # publication journal number
@@ -769,7 +871,8 @@ class Publish(Action):
         })
 
     def process_action(self, 
-        in_vals: OrderedDict[str, np.ndarray|int|float|bool]
+        in_vals: OrderedDict[str, np.ndarray|int|float|bool], *args,
+        override: bool = False, **kwargs
     ):
         return in_vals['gp_register'], in_vals['journal_num']
 
@@ -791,6 +894,16 @@ class Publish(Action):
                 print(f'>>>> Agent {self.ac.name} tried to publish a tree from a GP with no stored best')
         else:
             print(f'>>>> Agent {self.ac.name} tried to publish a tree from an empty GP slot')
+
+    def _interpret(self,
+            gp_register: int,
+            journal_num: int,
+            *args, **kwargs
+        ):
+        return {
+            'gp_register': gp_register.item(),
+            'journal_num': journal_num.item()
+        }
 
 class Read(Action):
     # publication numbers and addresses,
@@ -830,15 +943,12 @@ class Read(Action):
             'repo_row_idxs': repo_row_idxs
         })
 
-    def process_action(self, in_vals: OrderedDict[str, np.ndarray|int|float|bool]|np.ndarray[int|float]):
-        mask            = in_vals['mask'][0].int()
-        try:
-            mem_table_idxs  = in_vals['mem_table_idxs'][mask]
-        except Exception as e:
-            print('F'*300)
-            print(in_vals['mem_table_idxs'])
-            print(mask)
-            raise e
+    def process_action(self, 
+            in_vals: OrderedDict[str, np.ndarray|int|float|bool]|np.ndarray[int|float], *args,
+            override: bool = False, **kwargs
+        ):
+        mask            = in_vals['mask'][0].bool()
+        mem_table_idxs  = in_vals['mem_table_idxs'][mask]
         mem_row_idxs    = in_vals['mem_row_idxs'][mask]
         repo_table_idxs = in_vals['repo_table_idxs'][mask]
         repo_row_idxs   = in_vals['repo_row_idxs'][mask]
@@ -856,6 +966,18 @@ class Read(Action):
             if td['tree'] is not None:
                 self.memory.insert_tree(td['tree'], journal=_i(mem_loc[0]), pos=_i(mem_loc[1]), **td[self.vars])
                 print(f'Agent {self.ac.name} read tree {td["tree"]}')
+
+    def _interpret(self,
+            memory_locs:  Sequence[tuple[int, int]],
+            journal_locs: Sequence[tuple[int, int]],
+            *args, **kwargs
+        ):
+        return {
+            **{f'memory_loc_{i}_table': loc[0].item() for i, loc in enumerate(memory_locs)},
+            **{f'memory_loc_{i}_row': loc[1].item() for i, loc in enumerate(memory_locs)},
+            **{f'journal_loc_{i}_table': loc[0].item() for i, loc in enumerate(journal_locs)},
+            **{f'journal_loc_{i}_row': loc[1].item() for i, loc in enumerate(journal_locs)}
+        }
 
 class PunchSelfInFace(Action):
     def __init__(self, controller) -> None:

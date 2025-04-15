@@ -1037,6 +1037,14 @@ class SineWorld(World):
             stop  = stop  if stop  <= self.range[1] else self.range[1],
             num = int(num) if num <= self.max_observation_size else self.max_observation_size
         )
+    
+    def interpret(self, start: float, stop: float, num: float):
+        return {
+            'obs_start': start,
+            'obs_stop':  stop,
+            'obs_width': float(np.abs(stop-start)),
+            'obs_num':   int(num)
+        }
 
 
 def main():
