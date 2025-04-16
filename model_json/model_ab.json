@@ -32,7 +32,10 @@
             "depth",
             "penalty",
             "hasnans",
-            "fitness"
+            "raw_fitness",
+            "fitness",
+            "value",
+            "r"
         ]
     },
     "gp_vars_core": [

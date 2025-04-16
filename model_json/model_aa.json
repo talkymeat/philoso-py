@@ -32,7 +32,10 @@
             "depth",
             "penalty",
             "hasnans",
-            "fitness"
+            "raw_fitness",
+            "fitness",
+            "value",
+            "r"
         ]
     },
     "gp_vars_core": [
@@ -69,7 +72,7 @@
     ],
     "agent_templates": {
         "a": {
-            "device": "cuda",
+            "device": "mps",
             "controller": {
                 "tree_factory_classes": [
                     "SimpleRandomAlgebraicTreeFactory"
