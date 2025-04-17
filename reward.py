@@ -55,7 +55,7 @@ class Reward(SimpleJSONable, ABC):
     def json(self)->dict:
         return {
             "name": self.__name__,
-            "dtype": str(self.dtype).split('.')[-1]
+            "dtype": str(np.dtype(self.dtype))
         }
 
     @classmethod
