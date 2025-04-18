@@ -290,6 +290,7 @@ class AgentController(Env, SimpleJSONable):
         self.observations['gp_obs']      = GPObservation(self,
                                                 self.sb_statfuncs,
                                                 self.record_obs_len,
+                                                self.sb_factory.best_outvals,
                                                 dtype=self.dtype
                                             )
         self.observations['remembering'] = Remembering(self, 

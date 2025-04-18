@@ -16,6 +16,18 @@ from utils import taper
 def clean_df(df: pd.DataFrame, scale=1_000_000):
     return df.map(taper, scale=scale).fillna(0)
 
+def nan_check(func):
+    def _nan_check(*args, **kwargs):
+        arr_out = func(*args, **kwargs)
+        if np.isnan(arr_out).all():
+            print('fuck! '*100)
+            print(arr_out)
+            for sub in arr_out:
+                print(sub)
+            raise ValueError("This shouldn't contain a NaN but it does")
+        return arr_out
+    return _nan_check
+
 class Observation(ABC):
     def __init__(self, 
             controller,
@@ -48,6 +60,7 @@ class GPObservation(Observation):
             controller, 
             sb_statfuncs: Sequence[Callable],
             record_len: int,
+            gp_best_outvals: Sequence[str],
             dtype: np.dtype|str = np.float64,
             *args
         ) -> None:
@@ -57,6 +70,7 @@ class GPObservation(Observation):
         self.gp_vars_core = self.ac.gp_vars_core
         self.sb_statfuncs = sb_statfuncs
         self.record_len = record_len
+        self.gp_best_outvals = gp_best_outvals
 
 
     # def __call__(self) -> np.ndarray:
@@ -103,7 +117,7 @@ class GPObservation(Observation):
             high=np.inf, 
             shape=(
                 len(self.gptb_list),
-                len(self.gp_vars_core), 
+                len(self.gp_best_outvals), 
                 self.record_len
             ),
             dtype=self.dtype # 'float 64'
@@ -114,12 +128,14 @@ class GPObservation(Observation):
                             bests, 
                             scoreboards: list[GPScoreboard], 
                             records: list[pd.DataFrame]) -> np.ndarray:
+        
         return (
             self.process_bests(bests), 
             self.process_scoreboards(scoreboards),
             self.process_records(records)
         )
         
+    @nan_check
     def process_bests(self, bests):
         return np.nan_to_num(
             np.array([
@@ -130,10 +146,11 @@ class GPObservation(Observation):
                 ) for best in bests
             ]), 
             nan=0.0
-        ).clip(np.finfo(self.dtype).min/4.0, np.finfo(self.dtype).max/4.0)
+        ) #.clip(np.finfo(self.dtype).min/4.0, np.finfo(self.dtype).max/4.0)
 
+    @nan_check
     def process_scoreboards(self, scoreboards):
-        return np.array([
+        return np.nan_to_num(np.array([
             (
                 [
                     (
@@ -156,10 +173,11 @@ class GPObservation(Observation):
             ) 
             for sb 
             in scoreboards
-        ], dtype=self.dtype).clip(np.finfo(self.dtype).min/4.0, np.finfo(self.dtype).max/4.0)
+        ], dtype=self.dtype)) #.clip(np.finfo(self.dtype).min/4.0, np.finfo(self.dtype).max/4.0)
     
+    @nan_check
     def process_records(self, records: list[pd.DataFrame]):
-        return np.array([
+        return np.nan_to_num(np.array([
             (
                 [
                     (
@@ -171,14 +189,14 @@ class GPObservation(Observation):
                         else np.zeros(self.record_len)
                     )
                     for var 
-                    in self.gp_vars_core
+                    in self.gp_best_outvals
                 ]
                 if rec is not None
-                else np.zeros(((len(self.gp_vars_core)), self.record_len))
+                else np.zeros(((len(self.gp_best_outvals)), self.record_len))
             )
             for rec 
             in records
-        ], dtype=self.dtype).clip(np.finfo(self.dtype).min/4.0, np.finfo(self.dtype).max/4.0)
+        ], dtype=self.dtype)) #.clip(np.finfo(self.dtype).min/4.0, np.finfo(self.dtype).max/4.0)
 
     def observe(self, *args, **kwargs) -> tuple:
         gp_best_vals = [(gp.best if gp else None) for gp in self.gptb_list]
@@ -217,9 +235,15 @@ class Remembering(Observation):
     def process_observation(self, repo) -> np.ndarray:
         return self.process_repo_data(repo)
         
+    @nan_check
     def process_repo_data(self, repo: list[pd.DataFrame]):
         try:
-            return np.array([clean_df(table[self.gp_vars_core]) for table in repo], dtype=self.dtype)
+            return np.nan_to_num(
+                np.array(
+                    [clean_df(table[self.gp_vars_core]) for table in repo], 
+                    dtype=self.dtype
+                )
+            )
         except KeyError:
             for table in repo:
                 for key in self.gp_vars_core:
@@ -261,6 +285,7 @@ class LitReview(Remembering):
     def process_observation(self, repo: list[pd.DataFrame]) -> np.ndarray:
         return (self.process_repo_data(repo), self.process_credits(repo))
 
+    @nan_check
     def process_credits(self, the_literature: list[pd.DataFrame]):
         return np.array([
             table['credit'] for table in the_literature

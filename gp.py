@@ -404,8 +404,13 @@ class GPTreebank(TypeLabelledTreebank):
 
     def update_record(self, best, i):
         for k, v in best.items():
+            # in case k is a variable that hasn't previously been recorded
+            # assign it zeroes in any previous rows 
             if not k in self.record:
                 self.record[k] = np.zeros(len(self.record), dtype=float if k in self.record_means else type(v))
+            # for some variables, the mean of the scoreboard is considered
+            # more informative than the individual value for the best tree:
+            # self.record_means lists these variables 
             if k in self.record_means:
                 self.record.at[i, k] = self.scoreboard[k].mean()
             else:

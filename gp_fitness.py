@@ -1048,8 +1048,7 @@ class GPScoreboard(pd.DataFrame):
         return list(best) if tree_only else best.reset_index()
 
     def winner(self, *cols, except_for: str|list[str]=None, **kwargs)-> dict: 
-        """
-        This retrieves a dictionary of selected row elements from the row
+        """This retrieves a dictionary of selected row elements from the row
         containing the fittest tree. If the column for the tree itself is 
         included, a string representation is given, not the tree.
 
@@ -1234,7 +1233,7 @@ class GPScoreboard(pd.DataFrame):
                 if exn in cols:
                     cols.remove(exn)
         else:
-            cols = deepcopy(self.def_outputs)
+            cols = deepcopy(self.def_outputs|{'tree'})
         best = self.nlargest(1, 'fitness')[list(cols)]
         best_dic = {}
         for col in cols:

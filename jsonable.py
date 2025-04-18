@@ -154,6 +154,11 @@ class JSONableFunc(JSONable):
     def __name__(self)->str:
         """Same name as self.f"""
         return self.f.__name__
+    
+    @property
+    def __fullname__(self)->str:
+        """Same name as self.f"""
+        return self.f.__name__
 
 
 

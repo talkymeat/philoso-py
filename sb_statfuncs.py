@@ -275,6 +275,18 @@ class Quantile(SimpleJSONable):
         if issubclass(other.__class__, self.__class__):
             return self.q == other.q
         
+    @property
+    def __fullname__(self):
+        if self.q == 0.0:
+            return 'min'
+        elif self.q == 1.0:
+            return 'max'
+        elif self.q == 0.5:
+            return 'median'
+        elif self.n is not None:
+            return f'q_{self.i}_of_{self.n-1}'
+        else:
+            return 'q' + (f'{self.q:.5f}'.split('.')[1])
     
 def main():
     import doctest
