@@ -271,7 +271,7 @@ def unfold_lists(source_order, *lists):
     """
     # This will be easier to perform the needed calculations
     # on `source_order` if it's an np.ndarray 
-    source_order = np.array(ic(source_order), dtype=int)
+    source_order = np.array(source_order, dtype=int)
     # if lists is actually just one list, return a copy,
     # as long as source_order has no errors - which in 
     # this case means it is a list of falsy values of
@@ -320,12 +320,12 @@ def unfold_lists(source_order, *lists):
     # list comprehension pops from lists, and if the same
     # lists are still needed elsewhere, it would be bad for
     # them to suddenly be empty 
-    list_copies = ic([list(ls) for ls in lists])
+    list_copies = [list(ls) for ls in lists]
     # each value of source_order is an index of `lists`: in
     # the returned list, each value is the head ideam of the
     # list in `lists` at that index, which is popped so it is
     # then removed from the (copy of the) list 
-    return [list_copies[source].pop(0) for source in ic(source_order)]
+    return [list_copies[source].pop(0) for source in source_order]
 
 
 def _i(item):

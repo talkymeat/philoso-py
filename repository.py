@@ -157,7 +157,7 @@ class Archive(TypeLabelledTreebank): #M #P
             'tree': [None]*rows
         })
         if isinstance(types, Mapping):
-            df_data_cols = pd.DataFrame({head: np.zeros(rows, dtype=ic(types.get(head, def_type))) for head in cols})
+            df_data_cols = pd.DataFrame({head: np.zeros(rows, dtype=types.get(head, def_type)) for head in cols})
         elif isinstance(types, Sequence) and not isinstance(types, str):
             if len(types)==len(cols):
                 df_data_cols = pd.DataFrame({head: np.zeros(rows, dtype=type) for head, type in zip(cols, types)})

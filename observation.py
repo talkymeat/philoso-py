@@ -293,6 +293,3 @@ class LitReview(Remembering):
 
     def observe(self, *args, **kwargs) -> tuple:
         return (self.repo.tables, )
-    
-# XXX XXX TODO SOON - Add a new Observation which observes
-# which GPTreebank slots are empty
