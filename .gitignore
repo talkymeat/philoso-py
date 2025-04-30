@@ -5,7 +5,7 @@ deactivate/
 svg_test/
 toyxmpl/
 old_sad_code/
-scratch*.ipynb
+Scratch*.ipynb
 Untitled*.ipynb
 *.parquet
 outputs/
@@ -23,7 +23,7 @@ experiment.txt
 
 # Jupyter Notebooks
 notebooks/
-*.ipynb
+_*.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
