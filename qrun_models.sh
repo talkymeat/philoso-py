@@ -59,7 +59,7 @@ source /etc/profile.d/modules.sh
 
 echo "loading modules"
 module load cuda/12.1.1
-module load python/3.12.9
+# module load python/3.12.9
 module load anaconda/2024.02
 
 
@@ -77,6 +77,7 @@ conda create --name ${ENV_NAME} python=3.12 --file requirements.txt
 echo "there, I created it"
 conda activate philos_env
 echo "and activated it"
+echo `python -V`
 
 # Make available all commands on $PATH as on headnode
 # source ~/.bashrc # ???
