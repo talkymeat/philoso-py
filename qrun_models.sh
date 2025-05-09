@@ -72,7 +72,7 @@ conda config --add pkgs_dirs ${SCRATCH_HOME}/philoso-py/anaconda/pkgs
 
 # Create python virtual environment and install modules:
 ENV_NAME=philos_env
-echo "Create and activate ${ENV_NAME}"
+echo "Create and activate ${ENV_NAME} with reqs"
 conda create --name ${ENV_NAME} python=3.11 --file requirements.txt
 echo "there, I created it"
 conda activate philos_env
