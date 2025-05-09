@@ -78,6 +78,7 @@ echo "there, I created it"
 conda activate philos_env
 echo "and activated it"
 echo `python -V`
+python qtest.py
 
 # Make available all commands on $PATH as on headnode
 # source ~/.bashrc # ???
