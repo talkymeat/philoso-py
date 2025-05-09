@@ -2,7 +2,7 @@
 
 # Grid Engine options (lines prefixed with #$)
 # Runtime limit of 1 hour:
-#$ -l h_rt=144:00:00
+#$ -l h_rt=48:00:00
 #
 # Set working directory to the directory where the job is submitted from:
 #$ -cwd
@@ -14,6 +14,7 @@
 # Request 4 GB system RAM 
 # the total system RAM available to the job is the value specified here multiplied by 
 # the number of requested GPUs (above)
+#$ -pe sharedmem 1
 #$ -l h_vmem=16G
 
 # Say hello
@@ -34,6 +35,21 @@ echo "Job started: $dt"
 
 
 # ===================
+# Directory setup
+# ===================
+
+SCRATCH_DISK=/exports/eddie/scratch/
+SCRATCH_HOME=${SCRATCH_DISK}/${USER}
+echo "Let's make ${SCRATCH_HOME}"
+mkdir -p ${SCRATCH_HOME}
+echo "and let's check it"
+echo `ls ${SCRATCH_HOME}`
+echo "Let's make ${SCRATCH_HOME}/philoso-py/output"
+mkdir -p ${SCRATCH_HOME}/philoso-py/output
+echo "and let's check it"
+echo `ls ${SCRATCH_HOME}/philoso-py/`
+
+# ===================
 # Environment setup
 # ===================
 
@@ -51,6 +67,9 @@ module load anaconda/2024.02
 # Conda environment setup
 # ===================
 
+conda config --add envs_dirs ${SCRATCH_HOME}/philoso-py/anaconda/envs
+conda config --add pkgs_dirs ${SCRATCH_HOME}/philoso-py/anaconda/pkgs
+
 # Create python virtual environment and install modules:
 ENV_NAME=philos_env
 echo "Create and activate ${ENV_NAME}"
@@ -67,17 +86,7 @@ echo "and activated it"
 
 # Make your own folder on the node's scratch disk
 
-#####################
-# SCRATCH_DISK=/exports/eddie/scratch/
-# SCRATCH_HOME=${SCRATCH_DISK}/${USER}
-# echo "Let's make ${SCRATCH_HOME}"
-# mkdir -p ${SCRATCH_HOME}
-# echo "and let's check it"
-# echo `ls ${SCRATCH_HOME}`
-# echo "Let's make ${SCRATCH_HOME}/philoso-py/output"
-# mkdir -p ${SCRATCH_HOME}/philoso-py/output
-# echo "and let's check it"
-# echo `ls ${SCRATCH_HOME}/philoso-py/`
+
 
 # Create and activate your conda environment
 
