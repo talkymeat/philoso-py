@@ -1,3 +1,3 @@
-import numpy as np
+from frozendict import frozendict
 
-print('hello world', np.nan)
+print('hello world', frozendict())
