@@ -78,7 +78,7 @@ echo "there, I created it"
 conda activate philos_env
 echo "and activated it"
 echo `python -V`
-pip install frozendict
+pip install -r requirements.txt
 python qtest.py
 
 # Make available all commands on $PATH as on headnode
