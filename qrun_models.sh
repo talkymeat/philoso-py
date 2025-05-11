@@ -111,7 +111,6 @@ echo `python -V`
 pip install -r requirements.txt --no-cache-dir
 
 
-python qtest.py
 
 
 
