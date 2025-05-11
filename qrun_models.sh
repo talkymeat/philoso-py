@@ -16,6 +16,8 @@
 # the number of requested GPUs (above)
 #$ -pe sharedmem 1
 #$ -l h_vmem=16G
+# which json files to use in array job
+#$ -t 2-5
 
 # Say hello
 echo "Hellote"
@@ -38,16 +40,29 @@ echo "Job started: $dt"
 # Directory setup
 # ===================
 
-SCRATCH_DISK=/exports/eddie/scratch/
+SCRATCH_DISK=/exports/eddie/scratch
 SCRATCH_HOME=${SCRATCH_DISK}/${USER}
-echo "Let's make ${SCRATCH_HOME}"
-mkdir -p ${SCRATCH_HOME}
+SCRATCH_PHILOSOPY=${SCRATCH_HOME}/philoso-py
+SCRATCH_OUTPUTS=${SCRATCH_PHILOSOPY}/output
+echo "Let's make ${SCRATCH_OUTPUTS}"
+mkdir -p ${SCRATCH_OUTPUTS}
 echo "and let's check it"
-echo `ls ${SCRATCH_HOME}`
-echo "Let's make ${SCRATCH_HOME}/philoso-py/output"
-mkdir -p ${SCRATCH_HOME}/philoso-py/output
-echo "and let's check it"
-echo `ls ${SCRATCH_HOME}/philoso-py/`
+echo `ls ${SCRATCH_PHILOSOPY}`
+
+
+
+# Target directory
+JSON_DIR=$HOME/philoso-py/model_json
+
+# Get list of files in target directory
+files=$(ls -1 ${JSON_DIR}/*)
+
+echo $(files)
+
+JSON_FILE=${JSON_DIR}/model_aa.json
+model_id=`egrep -o "[\"']model_id[\"']: [\"']([0-9a-zA-Z\-_]*)[\"']" ${JSON_FILE} | egrep -o ": [\"']([0-9a-zA-Z\-_]*)[\"']" | egrep -o "[0-9a-zA-Z\-_]*"`
+echo "${model_id}"
+
 
 # ===================
 # Environment setup
@@ -70,40 +85,29 @@ module load anaconda/2024.02
 conda config --add envs_dirs ${SCRATCH_HOME}/philoso-py/anaconda/envs
 conda config --add pkgs_dirs ${SCRATCH_HOME}/philoso-py/anaconda/pkgs
 
-# Create python virtual environment and install modules:
+# Create python virtual environment if needed:
 ENV_NAME=philos_env
-echo "Create and activate ${ENV_NAME} with reqs"
-conda create --name ${ENV_NAME} python=3.11 # --file requirements.txt
-echo "there, I created it"
+ENV_LIST=$(conda env list)
+
+if [[ "${ENV_LIST}" != *"${ENV_NAME}"* ]]; then
+    echo "Create and activate ${ENV_NAME} with reqs"
+    conda create --name ${ENV_NAME} python=3.11 # --file requirements.txt
+    echo "there, I created it"
+else
+    echo "${ENV_NAME} already exists"
+fi
+
+# Activate env and install modules
 conda activate philos_env
-echo "and activated it"
+echo "and I activated it"
+echo "Today's flavour of Python is:"
 echo `python -V`
-pip install -r requirements.txt
+pip install -r requirements.txt --no-cache-dir
+
+
 python qtest.py
 
-# Make available all commands on $PATH as on headnode
-# source ~/.bashrc # ???
-# echo "Make available all commands on $PATH as on headnode"
-# Make script bail out after first error
-# set -e # ???
 
-# Make your own folder on the node's scratch disk
-
-
-
-# Create and activate your conda environment
-
-# # create venv, ~20 minutes
-# echo "make environment with python 3.10"
-# /opt/conda/bin/python3.10 -m venv "${ENV_NAME}"
-# echo "activate env"
-#################### source "${ENV_NAME}/bin/activate"
-# which python
-# echo "upgrading pip"
-# # ~20 minutes
-# pip install --upgrade pip
-# echo "install packages"
-# pip install -r requirements.txt
 
 
 
@@ -117,7 +121,7 @@ python qtest.py
 ################### src_path=/home/s0454279/philoso-py
 
 # # input data directory path on the scratch disk of the node
-###################dest_path=${SCRATCH_HOME}/philoso-py
+################### dest_path=${SCRATCH_HOME}/philoso-py
 # mkdir -p ${dest_path}  # make it if required
 # # Important notes about rsync:
 # # * the --compress option is going to compress the data before transfer to send
