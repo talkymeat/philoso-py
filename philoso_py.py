@@ -41,6 +41,7 @@ class Model:
         time: ModelTime=None,
         ping_freq=10, 
         out_dir=None,
+        model_id=None,
     ):
         self.world = world
         self.agents: Container[Agent] = agents
@@ -53,7 +54,9 @@ class Model:
         self.sb_factory = sb_factory
         self.rewards = []
         self.t = time
-        self.out_dir = out_dir if out_dir is not None else Path("")
+        self.base_out_dir = out_dir if out_dir is not None else Path("")
+        self.model_id = model_id if model_id is not None else ""
+        self.out_dir = self.base_out_dir / self.model_id
         
     @property
     def json(self)->dict:
@@ -61,8 +64,6 @@ class Model:
         Model, so that it can be recreated from the json. This includes
         generating json for objects of other philoso.py classes, which are
         passed into the `Model.__init__` method
-
-        >>> # test me 
         """
         # `Model` contains `Agent` objects, with `AgentControllers`; 
         # the output JSON can contain parameters for single agents,
@@ -232,7 +233,8 @@ class Model:
         # nearest common parent, and removes any which are redundant
         return HD({
             "seed": self.rng.bit_generator.seed_seq.entropy,
-            "out_dir": str(self.out_dir),
+            "out_dir": str(self.base_out_dir),
+            "model_id": self.model_id,
             "world": self.world.__class__.__name__,
             "world_params": self.world.json,
             "sb_factory": self.sb_factory.__class__.__name__,
@@ -363,7 +365,7 @@ class Model:
         return self._reward_dict[name]
 
 
-def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping_freq=5) -> Model:
+def example_model(seed: int=None, out_dir: str|Path=Path('output'), model_id='test', ping_freq=5) -> Model:
     dancing_chaos_at_the_heart_of_the_world = np.random.Generator(np.random.PCG64(seed))
     world = SineWorld(
         50, 100, 0.05, (10,100), (0.1, 1), 
@@ -436,7 +438,8 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output', 'test'), ping
         pub, # publications, #: Publication=None,
         sb_factory, #: SimpleGPScoreboardFactory=None,
         time, #: ModelTime=None
-        out_dir=out_dir
+        out_dir=out_dir,
+        model_id=model_id
     )
     for agent in agents:
         agent.ac.model = model
@@ -819,7 +822,8 @@ class ModelFactory:
             pub, # publications, #: Publication=None,
             sb_factory, #: SimpleGPScoreboardFactory=None,
             time, #: ModelTime=None
-            out_dir=json_['out_dir']
+            out_dir=json_['out_dir'],
+            model_id=json_.get('model_id', '') 
             #json_['agent_populations']
         )
         # Each Agent needs a backreference to Model
@@ -884,15 +888,14 @@ class ModelFactory:
         # directory, or else the current directory 
         if json_out_dir is None:
             if "out_dir" in saved_json:
-                json_out_dir = saved_json['out_dir']
+                json_out_dir = Path(saved_json['out_dir']) / saved_json.get('model_id', '')
             else:
-                json_out_dir = ""
+                json_out_dir = Path()
         # Create a Path object for this directory, and make sure it
         # exists 
-        path = Path(json_out_dir)
-        path.mkdir(parents=True, exist_ok=True)
+        json_out_dir.mkdir(parents=True, exist_ok=True)
         # append the json filename, to give the complete json filepath
-        json_outpath = path / f'{prefix}params.json'
+        json_outpath = json_out_dir / f'{prefix}params.json'
         # save the json to a file
         with open(json_outpath, 'w', encoding='utf-8') as f:
             json.dump(
@@ -908,7 +911,7 @@ class ModelFactory:
                 prefix=prefix
             )
     
-    def run_json(self, json_: str|dict, out_dir: str=None):
+    def run_json(self, json_: str|dict, root_out_dir: str=None):
         """This function creates and runs a model from a json file,
         with no arguments other than the json itself
 
@@ -922,8 +925,8 @@ class ModelFactory:
         json_ = self._read_json(json_)
         # If a target directory for outputs is given, prepend
         # this to 'out_dir' in json_
-        if out_dir:
-            json_['out_dir'] = out_dir + '/' + json_['out_dir'] 
+        if root_out_dir:
+            json_['out_dir'] = root_out_dir + '/' + json_['out_dir'] 
         # Create the model
         model = self.from_json(json_)
         # retrieve the extra data needed to cal model.run
@@ -951,5 +954,5 @@ if __name__ == "__main__":
     parser.add_argument('-o', '--outdir')
     args = parser.parse_args()
     print('Running:', args.json_fn)
-    kwargs = {'out_dir': args.outdir} if args.outdir else {}
+    kwargs = {'root_out_dir': args.outdir} if args.outdir else {}
     ModelFactory().run_json(args.json_fn, **kwargs)
