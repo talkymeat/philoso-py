@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Grid Engine options (lines prefixed with #$)
-# Runtime limit of 1 hour:
+# Runtime limit of 2 days:
 #$ -l h_rt=48:00:00
 #
 # Set working directory to the directory where the job is submitted from:
