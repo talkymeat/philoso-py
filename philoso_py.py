@@ -54,7 +54,7 @@ class Model:
         self.sb_factory = sb_factory
         self.rewards = []
         self.t = time
-        self.base_out_dir = out_dir if out_dir is not None else Path("")
+        self.base_out_dir = Path(out_dir) if out_dir is not None else Path("")
         self.model_id = model_id if model_id is not None else ""
         self.out_dir = self.base_out_dir / self.model_id
         
