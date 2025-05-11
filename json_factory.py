@@ -7,6 +7,7 @@ from collections.abc import Container
 from icecream import ic
 from string import ascii_lowercase
 from math import log, ceil
+import os
 # ic.disable()
 
 class IDCoder:
@@ -44,6 +45,7 @@ def make_jsons(alts: dict, cartesians: Container[str], prefix: str|IDCoder):
     for j in jsons:
         pref = prefix if isinstance(prefix, str) else next(prefix)
         j['out_dir'] = j['out_dir'].replace('*', pref)
+        j['model_id'] = j['model_id'].replace('*', pref)
         j['output_prefix'] = j['output_prefix'].replace('*', pref)
         yield j, f'model_json/model_{pref}.json'
     # return jsons
@@ -67,6 +69,7 @@ def make_all_jsons(alts: dict, all_cartesians: Container[Container[str]], chars=
             yield j, jfname 
 
 def save_all_jsons(alts: dict, all_cartesians: Container[Container[str]], chars=ascii_lowercase):
+    os.makedirs('model_json', exist_ok=True)
     for j, fn in make_all_jsons(alts, all_cartesians, chars=ascii_lowercase):
         json.dump(j, open(fn, 'w'), indent=4)
 
