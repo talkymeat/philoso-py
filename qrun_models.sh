@@ -17,7 +17,7 @@
 #$ -pe sharedmem 1
 #$ -l h_vmem=16G
 # which json files to use in array job
-#$ -t 2-3
+#$ -t 5-6
 
 # Say hello
 echo "Hellote"
@@ -62,7 +62,7 @@ echo ${JSON_DIR}
 echo ${files}
 echo '!'
 
-JSON_FILE=${JSON_DIR}/model_aa.json
+JSON_FILE=this_file=$(echo "${files}" | sed -n ${SGE_TASK_ID}p)
 model_id=`egrep -o "[\"']model_id[\"']: [\"']([0-9a-zA-Z\-_]*)[\"']" ${JSON_FILE} | egrep -o ": [\"']([0-9a-zA-Z\-_]*)[\"']" | egrep -o "[0-9a-zA-Z\-_]*"`
 echo "${model_id}"
 
