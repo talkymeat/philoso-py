@@ -63,6 +63,7 @@ echo ${files}
 echo '!'
 
 JSON_FILE=$(echo "${files}" | sed -n ${SGE_TASK_ID}p)
+echo "${JSON_FILE} is the json"
 model_id=`egrep -o "[\"']model_id[\"']: [\"']([0-9a-zA-Z\-_]*)[\"']" ${JSON_FILE} | egrep -o ": [\"']([0-9a-zA-Z\-_]*)[\"']" | egrep -o "[0-9a-zA-Z\-_]*"`
 echo "${model_id}"
 
