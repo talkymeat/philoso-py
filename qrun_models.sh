@@ -17,7 +17,7 @@
 #$ -pe sharedmem 1
 #$ -l h_vmem=16G
 # which json files to use in array job
-#$ -t 5-6
+#$ -t 2-3
 
 # Say hello
 echo "Hellote"
@@ -52,20 +52,22 @@ echo `ls ${SCRATCH_PHILOSOPY}`
 
 
 # Target directory
-JSON_DIR=$HOME/philoso-py/model_json
+PHILOSOPY_DIR=$HOME/philoso-py
+JSON_DIR=${PHILOSOPY_DIR}/model_json
+OUTPUTS_TARG_DIR=${PHILOSOPY_DIR}/output
 
 # Get list of files in target directory
 files=$(ls -1 ${JSON_DIR}/*)
 
-echo 'file list'
-echo ${JSON_DIR}
-echo ${files}
-echo '!'
 
 JSON_FILE=$(echo "${files}" | sed -n ${SGE_TASK_ID}p)
 echo "${JSON_FILE} is the json"
 model_id=`egrep -o "[\"']model_id[\"']: [\"']([0-9a-zA-Z\-_]*)[\"']" ${JSON_FILE} | egrep -o ": [\"']([0-9a-zA-Z\-_]*)[\"']" | egrep -o "[0-9a-zA-Z\-_]*"`
-echo "${model_id}"
+echo "Model: ${model_id}"
+
+SCRATCH_MODEL_OUTPUT=${SCRATCH_OUTPUTS}/${model_id}
+OUT_TARG_DIR=${OUTPUTS_TARG_DIR}/${model_id}
+mkdir -p ${OUT_TARG_DIR}
 
 
 # ===================
@@ -113,19 +115,6 @@ python qtest.py
 
 
 
-
-
-# =================================
-# Move input data to scratch disk
-# =================================
-
-################### echo "Not moving data to $SCRATCH_HOME because philoso-py doesn't use training data"
-
-# data directory path on the DFS
-################### src_path=/home/s0454279/philoso-py
-
-# # input data directory path on the scratch disk of the node
-################### dest_path=${SCRATCH_HOME}/philoso-py
 # mkdir -p ${dest_path}  # make it if required
 # # Important notes about rsync:
 # # * the --compress option is going to compress the data before transfer to send
@@ -141,18 +130,24 @@ python qtest.py
 # No data import needed for these experiments
 # ============================================= 
 
-# rsync --archive --update --compress --progress ${src_path}/ ${dest_path}
 
 # ==============================
 # Finally, run the experiment!
 # ==============================
+echo 'OK, here we go'
+
+python philoso_py.py ${JSON_FILE} -o ${SCRATCH_PHILOSOPY}
+
 # Read line number ${SLURM_ARRAY_TASK_ID} from the experiment file and run it
 # ${SLURM_ARRAY_TASK_ID} is simply the number of the job within the array. If
 # you execute `sbatch --array=1:100 ...` the jobs will get numbers 1 to 100
 # inclusive.
 
 #
+SCRATCH_MODEL_OUTPUT_TGZ="${SCRATCH_MODEL_OUTPUT}.tar.gz"
+tar -czvf ${SCRATCH_MODEL_OUTPUT_TGZ} ${SCRATCH_MODEL_OUTPUT}
 
+rsync --archive --update --compress --progress ${SCRATCH_MODEL_OUTPUT_TGZ} ${OUT_TARG_DIR}
 
 # =========================
 # Post experiment logging
