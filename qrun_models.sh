@@ -58,6 +58,7 @@ JSON_DIR=$HOME/philoso-py/model_json
 files=$(ls -1 ${JSON_DIR}/*)
 
 echo 'file list'
+echo ${JSON_DIR}
 echo $(files)
 echo '!'
 
