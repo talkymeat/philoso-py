@@ -17,7 +17,7 @@
 #$ -pe sharedmem 1
 #$ -l h_vmem=16G
 # which json files to use in array job
-#$ -t 2-5
+#$ -t 2-3
 
 # Say hello
 echo "Hellote"
@@ -57,7 +57,9 @@ JSON_DIR=$HOME/philoso-py/model_json
 # Get list of files in target directory
 files=$(ls -1 ${JSON_DIR}/*)
 
+echo 'file list'
 echo $(files)
+echo '!'
 
 JSON_FILE=${JSON_DIR}/model_aa.json
 model_id=`egrep -o "[\"']model_id[\"']: [\"']([0-9a-zA-Z\-_]*)[\"']" ${JSON_FILE} | egrep -o ": [\"']([0-9a-zA-Z\-_]*)[\"']" | egrep -o "[0-9a-zA-Z\-_]*"`
