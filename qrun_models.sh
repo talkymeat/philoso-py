@@ -59,7 +59,7 @@ files=$(ls -1 ${JSON_DIR}/*)
 
 echo 'file list'
 echo ${JSON_DIR}
-echo $(files)
+echo ${files}
 echo '!'
 
 JSON_FILE=${JSON_DIR}/model_aa.json
