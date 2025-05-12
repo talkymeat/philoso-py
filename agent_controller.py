@@ -38,13 +38,16 @@ def print_locals(locfn):
     
 class AgentController(Env, SimpleJSONable):
     addr = ["agent_templates", "$prefix", "controller"]
-    args = ("mem_rows", "mem_tables", 'dv', "def_fitness", "out_dir", "record_obs_len")
+    args = (
+        "mem_rows", "mem_tables", 'dv', "def_fitness", 
+        # "out_dir", # remove this one
+        "record_obs_len")
     kwargs = (
         "max_readings", "num_treebanks", "short_term_mem_size", "value", "max_volume", 
         "max_max_size", "max_max_depth",  "theta", "gp_vars_core", "gp_vars_more", 
         "ping_freq", "guardrail_base_penalty", "mem_col_types", "dtype"
     )
-    arg_source_order = (1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0)
+    arg_source_order = (1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0)
 
     @classmethod
     def from_json(cls, 
@@ -68,6 +71,7 @@ class AgentController(Env, SimpleJSONable):
         object, plus a number of other objects created by the `ModelFactory`
         """
         addr = cls.make_addr(locals())
+        out_dir = Path(json_.get(addr+['out_dir'], '')) / json_.get(addr+['model_id'], '')
         kwargs_ = {}
         # gets all the statfuncs explicitly listed in json
         kwargs_['sb_statfuncs'] = [
@@ -107,7 +111,7 @@ class AgentController(Env, SimpleJSONable):
             )
         return super().from_json(
             json_, world, time, name, sb_factory, tree_factory_classes, rng, 
-            json_.get("agent_indices", agent_indices), repository, 
+            json_.get("agent_indices", agent_indices), repository, out_dir,
             *args, prefix=prefix, **kwargs, **kwargs_
         )
     

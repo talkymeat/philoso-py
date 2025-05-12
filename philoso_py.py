@@ -56,7 +56,10 @@ class Model:
         self.t = time
         self.base_out_dir = Path(out_dir) if out_dir is not None else Path("")
         self.model_id = model_id if model_id is not None else ""
-        self.out_dir = self.base_out_dir / self.model_id
+
+    @property
+    def out_dir(self) -> Path:
+        return self.base_out_dir / self.model_id
         
     @property
     def json(self)->dict:
@@ -255,26 +258,25 @@ class Model:
             raise AttributeError("model has no agent rewards")
         if state_file: # loading state a nice thing for later
             pass
-        self.path_ = Path(self.out_dir)
-        self.path_.mkdir(parents=True, exist_ok=True)
+        self.out_dir.mkdir(parents=True, exist_ok=True)
         for day in range(days):
             print(f'=== DAY {day} ===')
             asyncio.run(self.day(steps_per_day, day)) 
             self.night()
         # Generate model outputs
         for r in self.rewards:
-            r.record.to_parquet(self.path_ / f'{prefix}{r.__name__}_record.parquet')
+            r.record.to_parquet(self.out_dir / f'{prefix}{r.__name__}_record.parquet')
         for i, table in enumerate(self.publications.tables):
             table['tree'] = table['tree'].apply(lambda x: f"{x}")
-            table.to_parquet(self.path_ / f'{prefix}publication_{i}_end.parquet')
+            table.to_parquet(self.out_dir / f'{prefix}publication_{i}_end.parquet')
         for agent in self.agents:
             for i, table in enumerate(agent.ac.memory.tables):
                 table['tree'] = table['tree'].apply(lambda x: f"{x}")
-                table.to_parquet(self.path_ / f'{prefix}{agent.name}_mem_{i}.parquet')
-            agent.save_nn(f'{self.path_}/{prefix}{agent.name}_nn_state.pt')
+                table.to_parquet(self.out_dir / f'{prefix}{agent.name}_mem_{i}.parquet')
+            agent.save_nn(f'{self.out_dir}/{prefix}{agent.name}_nn_state.pt')
         pd.DataFrame({
             agent.name: agent.day_rewards for agent in self.agents
-        }).to_parquet(self.path_ / f'{prefix}day_rewards.parquet')
+        }).to_parquet(self.out_dir / f'{prefix}day_rewards.parquet')
         print("The model is done. Goodbye!")
 
 
@@ -331,7 +333,7 @@ class Model:
 
     def daily_journals(self, day):
         for a in self.agents:
-            base: Path = self.path_ / a.name / 'days'
+            base: Path = self.out_dir / a.name / 'days'
             base.mkdir(parents=True, exist_ok=True)
             a.ac.memory.save(
                 base / f'day_{day}_mems', 
@@ -340,7 +342,7 @@ class Model:
             a.save_training_buffer(
                 base / f'day_{day}_actions.csv'
             )
-        pubdir = self.path_ / 'publications'
+        pubdir = self.out_dir / 'publications'
         pubdir.mkdir(parents=True, exist_ok=True)
         self.publications.save(
             pubdir / f'day_{day}_jrnl',
