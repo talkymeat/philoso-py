@@ -15,9 +15,9 @@
 # the total system RAM available to the job is the value specified here multiplied by 
 # the number of requested GPUs (above)
 #$ -pe sharedmem 1
-#$ -l h_vmem=16G
+#$ -l h_vmem=64G
 # which json files to use in array job
-#$ -t 2-3
+#$ -t 3-3
 
 # Say hello
 echo "Hellote"
