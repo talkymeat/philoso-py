@@ -7,10 +7,10 @@
 # Set working directory to the directory where the job is submitted from:
 #$ -cwd
 #
-# Request 4 GB system RAM 
+# Request 72 GB system RAM 
 # the total system RAM available to the job is the value specified here multiplied by 
 # the number of requested GPUs (above)
-#$ -l h_vmem=64G
+#$ -l h_vmem=72G
 # which json files to use in array job
 #$ -t 4-9
 
