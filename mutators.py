@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from math import log, floor, pi, cos, sin
+from math import log, floor, pi, cos, sin, nextafter, inf
 from typing import Any
 # from random import choice, random, uniform, gauss
 
@@ -59,7 +59,7 @@ class Mutator(ABC):
                 interval [0.0, 1.0]
         """
         self.rng = treebank.np_random if treebank.np_random else self.__class__.rng
-        self.mutation_rate = treebank.mutation_rate if treebank.mutation_rate else 0.1
+        self.mutation_rate = treebank.mutation_rate if treebank.mutation_rate is not None else 0.1
         if not (0.0 <= self.mutation_rate <= 1.0):
             raise ValueError(
                 "mutation_rate is a probability, and must not be less than " +
@@ -108,9 +108,32 @@ class IntMutator(Mutator):
     Parameters
     ----------
         mutation_rate : float
-            A probability in the closed interval [0.0, 1.0]. See __call__ for
+            A probability in the semi-open interval [0.0, 1.0). See __call__ for
             how this is used.
+
+    >>> from test_materials import Dummy
+    >>> rng = np.random.Generator(np.random.PCG64(666))
+    >>> mrs = (0.0, 1/64, 1/2, 1.0) 
+    >>> dummies = [Dummy(mutation_rate=mr) for mr in mrs]
+    >>> dummies += [Dummy(mutation_rate=mr, np_random=rng) for mr in mrs]
+    >>> mut8ors = [IntMutator(binkle) for binkle in dummies]
+    >>> [m.mutation_rate for m in mut8ors[:4]]
+    [0.0, 0.015625, 0.5, 0.9999999999999999]
+    >>> for m in mut8ors:
+    ...     for _ in range(1000):
+    ...         if not m.mutation_rate:
+    ...             if x := m(0, 'tree')[0]:
+    ...                 raise ValueError("this shouldn't mutate", x, m.mutation_rate, m.mutation_sd)
+    ...         # The following is written to catch exceptions - the mutated value is tested elsewhere in a notebook
+    ...         for val in (-1, 0, 1):
+    ...             val_, t = m(val, 'tree')
     """
+
+    def __init__(self, treebank, **kwargs):
+        super().__init__(treebank, **kwargs)
+        # A mutation rate of 1.0 exactly causes a ZeroDivisionError in __call__.
+        if self.mutation_rate==1:
+            self.mutation_rate = nextafter(self.mutation_rate, -inf)
 
     def __call__(self, val, tree, *args, **kwargs):
         """Mutates the constant. The constant is changed by at least 1 with a
@@ -169,8 +192,26 @@ class FloatMutator(Mutator):
             mutation_sd: float
                 The standard deviation of the normally distributed mutation
                 delta. A standard normal distibution by default.
+
+        >>> from test_materials import Dummy
+        >>> from sys import float_info
+        >>> rng = np.random.Generator(np.random.PCG64(666))
+        >>> mrs = (0.0, 1/64, 1/2, 1.0) 
+        >>> sds = (0.0, 1/64, 1/2, 1, 10, 1000, float_info.max)
+        >>> dummies = [Dummy(mutation_rate=mr, mutation_sd=sd) for mr in mrs for sd in sds]
+        >>> dummies += [Dummy(mutation_rate=mr, mutation_sd=sd, np_random=rng) for mr in mrs for sd in sds]
+        >>> mut8ors = [FloatMutator(binkle) for binkle in dummies]
+        >>> for m in mut8ors:
+        ...     for _ in range(1000):
+        ...         if not (m.mutation_rate and m.mutation_sd):
+        ...             if x := m(0, 'tree')[0]:
+        ...                 raise ValueError("this shouldn't mutate", x, m.mutation_rate, m.mutation_sd)
+        ...         # The following is written to catch exceptions - the mutated value is tested elsewhere in a notebook
+        ...         val_, t = m(-1.0, 'tree')
+        ...         val_, t = m(0.0, 'tree')
+        ...         val_, t = m(1.0, 'tree')
         """
-        self.mutation_sd = treebank.mutation_sd if treebank.mutation_sd else 1.0
+        self.mutation_sd = treebank.mutation_sd if treebank.mutation_sd is not None else 1.0
         super().__init__(treebank)
 
     def __call__(self, val, tree, *args, **kwargs):
@@ -211,8 +252,26 @@ class ComplexMutator(Mutator):
                 The standard deviation of the normally distributed modulus of
                 the  complex mutation delta. A standard normal distibution by
                 default.
+
+        >>> from test_materials import Dummy
+        >>> from sys import float_info
+        >>> rng = np.random.Generator(np.random.PCG64(666))
+        >>> mrs = (0.0, 1/64, 1/2, 1.0) 
+        >>> sds = (0.0, 1/64, 1/2, 1, 10, 1000, float_info.max)
+        >>> dummies = [Dummy(mutation_rate=mr, mutation_sd=sd) for mr in mrs for sd in sds]
+        >>> dummies += [Dummy(mutation_rate=mr, mutation_sd=sd, np_random=rng) for mr in mrs for sd in sds]
+        >>> mut8ors = [ComplexMutator(binkle) for binkle in dummies]
+        >>> for m in mut8ors:
+        ...     for _ in range(1000):
+        ...         if not (m.mutation_rate and m.mutation_sd):
+        ...             if x := m(0, 'tree')[0]:
+        ...                 raise ValueError("this shouldn't mutate", x, m.mutation_rate, m.mutation_sd)
+        ...         # The following is written to catch exceptions - the mutated value is tested elsewhere in a notebook
+        ...         for r in (-1.0, 0.0, 1.0):
+        ...             for i in (-1.0, 0.0, 1.0):
+        ...                 val_, t = m(complex(r, i), 'tree')
         """
-        self.mutation_sd = treebank.mutation_sd if treebank.mutation_sd else 1.0
+        self.mutation_sd = treebank.mutation_sd if treebank.mutation_sd is not None else 1.0
         super().__init__(treebank)
 
     def __call__(self, val, tree, *args, **kwargs):
@@ -251,6 +310,21 @@ class BoolMutator(Mutator):
         mutation_rate : float
             A probability in the closed interval [0.0, 1.0]. See __call__ for
             how this is used.
+
+    >>> from test_materials import Dummy
+    >>> rng = np.random.Generator(np.random.PCG64(666))
+    >>> mrs = (0.0, 1/64, 1/2, 1.0) 
+    >>> dummies = [Dummy(mutation_rate=mr) for mr in mrs]
+    >>> dummies += [Dummy(mutation_rate=mr, np_random=rng) for mr in mrs]
+    >>> mut8ors = [BoolMutator(binkle) for binkle in dummies]
+    >>> for m in mut8ors:
+    ...     for _ in range(1000):
+    ...         if not m.mutation_rate:
+    ...             if x := m(0, 'tree')[0]:
+    ...                 raise ValueError("this shouldn't mutate", x, m.mutation_rate, m.mutation_sd)
+    ...         # The following is written to catch exceptions - the mutated value is tested elsewhere in a notebook
+    ...         for val in (True, False):
+    ...             val_, t = m(val, 'tree')
     """
 
     def __call__(self, val, tree, *args, **kwargs):
@@ -290,6 +364,7 @@ class CrossoverMutator(Mutator):
         self.max_depth = treebank.max_depth
         self.max_size = treebank.max_size
         super().__init__(treebank)
+        self.mutation_rate = treebank.crossover_rate if treebank.crossover_rate is not None else 0.1
 
     def __call__(self, val, tree, _max_size=None, _max_depth=None, ml: MiniLog=None):
         """Randomly decides whether or not to cross over, and if so looks for a 
@@ -321,6 +396,7 @@ class CrossoverMutator(Mutator):
         >>> bigness = []
         >>> deepness = []
         >>> # Simple GP that selects for big-valued outputs, but subject to max values for tree size & depth
+        >>> tmax = None
         >>> for _ in range(2000):
         ...     old_tmax = tmax
         ...     tmax = None
@@ -356,6 +432,24 @@ class CrossoverMutator(Mutator):
         >>> bd = bigtrees+deeptrees
         >>> print(f"({bigtrees}){'n' if bd else 'u'}({deeptrees}){'=q' if bd else '=d'}") # SMILE! (0)u(0)=d
         (0)u(0)=d
+        >>> # Make sure xo can run without raising exceptions, even at extreme values of crossover rate
+        >>> gps = [GPTreebank(
+        ...     mutation_rate = 0.0, 
+        ...     mutation_sd=0.00, 
+        ...     crossover_rate=cr, 
+        ...     max_depth=md*5,
+        ...     max_size=ms*5, 
+        ...     seed=rng,
+        ...     operators=[ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE], 
+        ...     tree_factory=DummyTreeFactory()
+        ... ) for cr in (0.0, 1/64, 1/2, 1.0)]
+        >>> rpfs = [RandomPolynomialFactory(params = np.array([5, -10.0, 10.0], dtype=float), treebank=gp, seed=rng) for gp in gps]
+        >>> trees = [rpf('x', 'y') for _ in range(100) for rpf in rpfs]
+        >>> for _ in range(100):
+        ...     for t in trees:
+        ...         t_ = t.copy(gp_copy=True)
+        ...         t_.delete()
+
         """
         # Randomly decide whether or not to cross over
         # mutate_here is an overrideable method of the base class
@@ -364,7 +458,7 @@ class CrossoverMutator(Mutator):
         if _max_depth is None:
             _max_depth = ic(self.max_depth)
         if self.mutate_here(tree):
-            if not (_max_depth or _max_size):
+            if _max_depth < 1 or _max_size < 1:
                 # NOTE 2 XXX: see note 1 below - this is to catch cases where a crossover
                 # cannot occur because the tree is larger than the maximum size or depth
                 # of the treebank, because of a UseMem call introducing oversized trees.
@@ -442,7 +536,7 @@ class CrossoverMutator(Mutator):
 class TaggingMutator(Mutator):
     TAG = '__mut8__'
 
-    def __call__(self, val, tree, ml: MiniLog=None):
+    def __call__(self, val, tree):
         if self.mutate_here(tree):
             tag_candidates = tree.findall((lambda x: self.tag_here_maybe(x)), trees_only=True)
             if tag_candidates:
@@ -497,12 +591,12 @@ class MutatorFactory:
     should create a subclass of `Mutator`, `SpiderMutator`, and add it as
     follows:
 
-    `Mutator.type_dict[Spider] = SpiderMutator`
+    `MutatorFactory.types[Spider] = SpiderMutator`
 
     Likewise, if you want to replace the mutator for a standard type with
     something else with custom behaviour:
 
-    `Mutator.type_dict[int] = MyIntMutator`
+    `MutatorFactory.types[np.int64] = MyIntMutator`
 
     Some classes might be able to be used with existing Mutators: for example
     IntMutator would work fine with BigInteger (I presume. Haven't tested it

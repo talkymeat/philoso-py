@@ -354,7 +354,7 @@ class GPNonTerminal(NonTerminal):
             c_copy = c_copy.copy_out(
                 treebank, 
                 gp_copy=gp_copy, 
-                _max_size  = allowed_child_size,
+                _max_size = allowed_child_size,
                 _at_depth = _at_depth + 1,
                 **kwargs
             )

@@ -70,6 +70,7 @@ class Archive(TypeLabelledTreebank): #M #P
         self.max_depth = max_depth
         self.mutation_rate = 0.0
         self.mutation_sd = 0.0
+        self.crossover_rate = 0.0
         self.np_random = None
         super().__init__()
         self.N = GPNonTerminal

@@ -41,6 +41,13 @@ PLOS1 = Publication(
 )
 PLOS1.add_users(AG)
 
+class Dummy:
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+    def __getattr__(self, name):
+        return None
 
 class DummyTreeFactory:
     def __init__(self) -> None:
