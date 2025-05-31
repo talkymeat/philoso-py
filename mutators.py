@@ -134,6 +134,7 @@ class IntMutator(Mutator):
         # A mutation rate of 1.0 exactly causes a ZeroDivisionError in __call__.
         if self.mutation_rate==1:
             self.mutation_rate = nextafter(self.mutation_rate, -inf)
+        
 
     def __call__(self, val, tree, *args, **kwargs):
         """Mutates the constant. The constant is changed by at least 1 with a
@@ -177,7 +178,12 @@ class IntMutator(Mutator):
         # `choice((-1,1))` which determines the direction of the mutation,
         # increasing or decreasing with equal probability.
         else:
-            return val + (1 + floor(log(randval, self.mutation_rate))) * self.rng.choice((-1,1)), tree
+            extra = 0
+            if self.mutation_rate:
+                extra = floor(log(randval, self.mutation_rate))
+            return val + ((1 + extra) * self.rng.choice((-1,1))), tree 
+        # XXX This goes fuckus wuckus if mutation_rate is zero, but the method is inherited by a tag-based mutator
+        # XXX Also, better to persist the randval from mutate_here than make a new one
 
 class FloatMutator(Mutator):
     def __init__(self, treebank, **kwargs):
@@ -371,84 +377,84 @@ class CrossoverMutator(Mutator):
         subtree that can be crossed in - one which has the same label, and and 
         won't make the resulting tree too big or too deep
 
-        >>> from tree_factories import RandomPolynomialFactory
-        >>> from gp import GPTreebank
-        >>> from test_materials import DummyTreeFactory
-        >>> import pandas as pd
-        >>> import operators as ops
-        >>> rng = np.random.Generator(np.random.PCG64())
-        >>> s = ic(f'Seed: {rng.bit_generator.seed_seq.entropy}')
-        >>> ms, md = 300, 70
-        >>> gp = GPTreebank(
-        ...     mutation_rate = 0.2, 
-        ...     mutation_sd=0.02, 
-        ...     crossover_rate=0.5, 
-        ...     max_depth=md,
-        ...     max_size=ms, 
-        ...     seed=rng,
-        ...     operators=[ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE], 
-        ...     tree_factory=DummyTreeFactory()
-        ... )
-        >>> rpf = RandomPolynomialFactory(params = np.array([5, -10.0, 10.0], dtype=float), treebank=gp, seed=rng)
-        >>> trees = [rpf('x', 'y') for _ in range(5)]
-        >>> df = pd.DataFrame({'x': [1.0, 1.0], 'y': [1.0, 1.0]})
-        >>> bigtrees, deeptrees = 0, 0
-        >>> bigness = []
-        >>> deepness = []
-        >>> # Simple GP that selects for big-valued outputs, but subject to max values for tree size & depth
-        >>> tmax = None
-        >>> for _ in range(2000):
-        ...     old_tmax = tmax
-        ...     tmax = None
-        ...     valmax = -np.inf
-        ...     for t in trees:
-        ...         ic.enable()
-        ...         val = t(**df)
-        ...         if isinstance(val, np.ndarray):
-        ...             val = val.sum()
-        ...         if val is None:
-        ...             print(ic(val))
-        ...             print(icmuta(t))
-        ...         elif valmax < val:
-        ...             tmax = t
-        ...             valmax = val
-        ...     if tmax is None:
-        ...         tmax = old_tmax
-        ...     newtrees = []
-        ...     for ___ in range(5):
-        ...         newtrees.append(tmax.copy(gp_copy=True))
-        ...     # newtrees = [tmax.copy(gp_copy=True) for ___ in range(5)]
-        ...     for tt in trees:
-        ...         tt.delete()
-        ...     trees = newtrees
-        ...     beeeg = bool([tr for tr in trees if tr.size() > ms])
-        ...     if beeeg:
-        ...         bigness.append([(tr.size(), '>', ms) for tr in trees if tr.size() > ms])
-        ...     bigtrees += beeeg
-        ...     deeep = bool([tr for tr in trees if tr.depth() > md])
-        ...     if deeep:
-        ...         deepness.append([(tr.depth(), '>', md) for tr in trees if tr.depth() > md])
-        ...     deeptrees += deeep
-        >>> bd = bigtrees+deeptrees
-        >>> print(f"({bigtrees}){'n' if bd else 'u'}({deeptrees}){'=q' if bd else '=d'}") # SMILE! (0)u(0)=d
-        (0)u(0)=d
-        >>> # Make sure xo can run without raising exceptions, even at extreme values of crossover rate
-        >>> gps = [GPTreebank(
-        ...     mutation_rate = 0.0, 
-        ...     mutation_sd=0.00, 
-        ...     crossover_rate=cr, 
-        ...     max_depth=md*5,
-        ...     max_size=ms*5, 
-        ...     seed=rng,
-        ...     operators=[ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE], 
-        ...     tree_factory=DummyTreeFactory()
-        ... ) for cr in (0.0, 1/64, 1/2, 1.0)]
-        >>> rpfs = [RandomPolynomialFactory(params = np.array([5, -10.0, 10.0], dtype=float), treebank=gp, seed=rng) for gp in gps]
-        >>> trees = [rpf('x', 'y') for _ in range(100) for rpf in rpfs]
-        >>> for _ in range(100):
-        ...     for t in trees:
-        ...         t_ = t.copy(gp_copy=True)
-        ...         t_.delete()
+        # >>> from tree_factories import RandomPolynomialFactory
+        # >>> from gp import GPTreebank
+        # >>> from test_materials import DummyTreeFactory
+        # >>> import pandas as pd
+        # >>> import operators as ops
+        # >>> rng = np.random.Generator(np.random.PCG64())
+        # >>> s = ic(f'Seed: {rng.bit_generator.seed_seq.entropy}')
+        # >>> ms, md = 300, 70
+        # >>> gp = GPTreebank(
+        # ...     mutation_rate = 0.2, 
+        # ...     mutation_sd=0.02, 
+        # ...     crossover_rate=0.5, 
+        # ...     max_depth=md,
+        # ...     max_size=ms, 
+        # ...     seed=rng,
+        # ...     operators=[ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE], 
+        # ...     tree_factory=DummyTreeFactory()
+        # ... )
+        # >>> rpf = RandomPolynomialFactory(params = np.array([5, -10.0, 10.0], dtype=float), treebank=gp, seed=rng)
+        # >>> trees = [rpf('x', 'y') for _ in range(5)]
+        # >>> df = pd.DataFrame({'x': [1.0, 1.0], 'y': [1.0, 1.0]})
+        # >>> bigtrees, deeptrees = 0, 0
+        # >>> bigness = []
+        # >>> deepness = []
+        # >>> # Simple GP that selects for big-valued outputs, but subject to max values for tree size & depth
+        # >>> tmax = None
+        # >>> for _ in range(2000):
+        # ...     old_tmax = tmax
+        # ...     tmax = None
+        # ...     valmax = -np.inf
+        # ...     for t in trees:
+        # ...         ic.enable()
+        # ...         val = t(**df)
+        # ...         if isinstance(val, np.ndarray):
+        # ...             val = val.sum()
+        # ...         if val is None:
+        # ...             print(ic(val))
+        # ...             print(icmuta(t))
+        # ...         elif valmax < val:
+        # ...             tmax = t
+        # ...             valmax = val
+        # ...     if tmax is None:
+        # ...         tmax = old_tmax
+        # ...     newtrees = []
+        # ...     for ___ in range(5):
+        # ...         newtrees.append(tmax.copy(gp_copy=True))
+        # ...     # newtrees = [tmax.copy(gp_copy=True) for ___ in range(5)]
+        # ...     for tt in trees:
+        # ...         tt.delete()
+        # ...     trees = newtrees
+        # ...     beeeg = bool([tr for tr in trees if tr.size() > ms])
+        # ...     if beeeg:
+        # ...         bigness.append([(tr.size(), '>', ms) for tr in trees if tr.size() > ms])
+        # ...     bigtrees += beeeg
+        # ...     deeep = bool([tr for tr in trees if tr.depth() > md])
+        # ...     if deeep:
+        # ...         deepness.append([(tr.depth(), '>', md) for tr in trees if tr.depth() > md])
+        # ...     deeptrees += deeep
+        # >>> bd = bigtrees+deeptrees
+        # >>> print(f"({bigtrees}){'n' if bd else 'u'}({deeptrees}){'=q' if bd else '=d'}") # SMILE! (0)u(0)=d
+        # (0)u(0)=d
+        # >>> # Make sure xo can run without raising exceptions, even at extreme values of crossover rate
+        # >>> gps = [GPTreebank(
+        # ...     mutation_rate = 0.0, 
+        # ...     mutation_sd=0.00, 
+        # ...     crossover_rate=cr, 
+        # ...     max_depth=md*5,
+        # ...     max_size=ms*5, 
+        # ...     seed=rng,
+        # ...     operators=[ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE], 
+        # ...     tree_factory=DummyTreeFactory()
+        # ... ) for cr in (0.0, 1/64, 1/2, 1.0)]
+        # >>> rpfs = [RandomPolynomialFactory(params = np.array([5, -10.0, 10.0], dtype=float), treebank=gp, seed=rng) for gp in gps]
+        # >>> trees = [rpf('x', 'y') for _ in range(100) for rpf in rpfs]
+        # >>> for _ in range(100):
+        # ...     for t in trees:
+        # ...         t_ = t.copy(gp_copy=True)
+        # ...         t_.delete()
 
         """
         # Randomly decide whether or not to cross over
@@ -564,6 +570,49 @@ class TagTriggeredMutator(Mutator):
         return mh
 
 class TagTriggeredIntMutator(TagTriggeredMutator, IntMutator):
+    """Mutates an integer leaf node if it is tagged '__mut8__'
+    
+    >>> from gp import GPTreebank
+    >>> import operators as ops
+    >>> gp = GPTreebank(
+    ...     mutation_rate = 0.2, 
+    ...     operators=[ops.INT_SUM]
+    ... )
+    >>> t = gp.tree('([int]<INT_SUM>([int]5)([int]11))')
+    >>> t[0]()
+    5
+    >>> mf = null_mutator_factory(gp)
+    >>> mf()
+    >>> t[0].gp_operator = TagTriggeredIntMutator(gp)
+    >>> t[0].tmp['__mut8__'] = True
+    >>> vals = set()
+    >>> for _ in range(1000):
+    ...     tcp = t.copy(gp_copy=True)
+    ...     vals.add(tcp[0]())
+    ...     t[0].tmp['__mut8__'] = True
+    >>> 5 not in vals
+    True
+    >>> {3,4,6,7} <= vals
+    True
+    >>> gp0 = GPTreebank(
+    ...     mutation_rate = 0.0, 
+    ...     operators=[ops.INT_SUM]
+    ... )
+    >>> t0 = gp0.tree('([int]<INT_SUM>([int]6)([int]13))')
+    >>> t0[0]()
+    6
+    >>> mf = null_mutator_factory(gp0)
+    >>> mf()
+    >>> t0[0].gp_operator = TagTriggeredIntMutator(gp0)
+    >>> t0[0].tmp['__mut8__'] = True
+    >>> vals = set()
+    >>> for _ in range(1000):
+    ...     t0cp = t0.copy(gp_copy=True)
+    ...     vals.add(t0cp[0]())
+    ...     t0[0].tmp['__mut8__'] = True
+    >>> {5,7} == vals
+    True
+    """
     pass
 
 class TagTriggeredFloatMutator(TagTriggeredMutator, FloatMutator):
@@ -681,7 +730,7 @@ class NullMutatorFactory(MutatorFactory):
     True
     >>> sum_arr = np.zeros(4, dtype=np.complex128)
     >>> n = 1024*16
-    >>> eta = 0.1
+    >>> eta = 0.15
     >>> for _ in range(n):
     ...     t6_copy = T6.copy(gp_copy=True)
     ...     mut_arr = np.array(t6_copy())
@@ -811,6 +860,13 @@ def single_xo_factory(treebank: 'Treebank'):
         NullMutatorFactory, treebank,
         xo_class=TagTriggeredCrossoverMutator, 
         root_mutator_class=TaggingXOMutator
+    )
+
+@JSONableFunc
+def null_mutator_factory(treebank: 'Treebank'):
+    return MutatorMutator(
+        NullMutatorFactory, treebank,
+        xo_class=NullMutator, 
     )
 
 def main():

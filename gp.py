@@ -196,29 +196,94 @@ class GPTreebank(TypeLabelledTreebank):
         }
         self._best = {'tree': best_tree, 'data': metadata}
 
+    def does_nothing(self):
+        """I just wanted a place to put a doctest for some properties
+        below. Decorators screw with doctest.
+
+        >>> from test_materials import MarkedDummyA, MarkedDummyB, MarkedDummyC
+        >>> mfs = [MarkedDummyA, MarkedDummyB, MarkedDummyC]
+        >>> gp = GPTreebank(pop=120, mutator_factories=mfs)
+        a
+        b
+        c
+        >>> gp.mutator_weights = [1,1,1]
+        >>> gp._mutator_change_indices
+        [0, 40, 80]
+        >>> [str(mf) for mf in gp.mutator_factories]
+        ['a', 'b', 'c']
+        >>> gp.mutator_weights = [0,0,0]
+        >>> [str(mf) for mf in gp.mutator_factories]
+        ['a', 'b', 'c']
+        >>> gp._mutator_change_indices
+        [0, 40, 80]
+        >>> gp.mutator_weights = [0,1,1]
+        >>> [str(mf) for mf in gp.mutator_factories]
+        ['b', 'c']
+        >>> gp._mutator_change_indices
+        [0, 60]
+        >>> gp.mutator_weights = [2,0,1]
+        >>> [str(mf) for mf in gp.mutator_factories]
+        ['a', 'c']
+        >>> gp._mutator_change_indices
+        [0, 80]
+        >>> gp.mutator_weights = [0,0.5362523,0]
+        >>> [str(mf) for mf in gp.mutator_factories]
+        ['b']
+        >>> gp._mutator_change_indices
+        [0]
+        """
+        pass
 
     @property
     def mutator_factories(self) -> list[MutatorMutator]:
+        """`self._mut_fac` represents the complete set of available mutators:
+        the property `self.mutator_factories` is the subset of these that is
+        *not* assigned a weight of zero. Specifically, they are MutatorMutators
+        that change out the mutators on every tree in `self`
+        """
         return list(self._mut_fac[self._mfw > 0])
     
     @mutator_factories.setter
     def mutator_factories(self, factories: list|np.ndarray):
-        self._mut_fac = np.array([f(self) for f in factories])
+        """The mutator factories in `factories` are factory functions that generate 
+        MutatorMutators (a callable class) set up to point to a Treebank - when 
+        called, the switch around the mutators on all the trees in the Treebank."""
+        self._mut_fac = np.array([f(self) for f in factories]) 
+        # f(self) calls the factory function and makes the MutatorMutator
 
 
     @property
     def mutator_weights(self) -> np.ndarray:
+        """`self._mfw` represents the complete set of available mutators weights:
+        the property `self.mutator_weights` is the subset of these that is
+        *not* assigned a weight of zero
+        """
         return self._mfw[self._mfw > 0]
     
-    @mutator_weights.setter
+    @mutator_weights.setter # TEST ME
     def mutator_weights(self, weights) -> None:
+        """Mutator weights need a bit of processing when set: 
+        1) they must be normed to sum to one
+        2) if any weight is less than zero, all weights must be shifted uniformly 
+           so that zero is the minimum value
+        3) In the edge case where all raw weights are zero, assign uniform weight
+           to all mutators.
+        """
         self._mfw = np.array(weights)
-        if self._mfw.min() < 0:
+        if not self._mfw.any(): # handles edge case in (3)
+            self._mfw = np.ones(self._mfw.shape, dtype=self._mfw.dtype)
+        elif self._mfw.min() < 0: # handles edge case (2)
             self._mfw -= self._mfw.min()
-        self._mfw = self._mfw/self._mfw.sum()
+        self._mfw = self._mfw/self._mfw.sum() # norms weights as per (1)
     
     @property
     def _mutator_change_indices(self):
+        """During a GP run, if multiple mutation regimes are used (each 
+        represented by a `MutatorFactory`), `mutator_weights` are used to
+        determine at what point during a generation to switch mutators.
+        The `_mutator_change_indices` determines the point in the seqence
+        of generations within the run
+        """
         if len(self.mutator_weights)==1:
             return [0]
         return [0] + list((
@@ -344,9 +409,13 @@ class GPTreebank(TypeLabelledTreebank):
                 # Note that making a copy automatically adds it to the
                 # treebank, so there's no need to assign this 
                 # print(f'Tree {n} of {the_masses}, copying {t}')
-                if mc_idxs and n == mc_idxs[0]:
-                    mutmuts.pop(0)()
-                    mc_idxs.pop(0)
+                if mc_idxs and n == mc_idxs[0]: # if the list of indices at which 
+                    # mutators are to be changed is non-empty, and the first index
+                    # listed is the current generation...
+                    mutmuts.pop(0)() # pop the head of the list of MutatorMutators
+                    # and call it, which will change the mutators on all trees 
+                    mc_idxs.pop(0) # also pop the head of the list of indices, as it
+                    # has been used
                 n +=1
                 new_gen.append(t.copy(gp_copy=True)) 
                 if new_gen[-1].size()==1:

@@ -42,12 +42,33 @@ PLOS1 = Publication(
 PLOS1.add_users(AG)
 
 class Dummy:
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
 
     def __getattr__(self, name):
         return None
+
+class MarkedDummy:
+    s = '-'
+
+    def __init__(self, *args, **kwargs):
+        print(self)
+
+    def __call__(self):
+        return self.s*5
+
+    def __str__(self):
+        return self.s
+
+class MarkedDummyA(MarkedDummy):
+    s = 'a'
+
+class MarkedDummyB(MarkedDummy):
+    s = 'b'
+
+class MarkedDummyC(MarkedDummy):
+    s = 'c'
 
 class DummyTreeFactory:
     def __init__(self) -> None:
