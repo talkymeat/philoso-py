@@ -10,9 +10,9 @@
 # Request 72 GB system RAM 
 # the total system RAM available to the job is the value specified here multiplied by 
 # the number of requested GPUs (above)
-#$ -l h_vmem=72G
+#$ -l h_vmem=144G
 # which json files to use in array job
-#$ -t 4-9
+#$ -t 3-3
 
 # Say hello
 echo "Hellote"
@@ -74,7 +74,6 @@ echo "Setting up bash enviroment"
 source /etc/profile.d/modules.sh
 
 echo "loading modules"
-module load cuda/12.1.1
 # module load python/3.12.9
 module load anaconda/2024.02
 
