@@ -50,10 +50,10 @@ class GPTreebank(TypeLabelledTreebank):
     """This is the main class for running genetic programming"""
     def __init__(self,
             pop: int=1000000000,
-            tree_factory: TreeFactory=None,
-            observatory: Observatory=None,
-            mutator_factories: list[Callable]=None,
-            mutator_weights: list[float]=None,
+            tree_factory: TreeFactory|None=None,
+            observatory: Observatory|None=None,
+            mutator_factories: list[Callable]|None=None,
+            mutator_weights: list[float]|None=None,
             crossover_rate: float = 0.0,
             mutation_rate: float = 0.0,
             mutation_sd: float = 0.0,
@@ -63,17 +63,17 @@ class GPTreebank(TypeLabelledTreebank):
             episode_len: int = 0,
             # seed_pop_node_max: int = None, # not used
             # seed_pop_tree_max: int = None, # not used
-            best_outvals: str|list[str] = None,
-            expt_outvals: str|list[str] = None,
+            best_outvals: str|list[str]|None = None,
+            expt_outvals: str|list[str]|None = None,
             default_op = None,
             operators = None,
-            fitness: GPScoreboard=None, 
+            fitness: GPScoreboard|None=None, 
             seed: int|np.random.Generator|None = None,
             _dir: str = 'outputs',
             elitism: int = 0,
-            dv: str=None, 
-            def_fitness: str = None,
-            best_vec_out: list[str] = None,
+            dv: str|None=None, 
+            def_fitness: str|None = None,
+            best_vec_out: list[str]|None = None,
             ping_freq = 5
         ):
         super().__init__(default_op = default_op, operators = operators)
