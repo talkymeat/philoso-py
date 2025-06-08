@@ -10,9 +10,9 @@
 # Request 72 GB system RAM 
 # the total system RAM available to the job is the value specified here multiplied by 
 # the number of requested GPUs (above)
-#$ -l h_vmem=72G
+#$ -l h_vmem=144G
 # which json files to use in array job
-#$ -t 14-14
+#$ -t 3-3
 
 # Say hello
 echo "Hellote"

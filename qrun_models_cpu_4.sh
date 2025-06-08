@@ -10,9 +10,9 @@
 # Request 72 GB system RAM 
 # the total system RAM available to the job is the value specified here multiplied by 
 # the number of requested GPUs (above)
-#$ -l h_vmem=144G
+#$ -l h_vmem=72G
 # which json files to use in array job
-#$ -t 3-3
+#$ -t 4-6
 
 # Say hello
 echo "Hellote"
@@ -29,6 +29,7 @@ echo "Job running on ${hostname}"
 
 dt=$(date '+%d/%m/%Y %H:%M:%S')
 echo "Job started: $dt"
+export PATH="/home/s0454279/.local/bin:$PATH"
 
 
 # ===================
