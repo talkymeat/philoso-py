@@ -29,7 +29,7 @@ echo "Job running on ${hostname}"
 
 dt=$(date '+%d/%m/%Y %H:%M:%S')
 echo "Job started: $dt"
-
+export PATH="/home/s0454279/.local/bin:$PATH"
 
 # ===================
 # Directory setup
