@@ -29,7 +29,6 @@ echo "Job running on ${hostname}"
 
 dt=$(date '+%d/%m/%Y %H:%M:%S')
 echo "Job started: $dt"
-export PATH="/home/s0454279/.local/bin:$PATH"
 
 
 # ===================
@@ -100,9 +99,11 @@ fi
 
 # Activate env and install modules
 conda activate philos_env
+conda install pip
 echo "and I activated it"
 echo "Today's flavour of Python is:"
 echo `python -V`
+conda install pip
 pip install -r requirements.txt --no-cache-dir
 
 
