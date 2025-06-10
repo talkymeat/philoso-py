@@ -98,6 +98,7 @@ fi
 
 # Activate env and install modules
 conda activate philos_env
+conda install pip
 echo "and I activated it"
 echo "Today's flavour of Python is:"
 echo `python -V`
