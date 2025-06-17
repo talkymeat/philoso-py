@@ -20,4 +20,4 @@ dependencies:
     - numba=0.61.2
     - pywavelets>=1.6.0
     - astropy>=7.0
-    - streamlit>=1.37.0
+    - streamlit
