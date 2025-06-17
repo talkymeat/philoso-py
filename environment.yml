@@ -2,7 +2,7 @@ name: philos_env
 channels:
  - defaults
 dependencies:
-    - python=3.11
+    - python=3.12
     - frozendict=2.3.8
     - gymnasium=0.29.1
     - icecream=2.1.3
