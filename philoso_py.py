@@ -641,7 +641,7 @@ class ModelFactory:
             json_ = HD(json_)
         return json_
 
-    def from_json(self, json_: str|dict, out_dir: str=None) -> Model:
+    def from_json(self, json_: str|dict, out_dir: str=None, device=None) -> Model:
         """This represents the core functionality of the ModelFactory
         class: it creates a ready-to-run philoso.py `Model` from a 
         JSON input.
@@ -748,6 +748,10 @@ class ModelFactory:
                         f"{nom} cannot be used as both an agent name and a" +
                         "population prefix"
                     )
+                if device: # if a device other than the one specified in
+                    # json is given, update the json with the device
+                    json_[["agent_templates", nom, "device"]] = device
+                print(json_)
                 # Agents require a number of helper classes and functions,
                 # which here are picked out from the dictionaries stored
                 # in ModelFactory, using data from json. Note the use of
