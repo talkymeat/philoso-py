@@ -17,6 +17,7 @@ from philoso_py import ModelFactory
 from agent import Agent
 
 from icecream import ic
+import re
 
 
 def _path(p: str|Path) -> Path:
@@ -52,8 +53,9 @@ def agents_from_dirs(root_dir: str|Path) -> list[str]:
     ]
     return sorted(agents)
 
-def agent_day_data(root_dir: str|Path, agent: str):
+def agent_day_data(root_dir: str|Path, agent: str, device=None):
     ic.enable()
+    # print('hoooorg', device)
     root = _path(root_dir)
     folders = get_sorted_data(root)
     for _agent in agents_from_dirs(root):
@@ -77,8 +79,8 @@ def agent_day_data(root_dir: str|Path, agent: str):
             _agent_data.append([pd.read_csv(dp) if str(dp).endswith('.csv') else pd.read_parquet(dp) for dp in datapaths])
         return (
             _agent, 
-            AgentMemData(_agent, _agent_data[1:], root, folders), 
-            AgentDeedData(_agent, _agent_data[0], root, folders)
+            AgentMemData(_agent, _agent_data[1:], root, folders, device=device), 
+            AgentDeedData(_agent, _agent_data[0], root, folders, device=device)
         )
 
 def cols_from_tensor_col(col: pd.Series):
@@ -96,32 +98,46 @@ def detensorise(val: str|float, width: int) -> np.ndarray:
     else:
         return tensor_str_2_np(val)
 
+def chg_dev(val:str, device:str):
+    m = re.match('.*(device=([a-z]+)).*', val)
+    if m and m[2]!=device:
+        return val.replace(m[2], device)
+
 def tensor_str_2_np(val:str):
     return tensor_str_2_tensor(val).numpy()[0]
 
 def tensor_str_2_tensor(val:str):
+    val = strip_tensor_str_kwargs(val)
     return eval('torch.'+val)
 
 def strip_tensor_str_kwargs(val:str):
-    m = re.match(r'(tensor\(\[[0-9]+\]).*(\))', val)
-    return m[1] + m[2]
+    val = val.replace('\n', ' ')
+    while '  ' in val:
+        val = val.replace('  ', ' ')
+    m = re.match(r'(tensor\(\[+[0-9e., \-+\[\]]+\]+).*(\))', val)
+    if m:
+        return m[1] + m[2]
+    else:
+        return val
     
 
 class AgentMemData:
-    def __init__(self, name, memories, root, folders) -> None:
+    def __init__(self, name, memories, root, folders, device=None) -> None:
         self.name = name
+        # print('hoorg', device)
         self.memories = memories
         self.root = root
         self.folders = folders
         self._mem_summary_data = None
         self._make_obs_width()
-        self.make_model()
+        self.make_model(device=device)
         self.agent = [agt for agt in self.model.agents if agt.name==self.name][0]
         
-    def make_model(self):
+    def make_model(self, device=None):
+        # print('horg', device)
         json_file = [file for file in self.folders[''] if file.endswith('.json')][0]
         json_file = Path(self.root, json_file)
-        self.model = ModelFactory().from_json(json_file)
+        self.model = ModelFactory().from_json(json_file, device=device)
 
     def _make_obs_width(self) -> None:
         for dfs in self.memories:
@@ -268,7 +284,7 @@ class AgentDeedData:
     PUBLISH = ['journal_num', 'gp_register']
     USE_MEM = ['locations']
     
-    def __init__(self, name, deeds, root, folders) -> None:
+    def __init__(self, name, deeds, root, folders, device=None) -> None:
         self.name = name
         self.deeds = deeds
         self.act_sort_order = list(self.ACTION_NAMES.values())
@@ -278,7 +294,7 @@ class AgentDeedData:
             df["('act', 'choice')"] = act_.map(self.ACTS)
         self.folders = folders
         self.root = root
-        self.make_model()
+        self.make_model(device=device)
         self.agent = [agt for agt in self.model.agents if agt.name==self.name][0]
         self.process_action_tensors()
         self._gp_registers = None
@@ -297,14 +313,14 @@ class AgentDeedData:
     def act_counts(self):
         return pd.concat([self._single_df_act_counts(df) for df in self.deeds]).reset_index().drop('index', axis=1)
 
-    def plot_act_counts(self):
+    def plot_act_counts(self, device=None):
         self.act_counts.plot.area(stacked=True, figsize=(12,10))
         self.act_counts.plot(subplots=True, figsize=(12,10))
         
-    def make_model(self):
+    def make_model(self, device=None):
         json_file = [file for file in self.folders[''] if file.endswith('.json')][0]
         json_file = Path(self.root, json_file)
-        self.model = ModelFactory().from_json(json_file)
+        self.model = ModelFactory().from_json(json_file, device=device)
 
     def process_action_tensors(self):
         post = PostProcessor(self.agent)
@@ -314,7 +330,7 @@ class AgentDeedData:
     @property
     def means(self):
         return pd.DataFrame({
-            f'{col}_{f}': [getattr(df[col], f)() for df in self.deeds] 
+            f'{col}_{f}': [getattr(df[col], f)() if col in df else np.nan for df in self.deeds] 
             for col 
             in (self.MEANABLES+self.MUT8OR_W8S) 
             for f 
@@ -359,6 +375,7 @@ class AgentDeedData:
                     set(df['gp_register'][df['gp_register'].notna()].unique()) 
                     for df 
                     in self.deeds
+                    if 'gp_register' in df
                 ],
                 set()
             )
@@ -405,9 +422,12 @@ class AgentDeedData:
     def gp_ages_df(self):
         return pd.concat([
             df[
-                ['Action', 'gp_register'] +
-                list(self.gp_age_cols.values()) +
-                list(self.age_bias_cols.values())
+                filter(
+                    lambda x: x in df,
+                    ['Action', 'gp_register'] +
+                    list(self.gp_age_cols.values()) +
+                    list(self.age_bias_cols.values())
+                )
             ].copy() 
             for df 
             in self.deeds
@@ -499,7 +519,7 @@ class GPAgeTracker:
         self.current = prior
 
     def __call__(self, row: pd.Series):
-        if row['gp_register']==self.reg:
+        if 'gp_register' in row and row['gp_register']==self.reg:
             if row['Action'].startswith("New GP"):
                 self.current = 1
             elif row['Action'].startswith("Continue GP"):
