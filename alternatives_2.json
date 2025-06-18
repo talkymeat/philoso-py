@@ -72,7 +72,7 @@
         ],
         "agent_templates": {
             "a": {
-                "device": "cuda",
+                "device": "cpu",
                 "controller": {
                     "tree_factory_classes": [
                         "SimpleRandomAlgebraicTreeFactory"
