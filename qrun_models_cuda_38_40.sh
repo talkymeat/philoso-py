@@ -17,7 +17,7 @@
 #$ -pe sharedmem 1
 #$ -l h_vmem=64G
 # which json files to use in array job
-#$ -t 13-15
+#$ -t 38-40
 
 
 
