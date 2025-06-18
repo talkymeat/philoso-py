@@ -1,18 +1,26 @@
 #!/bin/bash
 
 # Grid Engine options (lines prefixed with #$)
-# Runtime limit of 4 days:
-#$ -l h_rt=96:00:00
+# Runtime limit of 2 days:
+#$ -l h_rt=48:00:00
 #
 # Set working directory to the directory where the job is submitted from:
 #$ -cwd
 #
+# Request one GPU in the gpu queue:
+#$ -q gpu 
+#$ -l gpu=1
+#
 # Request 64 GB system RAM 
 # the total system RAM available to the job is the value specified here multiplied by 
 # the number of requested GPUs (above)
+#$ -pe sharedmem 1
 #$ -l h_vmem=64G
 # which json files to use in array job
 #$ -t 13-15
+
+
+
 
 # Say hello
 echo "Hellote"
@@ -74,6 +82,7 @@ source /etc/profile.d/modules.sh
 
 echo "loading modules"
 # module load python/3.12.9
+module load cuda/12.1.1
 module load anaconda/2024.02
 
 
