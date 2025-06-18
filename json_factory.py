@@ -74,7 +74,7 @@ def save_all_jsons(alts: dict, all_cartesians: Container[Container[str]], chars=
         json.dump(j, open(fn, 'w'), indent=4)
 
 if __name__ == '__main__':
-    alts = json.load(open('alternatives.json'))
+    alts = json.load(open('alternatives_2.json'))
     cartesians = [
         ['n_agents'], 
         ['policy_lr', 'value_lr'],

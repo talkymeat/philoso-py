@@ -10,9 +10,9 @@
 # Request 72 GB system RAM 
 # the total system RAM available to the job is the value specified here multiplied by 
 # the number of requested GPUs (above)
-#$ -l h_vmem=72G
+#$ -l h_vmem=64G
 # which json files to use in array job
-#$ -t 13-13
+#$ -t 13-15
 
 # Say hello
 echo "Hellote"
@@ -81,28 +81,28 @@ module load anaconda/2024.02
 # Conda environment setup
 # ===================
 
-conda config --add envs_dirs ${SCRATCH_HOME}/philoso-py/anaconda/envs
-conda config --add pkgs_dirs ${SCRATCH_HOME}/philoso-py/anaconda/pkgs
+# conda config --add envs_dirs ${SCRATCH_HOME}/philoso-py/anaconda/envs
+# conda config --add pkgs_dirs ${SCRATCH_HOME}/philoso-py/anaconda/pkgs
 
 # Create python virtual environment if needed:
 ENV_NAME=philos_env
-ENV_LIST=$(conda env list)
+# ENV_LIST=$(conda env list)
 
-if [[ "${ENV_LIST}" != *"${ENV_NAME}"* ]]; then
-    echo "Create and activate ${ENV_NAME} with reqs"
-    conda create --name ${ENV_NAME} python=3.11 # --file requirements.txt
-    echo "there, I created it"
-else
-    echo "${ENV_NAME} already exists"
-fi
+# if [[ "${ENV_LIST}" != *"${ENV_NAME}"* ]]; then
+#     echo "Create and activate ${ENV_NAME} with reqs"
+#     conda create --name ${ENV_NAME} python=3.11 # --file requirements.txt
+#     echo "there, I created it"
+# else
+#     echo "${ENV_NAME} already exists"
+# fi
 
 # Activate env and install modules
 conda activate philos_env
-conda install pip
-echo "and I activated it"
+# conda install pip
+# echo "and I activated it"
 echo "Today's flavour of Python is:"
 echo `python -V`
-pip install -r requirements.txt --no-cache-dir
+# pip install -r requirements.txt --no-cache-dir
 
 
 
