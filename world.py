@@ -1002,7 +1002,6 @@ class SineWorld(World):
         """
         # Check that params are in the right range, raise ValueErrors
         # otherwise
-        from icecream import ic
         data = pd.DataFrame({
             self.iv: self.np_random.uniform(
                 low=start, high=stop, size=num
