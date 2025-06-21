@@ -889,7 +889,7 @@ class VectorWorld(World):
         return world
 
 # this contains a bunch of gymnasium.spaces stuff that isn't needed
-class SineWorld(World):
+class BaseSineWorld(World):
     addr = ['world_params']
     args = ['radius', 'max_observation_size', 'noise_sd']
     stargs = 'sine_wave_params'
@@ -1044,6 +1044,14 @@ class SineWorld(World):
             'obs_width': float(np.abs(stop-start)),
             'obs_num':   int(num)
         }
+
+class SineWorld(BaseSineWorld):
+    def __call__(
+            self, centre: float, log_radius: float, num: int, **kwargs: Any
+        ) -> Observatory:
+        radius = np.exp(log_radius)
+        return super().__call__(centre-radius, centre+radius, num, **kwargs)
+    
 
 
 def main():
