@@ -889,7 +889,8 @@ class VectorWorld(World):
         return world
 
 # this contains a bunch of gymnasium.spaces stuff that isn't needed
-class BaseSineWorld(World):
+class SineWorld(World):
+    _act_param_names = ['start', 'stop', 'num']
     addr = ['world_params']
     args = ['radius', 'max_observation_size', 'noise_sd']
     stargs = 'sine_wave_params'
@@ -943,13 +944,15 @@ class BaseSineWorld(World):
         self.dtype = np.dtype(dtype)
         self.iv = iv
         self.dv = dv
-        self._act_param_names = ['start', 'stop', 'num'] # XXX add to other Actionables
+        self._set_obs_space()
+        self.sine_waves = [SineWorld.SineWave(*params) for params in sine_wave_params]
+
+    def _set_obs_space(self):
         self._act_param_space = Box(
             low=np.array([self.range[0], self.range[0], 1]), 
             high=np.array([self.range[1], self.range[1], self.max_observation_size]), 
             dtype=self.dtype
         )
-        self.sine_waves = [SineWorld.SineWave(*params) for params in sine_wave_params]
 
     @property
     def json(self) -> dict:
@@ -965,7 +968,6 @@ class BaseSineWorld(World):
             'dv': self.dv
         }
 
-    
     @property
     def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
         return self.range, self.range, (2, self.max_observation_size)
@@ -978,11 +980,11 @@ class BaseSineWorld(World):
             {'name': 'obs_len', 'min': 2, 'max': np.inf}
         )
 
-    def act(self, params: np.ndarray):
-        super().act(params)
-        start, stop = tuple(np.sort(params[0:2]).astype(self.dtype))
-        num = int(params[2])
-        return SineWorldObservatory(self.iv, self.dv, world=self, start=start, stop=stop, num=num) 
+    # def act(self, params: np.ndarray):
+    #     super().act(params)
+    #     start, stop = tuple(np.sort(params[0:2]).astype(self.dtype))
+    #     num = int(params[2])
+    #     return SineWorldObservatory(self.iv, self.dv, world=self, start=start, stop=stop, num=num) 
 
     def observe(self, start, stop, num) -> pd.DataFrame:
         """The function `Agent`s call to make observations of the `World`. This
@@ -1045,12 +1047,67 @@ class BaseSineWorld(World):
             'obs_num':   int(num)
         }
 
-class SineWorld(BaseSineWorld):
+class SineWorld2(SineWorld):
+    _act_param_names = ['start', 'stop']
+
+    def _set_obs_space(self):
+        self._act_param_space = Box(
+            low=np.array([self.range[0], self.range[0]]), 
+            high=np.array([self.range[1], self.range[1]]), 
+            dtype=self.dtype
+        )
+
     def __call__(
-            self, centre: float, log_radius: float, num: int, **kwargs: Any
+            self, start: float, stop: float, **kwargs: Any
+        ) -> Observatory:
+        return super().__call__(start, stop, self.max_observation_size, **kwargs)
+    
+    @property
+    def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
+        return self.range, self.range
+
+    @property    
+    def wobf_guardrail_params(self):
+        return (
+            {'name': '_', '_no_make': None}, 
+            {'name': '_', '_no_make': None}
+        )
+
+    # def act(self, params: np.ndarray):
+    #     super().act(params)
+    #     start, stop = tuple(np.sort(params).astype(self.dtype))
+    #     return SineWorldObservatory(self.iv, self.dv, world=self, start=start, stop=stop, num=self.max_observation_size) 
+    
+    def interpret(self, start: float, stop: float):
+        return {
+            'obs_start': start,
+            'obs_stop':  stop,
+            'obs_width': float(np.abs(stop-start)),
+        }
+    
+
+class SineWorld3(SineWorld2):
+    _act_param_names = ['centre', 'log_radius']
+
+    def _set_obs_space(self):
+        self._act_param_space = Box(
+            low=np.array([self.range[0], -np.inf]), 
+            high=np.array([self.range[1], np.log(self.range[1]-self.range[0])]), 
+            dtype=self.dtype
+        )
+
+    def __call__(
+            self, centre: float, log_radius: float, **kwargs: Any
         ) -> Observatory:
         radius = np.exp(log_radius)
-        return super().__call__(centre-radius, centre+radius, num, **kwargs)
+        return super().__call__(centre-radius, centre+radius, **kwargs)
+    
+    def interpret(self, centre: float, log_radius: float, ):
+        return {
+            'obs_centre': centre,
+            'obs_log_radius': log_radius,
+            'obs_width': 2 * float(np.exp(log_radius)),
+        }
     
 
 

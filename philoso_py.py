@@ -1,5 +1,5 @@
 from repository import Publication
-from world import World, SineWorld
+from world import World, SineWorld, SineWorld2, SineWorld3
 #from observatories import SineWorldObservatoryFactory
 from tree_factories import RandomPolynomialFactory, RandomTreeFactory, RandomAlgebraicTreeFactory, SimpleRandomAlgebraicTreeFactory
 from ppo import ActorCriticNetworkTanh, ActorCriticNetwork
@@ -537,7 +537,7 @@ class ModelFactory:
     # `nd` is a function that turns a collection of objects (classes
     # or functions) with a `__name__` attr into a dictionary in which 
     # the `__name__`s are the keys and the objects are the values 
-    worlds = nd(SineWorld)
+    worlds = nd(SineWorld, SineWorld2, SineWorld3)
     sb_factories = nd(
         SimpleGPScoreboardFactory, 
         SimplerGPScoreboardFactory
