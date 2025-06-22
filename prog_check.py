@@ -8,7 +8,6 @@ def count_days(path: str):
     return len(glob(str(Path(path) / 'a_0' / 'days')+os.sep+'*'))//4
 
 def folders(path: str):
-    print('beep')
     return [check_sub_path(dir) for dir in sorted(glob(path+os.sep+'*')) if os.path.isdir(dir)]
 
 def report(path: str):
@@ -20,15 +19,10 @@ def show(report_: dict):
         print(f'{k: <{maxlen}} | {"#"*v:-<{100}} {v}')
 
 def check_sub_path(f: str):
-    print(f)
     idchars = f.split(os.sep)[-1]
-    print(idchars)
     subf = glob(f+os.sep+'*')
-    print(subf, 'subf')
     if len(subf)==1 and subf[0].split(os.sep)[-1]==idchars:
-        print('fix_to', f + os.sep + idchars)
         return subf[0]
-    print('ok', f)
     return f
 
 
@@ -45,15 +39,10 @@ def list_flatten(ls: list[list]):
     return new_ls
 
 def max_t(fname: str) -> int:
-    print('max_t', fname)
     ls = list_flatten([folders(f) for f in ag_folders(fname)])
-    print(ls)
     ls = [f_.split(os.sep)[-1].split('_')[-1] for f_ in list_flatten([folders(f) for f in ls])]
-    print(ls)
     ls = [t for t in ls if re.match(r't[0-9]+', t)]
-    print(ls)
     vals = [1+int(t[1:]) for t in ls]
-    print(vals, ';', max(vals) if vals else 0)
     return max(vals) if vals else 0
 
 def detailed_report(root: str):
