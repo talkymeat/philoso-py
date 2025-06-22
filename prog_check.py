@@ -42,10 +42,15 @@ def list_flatten(ls: list[list]):
     return new_ls
 
 def max_t(fname: str) -> int:
+    print('max_t', fname)
     ls = list_flatten([folders(f) for f in ag_folders(fname)])
+    print(ls)
     ls = [f_.split(os.sep)[-1].split('_')[-1] for f_ in list_flatten([folders(f) for f in ls])]
+    print(ls)
     ls = [t for t in ls if re.match(r't[0-9]+', t)]
+    print(ls)
     vals = [1+int(t[1:]) for t in ls]
+    print(vals, ';', max(vals) if vals else 0)
     return max(vals) if vals else 0
 
 def detailed_report(root: str):
