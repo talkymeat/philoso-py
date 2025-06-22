@@ -8,7 +8,7 @@ def count_days(path: str):
     return len(glob(str(Path(path) / 'a_0' / 'days')+os.sep+'*'))//4
 
 def folders(path: str):
-    return [dir for dir in sorted(glob(path+os.sep+'*')) if os.path.isdir(dir)]
+    return [check_sub_path(dir) for dir in sorted(glob(path+os.sep+'*')) if os.path.isdir(dir)]
 
 def report(path: str):
     return {dir.split(os.sep)[-1]: count_days(dir) for dir in folders(path)}
