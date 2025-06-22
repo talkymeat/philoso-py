@@ -8,13 +8,13 @@ from icecream import ic
 from string import ascii_lowercase
 from math import log, ceil
 import os
-# ic.disable()
+# ic.disable() # --
 
 class IDCoder:
-    def __init__(self, n_chars: int, chars=ascii_lowercase):
+    def __init__(self, n_chars: int, chars=ascii_lowercase, i=0):
         self.n = n_chars
         self.chars = chars
-        self.i = 0
+        self.i = i
 
     def __iter__ (self):
         return self
