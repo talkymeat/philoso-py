@@ -11,6 +11,7 @@ def mod_json(world, gp_vars_more_fn, sources, idc):
         pref = next(idc)
         jsrc['output_prefix'] = f"{pref}__"
         jsrc['out_dir'] = f"output/{pref}"
+        jscr['model_id'] = pref
         with open(f'model_{pref}.json', 'w') as outf:
             json.dump(jsrc, outf)
 
