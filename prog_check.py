@@ -30,7 +30,7 @@ def check_sub_path(f: str):
 
 
 def ag_folders(f: str):
-    return [f_+os.sep+'gp_out' for f_ in folders(f) if f_.split(os.sep)[-1].startswith('a_')]
+    return [check_sub_path(f_)+os.sep+'gp_out' for f_ in folders(f) if f_.split(os.sep)[-1].startswith('a_')]
 
 def list_flatten(ls: list[list]):
     new_ls = []
