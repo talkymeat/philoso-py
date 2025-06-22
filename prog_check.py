@@ -18,8 +18,16 @@ def show(report_: dict):
     for k, v in report_.items():
         print(f'{k: <{maxlen}} | {"#"*v:-<{100}} {v}')
 
+def check_sub_path(f: str):
+    idchars = f.split(os.sep)[-1]
+    subf = glob(f+os.sep+'*')
+    if len(subf)==1 and subf[0]==idchars:
+        return f + os.sep + idchars
+    return f
+
+
 def ag_folders(f: str):
-    return [f_+os.sep+'gp_out' for f_ in folders(f) if f_.split(os.sep)[-1].startswith('a_')]
+    return [check_sub_path(f_)+os.sep+'gp_out' for f_ in folders(f) if f_.split(os.sep)[-1].startswith('a_')]
 
 def list_flatten(ls: list[list]):
     new_ls = []
