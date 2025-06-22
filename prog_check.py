@@ -19,10 +19,13 @@ def show(report_: dict):
         print(f'{k: <{maxlen}} | {"#"*v:-<{100}} {v}')
 
 def check_sub_path(f: str):
+    print(f)
     idchars = f.split(os.sep)[-1]
     subf = glob(f+os.sep+'*')
     if len(subf)==1 and subf[0]==idchars:
+        print('fix_to', f + os.sep + idchars)
         return f + os.sep + idchars
+    print('ok', f)
     return f
 
 
