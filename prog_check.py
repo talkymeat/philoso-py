@@ -8,6 +8,7 @@ def count_days(path: str):
     return len(glob(str(Path(path) / 'a_0' / 'days')+os.sep+'*'))//4
 
 def folders(path: str):
+    print('beep')
     return [check_sub_path(dir) for dir in sorted(glob(path+os.sep+'*')) if os.path.isdir(dir)]
 
 def report(path: str):
@@ -21,7 +22,9 @@ def show(report_: dict):
 def check_sub_path(f: str):
     print(f)
     idchars = f.split(os.sep)[-1]
+    print(idchars)
     subf = glob(f+os.sep+'*')
+    print(subf, 'subf')
     if len(subf)==1 and subf[0]==idchars:
         print('fix_to', f + os.sep + idchars)
         return f + os.sep + idchars
