@@ -1,8 +1,8 @@
-import json
+import json, os
 from json_factory import IDCoder
 
 
-def mod_json(world, gp_vars_more_fn, sources, idc):
+def mod_json(world, gp_vars_more_fn, device, sources, idc):
     for src in sources:
         with open(f"model_json/{src}") as f:
             jsrc = json.load(f)
@@ -11,9 +11,12 @@ def mod_json(world, gp_vars_more_fn, sources, idc):
         pref = next(idc)
         jsrc['output_prefix'] = f"{pref}__"
         jsrc['out_dir'] = f"output/{pref}"
-        jscr['model_id'] = pref
-        with open(f'model_{pref}.json', 'w') as outf:
-            json.dump(jsrc, outf)
+        jsrc['model_id'] = pref
+        for k in jsrc['agent_templates'].keys():
+            jsrc['agent_templates'][k]['device'] = device
+        os.makedirs('mdls', exist_ok=True)
+        with open(f'mdls/model_{pref}.json', 'w') as outf:
+            json.dump(jsrc, outf, indent = 4)
 
 if __name__ == '__main__':
     sources = ['model_aa.json', 'model_am.json', 'model_an.json', 'model_ao.json']
@@ -24,7 +27,7 @@ if __name__ == '__main__':
         lambda gvm: gvm[:-3] + ['obs_centre', 'obs_log_radius']
     ]
     for w, g in zip(worlds, gvmfs):
-        mod_json(w, g, sources, idc)
+        mod_json(w, g, 'cpu', sources, idc)
 
 # world:
 # 1 - SineWorld2
