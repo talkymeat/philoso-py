@@ -25,9 +25,9 @@ def check_sub_path(f: str):
     print(idchars)
     subf = glob(f+os.sep+'*')
     print(subf, 'subf')
-    if len(subf)==1 and subf[0]==idchars:
+    if len(subf)==1 and subf[0].split(os.sep)[-1]==idchars:
         print('fix_to', f + os.sep + idchars)
-        return f + os.sep + idchars
+        return subf
     print('ok', f)
     return f
 
