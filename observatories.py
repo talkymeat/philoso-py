@@ -190,7 +190,6 @@ class StaticObservatory:
                         f"{'D' if vs is dvs else 'Ind'}ependent Variable" +
                         f"{'s' if len(bad_vs)>1 else ''} {nice_list(bad_vs)}"
                     )
-            #print(f"{' and '.join(wrongness)} not in sources")
             raise ValueError(
                 f"{' and '.join(wrongness)} not in sources"
             )
@@ -754,32 +753,6 @@ class StaticFunctionObservatory(FunctionObservatory):
     # self._dv_data[[col for col in self._dv_data.columns if self.dv_key in col]].copy()
     
 
-# class SineWorldObservatoryFactory(ObservatoryFactory):
-#     @property
-#     def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
-#         return self.world.range, self.world.range, (2, self.world.max_observation_size)
-
-#     @property    
-#     def wobf_guardrail_params(self):
-#         return (
-#             {'name': '_', '_no_make': None}, 
-#             {'name': '_', '_no_make': None}, 
-#             {'name': 'obs_len', 'min': 2, 'max': np.inf}
-#         )
-
-#     def __call__(
-#             self, start: float, stop: float, num: int,  **kwargs: Any
-#         ) -> Observatory:
-#         if start > stop:
-#             start, stop = stop, start
-#         return SineWorldObservatory(
-#             self.world.iv,
-#             self.world.dv,
-#             world=self.world,
-#             start = start if start >= self.world.range[0] else self.world.range[0],
-#             stop  = stop  if stop  <= self.world.range[1] else self.world.range[1],
-#             num = int(num) if num <= self.world.max_observation_size else self.world.max_observation_size
-        # )
 
 class SineWorldObservatory:
     """Observatory class for SineWorld, a World consisting of the sum of
@@ -852,6 +825,91 @@ class SineWorldObservatory:
             "corresponding DV values, and returns the IV: `target` then returns " +
             "the DV values that correspond to the last generated IV values."
         )
+
+class SineWorld2Observatory(SineWorldObservatory):
+    """Observatory class for SineWorld2, a World consisting of the sum of
+    one or more sine waves.
+
+    Attributes
+    ----------
+
+    ivs (string or list of strings):
+        Name(s) of independent variable(s) - typically just 'x'
+    dvs (string or list of strings):
+        Name(s) of dependent variable(s) - typically just 'y'
+    world (World):
+        The SineWorld from which the Observatory draws observations 
+    start (float):
+        Starting value of IV 
+    stop (float):
+        Ending value of IV  
+    num (int):
+        Number of samples drawn between `start` and `stop`, fixed by the 
+        World's max observation size
+    """
+    def __str__(self):
+        return f'SineWorldObservatory(ivs={self.ivs}, dvs={self.dvs}, start={self.start}, stop={self.stop})'
+    
+    @property
+    def obs_params(self):
+        return {
+            'obs_start': self.start,
+            'obs_stop': self.stop,
+        }
+
+class SineWorld3Observatory(SineWorld2Observatory):
+    """Observatory class for SineWorld, a World consisting of the sum of
+    one or more sine waves.
+
+    Attributes
+    ----------
+
+    ivs (string or list of strings):
+        Name(s) of independent variable(s) - typically just 'x'
+    dvs (string or list of strings):
+        Name(s) of dependent variable(s) - typically just 'y'
+    world (World):
+        The SineWorld from which the Observatory draws observations 
+    start (float):
+        Starting value of IV 
+    stop (float):
+        Ending value of IV  
+    num (int):
+        Number of samples drawn between `start` and `stop` 
+    """
+    def __init__(self, 
+            ivs: str|list[str], 
+            dvs: str|list[str], 
+            sources: dict = None, # Not needed, except for compatability
+            world: 'World' = None, 
+            centre: float = None, 
+            log_radius: float = None, 
+            num: int = None, 
+            **kwargs
+        ):
+        self.ivs = collect(ivs, list)
+        self.dvs = collect(dvs, list)
+        self.world = world
+        self.centre = centre
+        self.log_radius = log_radius
+        radius = np.exp(log_radius)
+        self.start = max(centre-radius, world.range[0])
+        self.stop = min(centre+radius, world.range[1])
+        self.num = num
+        self.data = None
+        print('OBBLE BOBBLE '*1000)
+
+    def __str__(self):
+        return f'SineWorldObservatory(ivs={self.ivs}, dvs={self.dvs}, start={self.centre}, stop={self.log_radius})'
+    
+    @property
+    def obs_params(self):
+        return {
+            'obs_centre': self.centre,
+            'obs_log_radius': self.log_radius,
+            'obs_start': self.start,
+            'obs_stop': self.stop
+        }
 
 
 if __name__ == '__main__':

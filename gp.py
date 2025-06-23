@@ -73,7 +73,6 @@ class GPTreebank(TypeLabelledTreebank):
             elitism: int = 0,
             dv: str|None=None, 
             def_fitness: str|None = None,
-            best_vec_out: list[str]|None = None,
             ping_freq = 5
         ):
         super().__init__(default_op = default_op, operators = operators)
@@ -111,13 +110,6 @@ class GPTreebank(TypeLabelledTreebank):
         self.N = GPNonTerminal # << XXX also this
         self.sw = Stopwatch()
         self.record_means = ['penalty', 'hasnans', 'survive']
-        self.best_vec_out = best_vec_out if best_vec_out else [
-            'mse', 'rmse', 'size', 'depth', 'raw_fitness', 'fitness', 
-            'temp_coeff', 'wt_fitness', 'wt_size', 'wt_depth',
-            "crossover_rate", "mutation_rate", "mutation_sd", "max_depth", 
-            "max_size", "temp_coeff", "pop", "elitism", 'obs_start', 
-            'obs_stop', 'obs_num'
-        ]
         # If a scoreboard is provided in kwargs, use it << but wait XXX, does the scoreboard come preloaded with an observatory?
         if fitness is not None:
             self.scoreboard = fitness

@@ -4,7 +4,7 @@ from collections.abc import Collection
 from typing import List, Callable, Union, Any
 from gymnasium.spaces import Space, Box
 
-from observatories import SineWorldObservatory, Observatory
+from observatories import SineWorldObservatory, Observatory, SineWorld2Observatory, SineWorld3Observatory
 
 #import matplotlib.pyplot as plt
 import numpy as np
@@ -895,6 +895,7 @@ class SineWorld(World):
     args = ['radius', 'max_observation_size', 'noise_sd']
     stargs = 'sine_wave_params'
     kwargs = ['seed', 'speed', 'dtype', 'iv', 'dv']
+    ObsClass = SineWorldObservatory
 
     @dataclass
     class SineWave:
@@ -1030,7 +1031,7 @@ class SineWorld(World):
         ) -> Observatory:
         if start > stop:
             start, stop = stop, start
-        return SineWorldObservatory(
+        return self.ObsClass(
             self.iv,
             self.dv,
             world=self,
@@ -1049,6 +1050,7 @@ class SineWorld(World):
 
 class SineWorld2(SineWorld):
     _act_param_names = ['start', 'stop']
+    ObsClass = SineWorld2Observatory
 
     def _set_obs_space(self):
         self._act_param_space = Box(
@@ -1088,6 +1090,7 @@ class SineWorld2(SineWorld):
 
 class SineWorld3(SineWorld2):
     _act_param_names = ['centre', 'log_radius']
+    ObsClass = SineWorld3Observatory
 
     def _set_obs_space(self):
         self._act_param_space = Box(
@@ -1099,8 +1102,20 @@ class SineWorld3(SineWorld2):
     def __call__(
             self, centre: float, log_radius: float, **kwargs: Any
         ) -> Observatory:
-        radius = np.exp(log_radius)
-        return super().__call__(centre-radius, centre+radius, **kwargs)
+        # radius = np.exp(log_radius)
+        # return super().__call__(centre-radius, centre+radius, **kwargs)
+        if centre > self.range[1]:
+            centre = self.range[1]
+        elif centre < self.range[0]:
+            centre = self.range[0]
+        return self.ObsClass(
+            self.iv,
+            self.dv,
+            world=self,
+            log_radius = log_radius,
+            centre = centre,
+            num = self.max_observation_size
+        )
     
     def interpret(self, centre: float, log_radius: float, ):
         return {

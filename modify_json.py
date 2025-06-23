@@ -27,7 +27,7 @@ if __name__ == '__main__':
         lambda gvm: gvm[:-3] + ['obs_centre', 'obs_log_radius']
     ]
     for w, g in zip(worlds, gvmfs):
-        mod_json(w, g, 'cpu', sources, idc)
+        mod_json(w, g, 'mps', sources, idc)
 
 # world:
 # 1 - SineWorld2
