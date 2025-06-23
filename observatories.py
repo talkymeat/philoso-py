@@ -897,7 +897,6 @@ class SineWorld3Observatory(SineWorld2Observatory):
         self.stop = min(centre+radius, world.range[1])
         self.num = num
         self.data = None
-        print('OBBLE BOBBLE '*1000)
 
     def __str__(self):
         return f'SineWorldObservatory(ivs={self.ivs}, dvs={self.dvs}, start={self.centre}, stop={self.log_radius})'
