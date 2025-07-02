@@ -57,7 +57,7 @@ class D16(_D):
         bool: np.bool_
     }
 
-D = D32
+D = D64
 
 class GPNonTerminal(NonTerminal):
     """GPNonTerminals carry operators, and take valid return types of their operators
@@ -375,7 +375,20 @@ class GPNonTerminal(NonTerminal):
         try:
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", message="overflow encountered in scalar power")
-                return super().__call__(**kwargs)
+                # Before returning, check for some bad outputs, penalise appropriately
+                retval = super().__call__(**kwargs)
+                # NaNs cannot be tolerated; mark the tree for death
+                # An all-inf output also is intolerable: mark for death
+                if np.isinf(retval).all() or (hasnans := np.isnan(retval).any()):
+                    self.root.tmp['survive'] = False
+                    if hasnans:
+                        self.root.tmp['hasnans'] = True
+                # If there are some infs, but not all vals are infs, penalise exponentially
+                # A strong tree may survive some infs, but too many are an effective death sentence
+                # TODO The penalty factor doesn't have to be 2: parametrise this??
+                if num_infs := np.isinf(retval).sum().item():
+                    self.root.tmp['penalty'] = self.root.tmp.get('penalty', 1.0) * num_infs**2.0
+                return retval
         # What if we get a numerical exception?
         except OverflowError:
             if DEBUG:
@@ -413,6 +426,7 @@ class GPNonTerminal(NonTerminal):
                 ic(e)
                 ic.disable()
                 raise e
+            return None # XXX or should this just raise? XXX
         except ZeroDivisionError:
             if DEBUG:
                 ic.enable()
