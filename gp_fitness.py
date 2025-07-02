@@ -706,7 +706,7 @@ class SimplerGPScoreboardFactory(SimpleGPScoreboardFactory):
     def num_sb_weights(self):
         return 0
 
-class SimplerSGPcoreboardFactory2(SimplerGPScoreboardFactory):
+class SimplerGPScoreboardFactory2(SimplerGPScoreboardFactory):
     def __call__(self, observatory: Observatory, temp_coeff, weights=None):
         self.observatory = observatory
         _weights = weights if weights is not None else [1, 0, 0]
@@ -752,7 +752,7 @@ class SimplerSGPcoreboardFactory2(SimplerGPScoreboardFactory):
                                 survive, 
                                 multiply('pre_fitness_2', 'survive', out_key='pre_fitness_3').to(self.float_dtype),
                                 multiply('pre_value_2', 'survive', out_key='pre_value_3').to(self.float_dtype),
-                                nan_zero('pre_fitness_3', out_key='fitness').to(self.float_dtype)],
+                                nan_zero('pre_fitness_3', out_key='fitness').to(self.float_dtype),
                                 nan_zero('pre_value_3', out_key='value').to(self.float_dtype)]
         def_outputs = collect(self.best_outvals, list) if self.best_outvals else None
         dv = self.dv # XXX JAAAAAANK
