@@ -47,7 +47,8 @@
             "depth", 
             "raw_fitness", 
             "fitness", 
-            "value"
+            "value",
+            "r"
         ],
         "gp_vars_more": [
             "crossover_rate", 

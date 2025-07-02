@@ -524,7 +524,9 @@ def from_tmp(varname: str, default=None):
 
 penalty = from_tmp('penalty', default=1)
 survive = from_tmp('survive', default=True)
-hasnans = from_tmp('hasnans', default=False)
+# Note hasnans is not used in fitness or value calculations,
+#  but it is visible to agents observations
+hasnans = from_tmp('hasnans', default=False) 
 
 @flexi_pipeline_element()
 def divide(num: float, denom: float, **kwargs):
@@ -694,6 +696,7 @@ class SimpleGPScoreboardFactory(SimpleJSONable):
             if val:
                 sb_kwargs[arg] = val 
         return GPScoreboard(*pipeline, **sb_kwargs)
+
     
 class SimplerGPScoreboardFactory(SimpleGPScoreboardFactory):
     def __call__(self, observatory: Observatory, temp_coeff, weights=None):
@@ -702,6 +705,65 @@ class SimplerGPScoreboardFactory(SimpleGPScoreboardFactory):
     @property
     def num_sb_weights(self):
         return 0
+
+class SimplerGPScoreboardFactory2(SimplerGPScoreboardFactory):
+    def __call__(self, observatory: Observatory, temp_coeff, weights=None):
+        self.observatory = observatory
+        _weights = weights if weights is not None else [1, 0, 0]
+        temp_coeff = temp_coeff.item() if isinstance(temp_coeff, torch.Tensor) else temp_coeff
+        sb_kwargs = {
+            "temp_coeff": temp_coeff,
+            "obs": self.observatory,
+            "weights": _weights
+        }
+        pipeline          = [   clear(except_for='tree'), 
+                                size.to(self.int_dtype), 
+                                depth.to(self.int_dtype)]
+        match self.def_fitness:
+            case 'imse':
+                pipeline += [   mse.to(self.float_dtype)]
+            case 'irmse':
+                pipeline += [   mse.to(self.float_dtype), 
+                                rmse.to(self.float_dtype)]
+            case 'isae':
+                pipeline += [   sae.to(self.float_dtype)]
+        pipeline         += [   safe_inv(self.def_fitness[1:]).to(self.float_dtype),
+                                scale(self.def_fitness, out_key='pre_value_1').to(self.float_dtype),
+                                r.to(self.float_dtype)]
+        if weights is not None:
+            pipeline     += [   safe_inv('size').to(self.float_dtype), 
+                                safe_inv('depth').to(self.float_dtype), 
+                                weighted_sum(self.def_fitness, 'isize', 'idepth').to(self.float_dtype)]
+            def_2_fitness = f"ws_{self.def_fitness}_isize_idepth"
+        else: 
+            pipeline     += [   copy(self.def_fitness, out_key=f"{self.def_fitness}_cp").to(self.float_dtype)]
+            def_2_fitness = f"{self.def_fitness}_cp"
+        pipeline         += [   multiply(def_2_fitness, 'r', out_key='raw_fitness').to(self.float_dtype), 
+                                heat.to(self.float_dtype), 
+                                rename("fitness", 'pre_fitness_1')]
+        # if temp_coeff: 
+        #     pipeline     += [rename(def_2_fitness, 'raw_fitness'), heat, rename("fitness", 'pre_fitness_1')]
+        # else:
+        #     pipeline     += [rename(def_2_fitness, 'pre_fitness_1')]
+        pipeline         += [   hasnans, 
+                                penalty.to(self.float_dtype), 
+                                divide('pre_fitness_1', 'penalty', out_key='pre_fitness_2').to(self.float_dtype),
+                                divide('pre_value_1', 'penalty', out_key='pre_value_2').to(self.float_dtype),
+                                survive, 
+                                multiply('pre_fitness_2', 'survive', out_key='pre_fitness_3').to(self.float_dtype),
+                                multiply('pre_value_2', 'survive', out_key='pre_value_3').to(self.float_dtype),
+                                nan_zero('pre_fitness_3', out_key='fitness').to(self.float_dtype),
+                                nan_zero('pre_value_3', out_key='value').to(self.float_dtype)]
+        def_outputs = collect(self.best_outvals, list) if self.best_outvals else None
+        dv = self.dv # XXX JAAAAAANK
+        for arg, val in (
+            ('def_outputs', def_outputs), 
+            ('dv', self.dv)
+        ):
+            val = eval(arg)
+            if val:
+                sb_kwargs[arg] = val 
+        return GPScoreboard(*pipeline, **sb_kwargs)
 
 class GPScoreboard(pd.DataFrame):
     """Extension to pandas.Dataframe to function as a scoreboard for GP,

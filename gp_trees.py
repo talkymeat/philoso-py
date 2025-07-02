@@ -57,7 +57,7 @@ class D16(_D):
         bool: np.bool_
     }
 
-D = D32
+D = D64
 
 class GPNonTerminal(NonTerminal):
     """GPNonTerminals carry operators, and take valid return types of their operators
@@ -73,11 +73,11 @@ class GPNonTerminal(NonTerminal):
     >>> op = [ops.SUM, ops.PROD, ops.SQ, ops.CUBE, ops.POW]
     >>> gp = GPTreebank(operators=op, tree_factory=DummyTreeFactory())
     >>> mewtwo = gp.tree("([float]<SUM>([float]<SQ>([int]$mu))([float]<SUM>([float]<PROD>([int]3)([int]$mu))([int]2)))")
-    >>> mewtwo(mu=-2)
+    >>> mewtwo(mu=-2).item()
     0.0
-    >>> mewtwo(mu=-1)
+    >>> mewtwo(mu=-1).item()
     0.0
-    >>> mewtwo(mu=-3)
+    >>> mewtwo(mu=-3).item()
     2.0
     """
     cnt = 0
@@ -372,10 +372,67 @@ class GPNonTerminal(NonTerminal):
         )
     
     def __call__(self, **kwargs):
+        """Trees are made callable in the base `NonTerminal` and `Terminal` classes, but for
+        Genetic Programming require some handling of errors and malformed return values.
+        
+        >>> from gp import GPTreebank
+        >>> from test_materials import DummyTreeFactory
+        >>> import pandas as pd
+        >>> import operators as ops
+        >>> rng = np.random.Generator(np.random.PCG64())
+        >>> gp = GPTreebank(
+        ...     mutation_rate = 0.0, 
+        ...     mutation_sd=0.0, 
+        ...     crossover_rate=0.5, 
+        ...     max_depth=70,
+        ...     max_size=300, 
+        ...     seed=rng,
+        ...     operators=[ops.SUM, ops.PROD, ops.SQ, ops.POW, ops.CUBE], 
+        ...     tree_factory=DummyTreeFactory()
+        ... )
+        >>> t0 = gp.tree("([float]<SUM>([float]3.0)([float]$x))")
+        >>> t0(x=[0.0, 3.0, 7.0])
+        array([ 3.,  6., 10.])
+        >>> t1 = gp.tree("([float]<SUM>([float]3.0)([float]$x))")
+        >>> t1(x=[0.0, np.nan, 7.0])
+        array([ 3., nan, 10.])
+        >>> t2 = gp.tree("([float]<SUM>([float]3.0)([float]$x))")
+        >>> t2(x=[0.0, np.inf, 7.0])
+        array([ 3., inf, 10.])
+        >>> t3 = gp.tree("([float]<SUM>([float]3.0)([float]$x))")
+        >>> t3(x=[0.0, np.inf, -np.inf])
+        array([  3.,  inf, -inf])
+        >>> t4 = gp.tree("([float]<SUM>([float]3.0)([float]$x))")
+        >>> t4(x=[np.inf, np.inf, -np.inf])
+        array([ inf,  inf, -inf])
+        >>> t0.tmp
+        {}
+        >>> t1.tmp
+        {'survive': False, 'hasnans': True}
+        >>> t2.tmp
+        {'penalty': 2.0}
+        >>> t3.tmp
+        {'penalty': 4.0}
+        >>> t4.tmp
+        {'survive': False}
+        """
         try:
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", message="overflow encountered in scalar power")
-                return super().__call__(**kwargs)
+                # Before returning, check for some bad outputs, penalise appropriately
+                retval = super().__call__(**kwargs)
+                # NaNs cannot be tolerated; mark the tree for death
+                # An all-inf output also is intolerable: mark for death
+                if np.isinf(retval).all() or np.isnan(retval).any():
+                    self.root.tmp['survive'] = False
+                    if np.isnan(retval).any():
+                        self.root.tmp['hasnans'] = True
+                # If there are some infs, but not all vals are infs, penalise exponentially
+                # A strong tree may survive some infs, but too many are an effective death sentence
+                # TODO The penalty factor doesn't have to be 2: parametrise this??
+                elif num_infs := np.isinf(retval).sum().item():
+                    self.root.tmp['penalty'] = self.root.tmp.get('penalty', 1.0) * 2.0**num_infs
+                return retval
         # What if we get a numerical exception?
         except OverflowError:
             if DEBUG:
@@ -413,6 +470,7 @@ class GPNonTerminal(NonTerminal):
                 ic(e)
                 ic.disable()
                 raise e
+            return None # XXX or should this just raise? XXX
         except ZeroDivisionError:
             if DEBUG:
                 ic.enable()

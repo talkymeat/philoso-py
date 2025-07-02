@@ -413,7 +413,7 @@ class Publication(Archive, SimpleJSONable):
             self._agents.loc[agent_name, 'reward'] += self._reward(**data, reject=True) 
             return # "you suck"
         else:
-            # SUCCESS cucumber choc leeks
+            # SUCCESS 
             # calculate rewards to others
             rewards = tree.tree_map_reduce(sum_all, agent_name, map_any=calculate_credit) 
             

@@ -8,7 +8,7 @@ def count_days(path: str):
     return len(glob(str(Path(path) / 'a_0' / 'days')+os.sep+'*'))//4
 
 def folders(path: str):
-    return [dir for dir in sorted(glob(path+os.sep+'*')) if os.path.isdir(dir)]
+    return [check_sub_path(dir) for dir in sorted(glob(path+os.sep+'*')) if os.path.isdir(dir)]
 
 def report(path: str):
     return {dir.split(os.sep)[-1]: count_days(dir) for dir in folders(path)}
@@ -18,8 +18,16 @@ def show(report_: dict):
     for k, v in report_.items():
         print(f'{k: <{maxlen}} | {"#"*v:-<{100}} {v}')
 
+def check_sub_path(f: str):
+    idchars = f.split(os.sep)[-1]
+    subf = glob(f+os.sep+'*')
+    if len(subf)==1 and subf[0].split(os.sep)[-1]==idchars:
+        return subf[0]
+    return f
+
+
 def ag_folders(f: str):
-    return [f_+os.sep+'gp_out' for f_ in folders(f) if f_.split(os.sep)[-1].startswith('a_')]
+    return [check_sub_path(f_)+os.sep+'gp_out' for f_ in folders(f) if f_.split(os.sep)[-1].startswith('a_')]
 
 def list_flatten(ls: list[list]):
     new_ls = []
