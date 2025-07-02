@@ -407,7 +407,7 @@ class Publication(Archive, SimpleJSONable):
         empty = _journal[~_journal['exists']] # why was the below commented out? XXX TODO
         # if len(empty):
         #     _journal.iloc[empty.index[0]] = data
-        if data[self.value] < _journal[self.value].min():
+        if data[self.value] < _journal[self.value].min() or not tree.tmp.get('survive', True) or tree.tmp.get('penalty', 1.0) > 1.0:
             # WOMP WOMP
             print(f"&&&& {agent_name}'s tree was rejected" )
             self._agents.loc[agent_name, 'reward'] += self._reward(**data, reject=True) 
