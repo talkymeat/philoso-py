@@ -6,7 +6,7 @@ from ppo import ActorCriticNetworkTanh, ActorCriticNetwork
 from agent_controller import AgentController
 from agent import Agent
 from gp import GPTreebank
-from gp_fitness import SimpleGPScoreboardFactory, SimplerGPScoreboardFactory
+from gp_fitness import SimpleGPScoreboardFactory, SimplerGPScoreboardFactory, SimplerGPScoreboardFactory2
 from model_time import ModelTime
 from reward import Reward, Curiosity, Renoun, GuardrailCollisions
 from tree_funcs import sum_all
