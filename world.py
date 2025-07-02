@@ -1118,11 +1118,29 @@ class SineWorld3(SineWorld2):
         )
     
     def interpret(self, centre: float, log_radius: float, ):
+        radius = float(np.exp(log_radius))
+        start = max(centre-radius, self.range[0])
+        stop  = min(centre+radius, self.range[1])
         return {
             'obs_centre': centre,
             'obs_log_radius': log_radius,
-            'obs_width': 2 * float(np.exp(log_radius)),
-        }
+            'obs_width': stop-start,
+        }   
+
+    @property
+    def wobf_guardrail_params(self):
+        return (
+            {
+                'name': 'obs_centre', 
+                'min': self.range[0], 
+                'max': self.range[1]
+            }, 
+            {
+                'name': 'obs_log_radius', 
+                'min': -np.inf,
+                'max': np.log(self.range[1]-self.range[0])
+            }
+        )
     
 
 

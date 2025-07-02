@@ -540,7 +540,8 @@ class ModelFactory:
     worlds = nd(SineWorld, SineWorld2, SineWorld3)
     sb_factories = nd(
         SimpleGPScoreboardFactory, 
-        SimplerGPScoreboardFactory
+        SimplerGPScoreboardFactory, 
+        SimplerGPScoreboardFactory2
     )
     network_classes = nd(
         ActorCriticNetworkTanh,
