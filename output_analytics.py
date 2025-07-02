@@ -19,6 +19,10 @@ from agent import Agent
 from icecream import ic
 import re
 
+def best_row(df: pd.DataFrame):
+    if len(df)<=1:
+        return df
+    return df.reindex().iloc[0]
 
 def _path(p: str|Path) -> Path:
     if isinstance(p, str):
@@ -54,7 +58,6 @@ def agents_from_dirs(root_dir: str|Path) -> list[str]:
     return sorted(agents)
 
 def agent_day_data(root_dir: str|Path, agent: str, device=None):
-    ic.enable()
     # print('hoooorg', device)
     root = _path(root_dir)
     folders = get_sorted_data(root)
@@ -129,8 +132,8 @@ class AgentMemData:
         self.root = root
         self.folders = folders
         self._mem_summary_data = None
-        self._make_obs_width()
         self.make_model(device=device)
+        self._make_obs_width()
         self.agent = [agt for agt in self.model.agents if agt.name==self.name][0]
         
     def make_model(self, device=None):
@@ -142,7 +145,13 @@ class AgentMemData:
     def _make_obs_width(self) -> None:
         for dfs in self.memories:
             for df in dfs:
-                df['obs_width'] = (df['obs_stop']-df['obs_start']).abs()
+                if 'obs_stop' in df and 'obs_start' in df:
+                    df['obs_width'] = (df['obs_stop']-df['obs_start']).abs()
+                elif 'obs_centre' in df and 'obs_log_radius' in df:
+                    radius = np.exp(df['obs_log_radius'])
+                    start = (df['obs_centre']-radius).apply(lambda x: max(x, self.model.world.range[0]))
+                    stop = (df['obs_centre']+radius).apply(lambda x: min(x, self.model.world.range[1]))
+                    df['obs_width'] = stop - start
 
     @property
     def memory_summary(self) -> pd.DataFrame:
@@ -188,7 +197,7 @@ class AgentMemData:
     def some_mem_graphs(self, start: int, num: int):
         go, end = start, start+num
         cols = self.mem_cols.drop(['t', 'tree', 'exists'])
-        while go < len(cols)-3:
+        while go < len(cols):
             for col in cols[go:min(end, len(cols))]:
                 print(col)
                 self.plot_mem_col(col)
@@ -210,7 +219,7 @@ class AgentMemData:
     def get_best_mems(self, targ: str, max_=True):
         maxmin = max_-0.5
         return pd.DataFrame([
-            df[df[targ]*maxmin==(df[targ]*maxmin).max()].squeeze() 
+            best_row(df[df[targ]*maxmin==(df[targ]*maxmin).max()]).squeeze()
             for df 
             in self.memT
         ]).reset_index()
@@ -246,6 +255,37 @@ class AgentMemData:
     def plot_act_counts(self):
         self.act_counts.plot.area(stacked=True, figsize=(12,10))
         self.plot(subplots=True, figsize=(12,10))
+
+    def plot_best_trees(self, targs: list[str]=None, min_targs: list[str]=None):
+        targs = [] if targs is None else targs
+        min_targs = [] if targs is None else min_targs
+        self.model.world.max_observation_size = 10000
+        tf = self.agent.ac.tree_factory_classes[0]()
+        gp = self.agent.ac.gp_system(tree_factory=tf, operators=tf.op_set)
+        targ_data = [self.get_best_mems(targ).iloc for targ in targs]
+        targ_data += [self.get_best_mems(targ, max=False).iloc for targ in min_targs]
+        targ_names = targs + min_targs
+        w=50//len(targ_names)
+        for i, trees in enumerate(zip(*targ_data)):
+            fig, axes = plt.subplots(nrows=1, ncols=(len(trees)))
+            for row, ax, name in zip(trees, axes, targ_names):
+                t = gp.tree(row['tree'])
+                d = {k: v.item() for k,v in row.items() if k != 'tree'}
+                s = str(d)
+                s = '\n'.join([s[i:i+w] for i in range(0, len(s), w)])
+                if 'obs_start' in row and 'obs_stop' in row:
+                    world_args = [row['obs_start'], row['obs_stop']]
+                elif 'obs_centre' in row and 'obs_log_radius' in row:
+                    world_args = [row['obs_centre'], row['obs_log_radius']]
+                if 'obs_num' in row:
+                    world_args.append('obs_num')
+                swo = self.model.world(*world_args)
+                iv = next(swo)
+                dv = swo.target
+                res = pd.concat([iv, dv], axis=1)
+                res['y_'] = t(x=iv).T[0]
+                ax = res.plot.scatter('x', 'y', s=1, ax=ax, title=f'Gen {i} by {name}\n{s}')
+                res.plot.scatter('x', 'y_', ax=ax, color='r', s=1)
         
 
 
@@ -269,7 +309,8 @@ class AgentDeedData:
         'tensor([6])': 'read'
     }
     MEANABLES = [
-        'obs_start', 'obs_stop', 'obs_width', 'obs_num', 'temp_coeff',  'pop',
+        'obs_start', 'obs_stop', 'obs_log_radius', 'obs_centre',
+        'obs_width', 'obs_num', 'temp_coeff',  'pop',
         'crossover_rate', 'mutation_rate', 'mutation_sd', 'max_depth',
         'max_size', 'episode_len', 'elitism', 'elitism_normed', 
     ]
@@ -329,35 +370,42 @@ class AgentDeedData:
 
     @property
     def means(self):
-        return pd.DataFrame({
+        _means = pd.DataFrame({
             f'{col}_{f}': [getattr(df[col], f)() if col in df else np.nan for df in self.deeds] 
             for col 
             in (self.MEANABLES+self.MUT8OR_W8S) 
             for f 
             in ('mean', 'std', 'min', 'max')
         })
+        for k in _means.columns:
+            if _means[k].isna().all():
+                _means.drop(k, axis=1, inplace=True)
+        return _means
     
     def plot_action_means(self):
+        _means = self.means
+        print(_means[['obs_width_mean', 'obs_width_min', 'obs_width_max', 'obs_width_std']])
         for col in self.MEANABLES:
-            plt.figure()
-            idx = self.means[f'{col}_mean'].index
-            mean = self.means[f'{col}_mean']
-            plt.plot(idx, self.means[f'{col}_mean'])
-            plt.fill_between(
-                idx, 
-                self.means[f'{col}_min'], 
-                self.means[f'{col}_max'], 
-                color="b", 
-                alpha=0.2
-            )
-            plt.fill_between(
-                idx, 
-                mean - self.means[f'{col}_std'],
-                mean + self.means[f'{col}_std'], 
-                color="r", 
-                alpha=0.3
-            )
-            plt.title(col)
+            if f'{col}_mean' in _means:
+                plt.figure()
+                idx = _means[f'{col}_mean'].index
+                mean = _means[f'{col}_mean']
+                plt.plot(idx, _means[f'{col}_mean'])
+                plt.fill_between(
+                    idx, 
+                    _means[f'{col}_min'], 
+                    _means[f'{col}_max'], 
+                    color="b", 
+                    alpha=0.2
+                )
+                plt.fill_between(
+                    idx, 
+                    mean - _means[f'{col}_std'],
+                    mean + _means[f'{col}_std'], 
+                    color="r", 
+                    alpha=0.3
+                )
+                plt.title(col)
 
     def plot_mutator_weights(self):
         self.means[[
