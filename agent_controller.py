@@ -45,7 +45,8 @@ class AgentController(Env, SimpleJSONable):
     kwargs = (
         "max_readings", "num_treebanks", "short_term_mem_size", "value", "max_volume", 
         "max_max_size", "max_max_depth",  "theta", "gp_vars_core", "gp_vars_more", 
-        "ping_freq", "guardrail_base_penalty", "mem_col_types", "dtype"
+        "ping_freq", "guardrail_base_penalty", "mem_col_types", "dtype", "range_mutation_sd",
+        "range_abs_tree_factory_float_constants"
     )
     arg_source_order = (1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0)
 
@@ -144,6 +145,8 @@ class AgentController(Env, SimpleJSONable):
             'guardrail_base_penalty': self.guardrail_manager.base_penalty,
             'ping_freq': self.ping_freq,
             'mutators': [mut.json for mut in self.mutators],
+            "range_mutation_sd": list(self.range_mutation_sd),
+            "range_abs_tree_factory_float_constants": list(self.range_abs_tree_fac_fl_consts),
             'args': self.args, 
             'kwargs': self.kwargs
         }
@@ -181,6 +184,8 @@ class AgentController(Env, SimpleJSONable):
             mutators: Sequence[Callable]=None,
             prefix: str=None,
             dtype: np.dtype|str = np.float32,
+            range_mutation_sd: list[float, float]|None = None, # default[0.00001, 1.0],
+            range_abs_tree_factory_float_constants: list[float, float]|None = None, # default [0.0001, 10.0]
             *args, **kwargs
         ):
         """What should be in __init__, and what in reset?
@@ -211,6 +216,8 @@ class AgentController(Env, SimpleJSONable):
         self.meta = {}
         self.tmp = {}
         self._mems_to_use = []
+        self.range_mutation_sd = tuple(range_mutation_sd) if range_mutation_sd else (0.00001, 1.0),
+        self.range_abs_tree_fac_fl_consts = tuple(range_abs_tree_factory_float_constants) if range_abs_tree_factory_float_constants else (0.0001, 10.0),
         self.mutators = [random_mutator_factory] if mutators is None else mutators
         # self.tree_factory_factories = tree_factory_factories
         self.gp_vars_core = gp_vars_core if gp_vars_core else [ 
@@ -264,6 +271,8 @@ class AgentController(Env, SimpleJSONable):
                                             self.dv,
                                             self.def_fitness,
                                             self.max_volume,
+                                            self.range_mutation_sd,
+                                            self.range_abs_tree_fac_fl_consts,
                                             self.mutators,
                                             self.theta,
                                             self.ping_freq
@@ -271,7 +280,8 @@ class AgentController(Env, SimpleJSONable):
         self.actions["gp_continue"] = GPContinue(self,
                                             self.out_dir,
                                             self.t, 
-                                            len(self.mutators)
+                                            len(self.mutators),
+                                            self.range_mutation_sd
                                         )
         self.actions["use_mem"]     = UseMem(self) 
         self.actions["store_mem"]   = StoreMem(self) 

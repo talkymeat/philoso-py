@@ -1236,7 +1236,7 @@ class SimpleRandomAlgebraicTreeFactory(RandomTreeFactory):
         templates = (
             (float, 'POLY', (float, float, int, float)),
             (float, 'x'),
-            (float, lambda: self.np_random.normal(0, 0.1)),
+            (float, lambda: self.np_random.normal(0, 0.1)), # LogScaling
             (int, lambda: self.np_random.integers(10))
         )
         root_types = [float] 

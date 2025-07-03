@@ -152,10 +152,11 @@ class GPNew(Action):
             dv: str, 
             def_fitness: str,
             max_volume: int,
+            range_mutation_sd: tuple[float, float],
+            range_abs_tree_fac_fl_consts: tuple[float, float],
             mutators: list[Callable],
             theta: float = 0.05,
-            ping_freq=5,
-
+            ping_freq=5
         ) -> None:
         super().__init__(controller)
         self.gptb_list  = self.ac.gptb_list
@@ -178,6 +179,14 @@ class GPNew(Action):
         self.out_dir = out_dir if isinstance(out_dir, Path) else Path(out_dir)
         self.t = time
         self.dv = dv 
+        self.log_range_mutation_sd = (
+            np.log(range_mutation_sd[0]),
+            np.log(range_mutation_sd[1])
+        )
+        self.log_range_abs_tree_fac_fl_consts = (
+            np.log(range_abs_tree_fac_fl_consts[0]),
+            np.log(range_abs_tree_fac_fl_consts[1])
+        )
         self.mutators = mutators
         self.num_mut_wts = (
             len(self.mutators) if len(self.mutators) > 1 else 0
@@ -262,7 +271,7 @@ class GPNew(Action):
                 Tanh, unscaled
             mutation_rate,
                 Tanh, unscaled
-            mutation_sd,
+            mutation_sd, # LogScaling
                 Tanh, unscaled
             max_depth,
                 Tanh, Scaled to [ceil(log2(size)), size/2], ceilinged
@@ -315,7 +324,7 @@ class GPNew(Action):
             self.guardrails.make(f'sb_weight_{n}', min=-np.inf, max=np.inf)
         self.guardrails.make('crossover_rate', min=0, max=1)
         self.guardrails.make('mutation_rate', min=0, max=1)
-        self.guardrails.make('mutation_sd', min=-np.inf, max=np.inf)
+        self.guardrails.make('mutation_sd', min=-np.inf, max=np.inf) # LogScaling
         self.guardrails.make('max_depth', min=1, max=np.inf)
         self.guardrails.make('elitism', min=0, max=1)
         self.guardrails.make('temp_coeff', min=0, max=np.inf)
@@ -346,7 +355,7 @@ class GPNew(Action):
             sb_weights[i] = self.guardrails[f'sb_weight_{i}'](raw, sb_weights[i])
         crossover_rate = self.guardrails['crossover_rate'](raws[3+self.num_sb_weights], arr[3+self.num_sb_weights]) # no scaling
         mutation_rate = self.guardrails['mutation_rate'](raws[4+self.num_sb_weights], arr[4+self.num_sb_weights])  # no scaling
-        mutation_sd = self.guardrails['mutation_rate'](raws[5+self.num_sb_weights], arr[5+self.num_sb_weights])    # no scaling
+        mutation_sd = self.guardrails['mutation_rate'](raws[5+self.num_sb_weights], arr[5+self.num_sb_weights])    # no scaling # LogScaling
         min_max_depth = np.ceil(np.log2(max_size))
         max_max_depth = max_size/2
         max_depth = int(scale_unit_to_range(arr[6+self.num_sb_weights], min_max_depth, max_max_depth))
@@ -513,7 +522,7 @@ class GPNew(Action):
             'pop': int(_i(pop)),
             'crossover_rate': _i(crossover_rate),
             'mutation_rate': _i(mutation_rate),
-            'mutation_sd': _i(mutation_sd),
+            'mutation_sd': _i(mutation_sd), # LogScaling
             'max_depth': int(_i(max_depth)),
             'max_size': int(_i(max_size)),
             'episode_len': int(_i(episode_len)),
@@ -614,7 +623,7 @@ class GPContinue(Action):
             gp_register = in_vals['gp_register'].item()
             crossover_rate = self.guardrails['crossover_rate'](raws[0], arr[0]) # no scaling
             mutation_rate = self.guardrails['mutation_rate'](raws[1], arr[1])  # no scaling
-            mutation_sd = self.guardrails['mutation_sd'](raws[2], arr[2])  # no scaling
+            mutation_sd = self.guardrails['mutation_sd'](raws[2], arr[2])  # no scaling  # LogScaling
             elitism =  int(
                 _i(self.guardrails['elitism'](raws[3], arr[3]))*self.gptb_list[gp_register].pop
             ) if self.gptb_list[gp_register] else _i(self.guardrails['elitism'](raws[3], arr[3])) if override else -1
@@ -627,7 +636,7 @@ class GPContinue(Action):
                     mut8or_weights[i] = self.guardrails[f'mutator_wt_{i}'](raw, mut8or_weights[i])
         else:
             gp_register = -1
-            crossover_rate = mutation_rate = mutation_sd = temp_coeff = 0.0
+            crossover_rate = mutation_rate = mutation_sd = temp_coeff = 0.0 # LogScaling
             elitism = 0
             if self.num_mutators > 1:
                 mut8or_weights = [0.0]*self.num_mutators
@@ -645,7 +654,8 @@ class GPContinue(Action):
             controller,
             out_dir: str|Path,
             time: ModelTime,
-            num_mutators: int
+            num_mutators: int,
+            range_mutation_sd: tuple[float, float]
         ) -> None:
         super().__init__(controller)
         self.gptb_list    = self.ac.gptb_list
@@ -654,6 +664,10 @@ class GPContinue(Action):
         self.out_dir      = out_dir if isinstance(out_dir, Path) else Path(out_dir)
         self.t            = time
         self.num_mutators = num_mutators
+        self.log_range_mutation_sd = (
+            np.log(range_mutation_sd[0]),
+            np.log(range_mutation_sd[1])
+        )
 
     def do(self, 
             gp_register: int, 
@@ -712,7 +726,7 @@ class GPContinue(Action):
             'gp_register': gp_register,
             'crossover_rate': _i(crossover_rate),
             'mutation_rate': _i(mutation_rate),
-            'mutation_sd': _i(mutation_sd),
+            'mutation_sd': _i(mutation_sd), # LogScaling
             'temp_coeff': _i(temp_coeff),
             'elitism': _i(elitism) ,
             **{
