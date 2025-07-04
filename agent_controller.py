@@ -126,6 +126,7 @@ class AgentController(Env, SimpleJSONable):
             'dv': self.dv,
             'def_fitness': self.def_fitness,
             'tree_factory_classes': [tfc.__name__ for tfc in self.tree_factory_classes],
+            'tree_factory_params': [tfc.params for tfc in self.tree_factory_classes if tfc.params],
             'agent_indices': self.agent_names,
             'out_dir': str(self.out_dir.parent),
             'record_obs_len': self.record_obs_len,
@@ -256,6 +257,7 @@ class AgentController(Env, SimpleJSONable):
         self.repository = repository
         self.repository._add_user(self)
         self.tree_factory_classes = tree_factory_classes
+        self.tree_factory_params = tree_factory_params
         self.args = args
         self.kwargs = kwargs
     
@@ -265,6 +267,7 @@ class AgentController(Env, SimpleJSONable):
         self.actions["gp_new"]      = GPNew(self,
                                             self.world,
                                             self.tree_factory_classes,
+                                            self.tree_factory_params,
                                             self.np_random,
                                             self.out_dir,
                                             self.t,

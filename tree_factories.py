@@ -62,6 +62,16 @@ class TreeFactory(ABC):
     def prefix(self):
         pass
 
+    @property
+    @abstractmethod
+    def tf_param_ranges(self) -> tuple[tuple[int, int]]:
+        pass
+
+    @property
+    @abstractmethod
+    def tf_guardrail_params(self):
+        pass
+
 
 class TestTreeFactory(TreeFactory):
     def __init__(self, start_tree: Tree, **kwargs):
@@ -86,6 +96,14 @@ class TestTreeFactory(TreeFactory):
     @property
     def prefix(self):
         return "test"
+
+    @property
+    def tf_param_ranges(self) -> tuple[tuple[int, int]]:
+        pass
+
+    @property
+    def tf_guardrail_params(self):
+        pass
     
 class CompositeTreeFactory(TreeFactory):
     def __init__(self, 
@@ -160,6 +178,14 @@ class CompositeTreeFactory(TreeFactory):
     @property
     def prefix(self):
         return ""
+
+    @property
+    def tf_param_ranges(self) -> tuple[tuple[int, int]]:
+        pass
+
+    @property
+    def tf_guardrail_params(self):
+        pass
 
 class RandomPolynomialFactory(TreeFactory):
     """A TreeFactory which makes random trees representing polynomials of a specified
@@ -563,6 +589,12 @@ class TreeFactoryFactory(Actionable):
 
 class RandomTreeFactory(TreeFactory):
     tn = TypeNativiser()
+    _act_param_space = Box(
+        low=np.array([0.0]),
+        high=np.array([np.inf]),
+        dtype=np.float32
+    )
+    _act_param_names = ['const_abs_max']
 
     @dataclass
     class NTTemplate:

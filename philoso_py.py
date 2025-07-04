@@ -758,8 +758,16 @@ class ModelFactory:
                 # in ModelFactory, using data from json. Note the use of
                 # lists of keys to address items in the nested dictionaries
                 # of the json. Each agent needs...
+                tf_params = json_[[
+                    "agent_templates", 
+                    nom, 
+                    "controller", 
+                    "tree_factory_params"
+                ]]
                 tree_factory_classes = [
-                    self.tree_factory_classes[tfc]
+                    self.tree_factory_classes[tfc].factory(**tf_params[tfc])
+                    if tfc in tf_params
+                    else self.tree_factory_classes[tfc]
                     for tfc 
                     in json_[[
                         "agent_templates", 

@@ -324,7 +324,11 @@ class GPNew(Action):
             self.guardrails.make(f'sb_weight_{n}', min=-np.inf, max=np.inf)
         self.guardrails.make('crossover_rate', min=0, max=1)
         self.guardrails.make('mutation_rate', min=0, max=1)
-        self.guardrails.make('mutation_sd', min=-np.inf, max=np.inf) # LogScaling
+        self.guardrails.make(
+            'log_mutation_sd', 
+            min=self.log_range_mutation_sd[0], 
+            max=self.log_range_mutation_sd[1]
+        ) # LogScaling
         self.guardrails.make('max_depth', min=1, max=np.inf)
         self.guardrails.make('elitism', min=0, max=1)
         self.guardrails.make('temp_coeff', min=0, max=np.inf)
@@ -355,7 +359,7 @@ class GPNew(Action):
             sb_weights[i] = self.guardrails[f'sb_weight_{i}'](raw, sb_weights[i])
         crossover_rate = self.guardrails['crossover_rate'](raws[3+self.num_sb_weights], arr[3+self.num_sb_weights]) # no scaling
         mutation_rate = self.guardrails['mutation_rate'](raws[4+self.num_sb_weights], arr[4+self.num_sb_weights])  # no scaling
-        mutation_sd = self.guardrails['mutation_rate'](raws[5+self.num_sb_weights], arr[5+self.num_sb_weights])    # no scaling # LogScaling
+        log_mutation_sd = self.guardrails['log_mutation_sd'](raws[5+self.num_sb_weights], arr[5+self.num_sb_weights])    # no scaling # LogScaling
         min_max_depth = np.ceil(np.log2(max_size))
         max_max_depth = max_size/2
         max_depth = int(scale_unit_to_range(arr[6+self.num_sb_weights], min_max_depth, max_max_depth))
@@ -414,7 +418,7 @@ class GPNew(Action):
             pop,
             crossover_rate,
             mutation_rate,
-            mutation_sd,
+            np.exp(log_mutation_sd), # mutation_sd
             temp_coeff,
             max_depth,
             max_size,
@@ -623,7 +627,7 @@ class GPContinue(Action):
             gp_register = in_vals['gp_register'].item()
             crossover_rate = self.guardrails['crossover_rate'](raws[0], arr[0]) # no scaling
             mutation_rate = self.guardrails['mutation_rate'](raws[1], arr[1])  # no scaling
-            mutation_sd = self.guardrails['mutation_sd'](raws[2], arr[2])  # no scaling  # LogScaling
+            log_mutation_sd = self.guardrails['log_mutation_sd'](raws[2], arr[2])  # no scaling  # LogScaling
             elitism =  int(
                 _i(self.guardrails['elitism'](raws[3], arr[3]))*self.gptb_list[gp_register].pop
             ) if self.gptb_list[gp_register] else _i(self.guardrails['elitism'](raws[3], arr[3])) if override else -1
@@ -644,7 +648,7 @@ class GPContinue(Action):
             gp_register, 
             crossover_rate,
             mutation_rate,
-            mutation_sd,
+            np.exp(log_mutation_sd), # mutation_sd
             temp_coeff,
             elitism,
             mut8or_weights
@@ -700,7 +704,9 @@ class GPContinue(Action):
                 {_i(temp_coeff)=} {_i(elitism)=} {mut8or_weights=}
                 """)
                 gp.continue_run()
-            # Note: no else block. If the NN asks to continue a non-existent GP, nothing happens
+            # Note: no else block (for `if gp:`). If the NN asks to continue a non-existent 
+            # GP, nothing happens. The `else` below relates to the `elif` above, and catches
+            # the case where the index is out of bounds
         else:
             # print('asdsdfdfdsgfsdgs'*40)
             # print(args[0])
