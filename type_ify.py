@@ -45,14 +45,14 @@ class TypeNativiser:
         >>> df["strings"] = df["strings"].astype("string")
         >>> df["dates"] = pd.Series(pd.date_range("20130101", periods=4))
         >>> ng = [
-        ...     np.float_(1),
+        ...     np.float64(1),
         ...     np.single(1),
         ...     np.half(1),
         ...     np.csingle(1),
         ...     np.intp(1),
         ...     np.longdouble(1),
         ...     np.ushort(1),
-        ...     np.clongfloat(1),
+        ...     np.clongdouble(1),
         ...     np.bool_(1),
         ...     np.ulonglong(1),
         ...     np.int_(1),
@@ -62,17 +62,14 @@ class TypeNativiser:
         ...     np.short(1),
         ...     np.uint(1),
         ...     np.uintc(1),
-        ...     np.cfloat(1),
-        ...     np.unicode_(1),
-        ...     np.singlecomplex(1),
+        ...     np.complex128(1),
+        ...     np.str_(1),
+        ...     np.complex64(1),
         ...     np.cdouble(1),
         ...     np.byte(1),
         ...     np.intc(1),
-        ...     np.complex_(1),
-        ...     np.string_(1),
-        ...     np.longfloat(1),
-        ...     np.longcomplex(1),
-        ...     np.clongdouble(1),
+        ...     np.bytes_(1),
+        ...     np.longdouble(1),
         ...     np.uintp(1),
         ... ]
         >>> for t in ["str", 0, 0.0, 0.0+1j, True, None]:
@@ -119,11 +116,8 @@ class TypeNativiser:
         <class 'complex'>
         <class 'int'>
         <class 'int'>
-        <class 'complex'>
         <class 'str'>
         <class 'float'>
-        <class 'complex'>
-        <class 'complex'>
         <class 'int'>
         """
         ty = type(arg)
