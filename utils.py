@@ -390,6 +390,30 @@ def torchify_dtype(dtype:str|type|np.dtype) -> torch.dtype:
     else:
         raise ValueError(f"'{dtype}' is an invalid string")
 
+class ArrayCrawler:
+    def __init__(self, array: np.ndarray):
+        self.array = arrays
+        self.i = 0
+
+    def __call__(self, num: int=0):
+        if self.i + num > len(self.array):
+            raise IndexOutOfBoundsError(
+                f"i={self.i}, {num=}, i+num={self.i+num}, but the array length " +
+                f"is {len(self.array)}"
+            )
+        retval = None
+        if num < 0:
+            raise ValueError("ArrayCrawler can't crawl backwards")
+        elif num == 1:
+            retval = array[self.i]
+        elif num > 1:
+            retval = array[self.i:self.i+num]
+        self.i += num
+        return retval
+
+    def __iadd__(self, num: int):
+        self.i += num
+
 def main():
     import doctest
     doctest.testmod()

@@ -22,13 +22,16 @@ from pathlib import Path
 from copy import copy, deepcopy
 from datetime import datetime
 
-# from icecream import ic
+from icecream import ic
+
 
 import numpy as np
 import pandas as pd
 
 import json
 import re
+
+from w import w
 
 class Model:
     def __init__(self,
@@ -752,7 +755,6 @@ class ModelFactory:
                 if device: # if a device other than the one specified in
                     # json is given, update the json with the device
                     json_[["agent_templates", nom, "device"]] = device
-                print(json_)
                 # Agents require a number of helper classes and functions,
                 # which here are picked out from the dictionaries stored
                 # in ModelFactory, using data from json. Note the use of
@@ -776,6 +778,7 @@ class ModelFactory:
                         "tree_factory_classes"
                     ]] # One or more tree factory classes
                 ]
+                ic.disable()
                 gp_system = self.gp_systems[
                     json_[[
                         "agent_templates", 

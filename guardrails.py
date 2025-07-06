@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Any
 from math import nextafter
+from collections import defaultdict
 
 
 def tanh_arg_extremum(max=True):
@@ -170,9 +171,8 @@ class Interval:
 
 TANH_ZONE = Interval(tanh_arg_extremum(max=False), tanh_arg_extremum())
 
-class NoGuardrail:
-    def __call__(self, raw, cooked):
-        return cooked
+def no_guardrail(self, raw, cooked):
+    return cooked
 
 class TanhGuardrail:
     def __init__(self,
@@ -335,7 +335,7 @@ class TanhGuardrail:
                 return self.interval.max
         return cooked
             
-class GuardrailManager(dict):
+class GuardrailManager(defaultdict):
     def make(
             self,
             name, 
@@ -344,8 +344,11 @@ class GuardrailManager(dict):
             closed: bool = None,
             closed_lo: bool = True,
             closed_hi: bool = True,
-            base_penalty: float = None
+            base_penalty: float = None,
+            **kwargs
         ):
+        if '_no_make' in kwargs:
+            return
         gr = TanhGuardrail(
             min=min,
             max=max,
@@ -366,8 +369,7 @@ class GuardrailManager(dict):
     def __init__(self, *args, base_penalty=1.0, **kwargs) -> None:
         self._reward = 0.0
         self.base_penalty = base_penalty
-        self['_'] = NoGuardrail()
-        return super().__init__(*args, **kwargs)
+        return super().__init__(lambda: no_guardrail, *args, **kwargs)
     
     def process_logits(self, logits, keys:str) -> np.ndarray:
         if len(logits)==len(keys):

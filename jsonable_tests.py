@@ -14,6 +14,9 @@ from model_time import ModelTime
 from hd import HierarchicalDict as HD
 import numpy as np
 from gp import GPTreebank
+from collections import defaultdict
+
+from w import w
 
 
 def shhhh(test):
@@ -38,7 +41,7 @@ paramarama = {
     "dv": "y",
     "dtype": "float32",
     "def_fitness": "irmse",
-    "out_dir": "output/l/",
+    "out_dir": "output/l",
     "ping_freq": 5,
     "output_prefix": "l__",
     "days": 100, 
@@ -115,6 +118,11 @@ paramarama = {
                 "tree_factory_classes": [
                     "SimpleRandomAlgebraicTreeFactory"
                 ],
+                "tree_factory_params": {
+                    "SimpleRandomAlgebraicTreeFactory": {
+                        "range_abs_tree_factory_float_constants": [0.00001, 1.0]
+                    }
+                },
                 "record_obs_len": 50,
                 "max_readings": 3,
                 # "mem_col_types": "float 64",
@@ -500,9 +508,10 @@ class TestJSONables(unittest.TestCase):
         self.assertEqual(ac.ping_freq, 5)
         self.assertEqual(ac.short_term_mem_size, 5)
         self.assertEqual(ac.record_obs_len, 50)
+        self.assertTrue(isinstance(ac.guardrail_manager, defaultdict))
         self.assertEqual(
-            ac.guardrail_manager['_'].__class__.__name__, 
-            "NoGuardrail"
+            ac.guardrail_manager['_'].__name__, 
+            "no_guardrail"
         )
         self.assertCountEqual(
             [repr(mut) for mut in ac.mutators],
@@ -606,13 +615,13 @@ class TestJSONables(unittest.TestCase):
             elif isinstance(reward, GuardrailCollisions):
                 rset.add(2)
         self.assertEqual(len(rset), 3)
-        self.assertEqual(m1.out_dir, 'output/l/')
+        self.assertEqual(str(m1.out_dir), 'output/l')
 
     @shhhh
     def test_model_json(self):
         mjson = HD(self.make_model_from_json().json)
         for j in range(3):
-            self.assertEqual(mjson['out_dir'], 'output/l/')
+            self.assertEqual(mjson['out_dir'], 'output/l')
             self.assertEqual(mjson['world'], 'SineWorld')
             self.assertEqual(mjson[['world_params', 'radius']], 50)
             self.assertEqual(mjson[['world_params', 'max_observation_size']], 100)

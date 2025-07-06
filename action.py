@@ -146,6 +146,7 @@ class GPNew(Action):
             controller,
             world: World,
             tree_factory_classes: list[type[TreeFactory]],
+            tree_factory_params,
             rng: np.random.Generator,
             out_dir: str|Path,
             time: ModelTime,
@@ -153,7 +154,7 @@ class GPNew(Action):
             def_fitness: str,
             max_volume: int,
             range_mutation_sd: tuple[float, float],
-            range_abs_tree_fac_fl_consts: tuple[float, float],
+            # range_abs_tree_fac_fl_consts: tuple[float, float],
             mutators: list[Callable],
             theta: float = 0.05,
             ping_freq=5
@@ -173,6 +174,7 @@ class GPNew(Action):
         self.num_tf_opts = (
             len(self.tf_options) if len(self.tf_options) > 1 else 0
         ) 
+        self.nums_tf_params = [len(tf.tf_guardrail_params) for tf in self.tf_options]
         self.world = world
         self.num_wobf_params = len(self.world.wobf_param_ranges)
         self.rng = rng
@@ -183,10 +185,10 @@ class GPNew(Action):
             np.log(range_mutation_sd[0]),
             np.log(range_mutation_sd[1])
         )
-        self.log_range_abs_tree_fac_fl_consts = (
-            np.log(range_abs_tree_fac_fl_consts[0]),
-            np.log(range_abs_tree_fac_fl_consts[1])
-        )
+        # self.log_range_abs_tree_fac_fl_consts = (
+        #     np.log(range_abs_tree_fac_fl_consts[0]),
+        #     np.log(range_abs_tree_fac_fl_consts[1])
+        # )
         self.mutators = mutators
         self.num_mut_wts = (
             len(self.mutators) if len(self.mutators) > 1 else 0
@@ -305,8 +307,11 @@ class GPNew(Action):
         """
         gp_register_sp = Discrete(len(self.gptb_list)) 
         num_wobf_params = len(self.world.wobf_param_ranges)
+        num_tf_params = sum(self.nums_tf_params)
         box_len = 9 + self.num_sb_weights + num_wobf_params + (
             len(self.tf_options) if len(self.tf_options) > 1 else 0
+        ) + (
+            num_tf_params
         ) + (
             len(self.mutators) if len(self.mutators) > 1 else 0
         )
@@ -335,10 +340,16 @@ class GPNew(Action):
         for i in range(len(self.mutators)):
             self.guardrails.make(f'mutator_wt_{i}', min=0, max=1)
         self.obs_guardrail_names = []
-        for params in self.world.wobf_guardrail_params:
-            self.obs_guardrail_names.append(params['name'])
-            if '_no_make' not in params:
-                self.guardrails.make(**params)
+        for param in self.world.wobf_guardrail_params:
+            self.obs_guardrail_names.append(param['name'])
+            if '_no_make' not in param:
+                self.guardrails.make(**param)
+        self.tf_guardrail_names = []
+        for tf in self.tf_options:
+            for param in tf.tf_guardrail_params:
+                self.tf_guardrail_names.append(param['name'])
+                if '_no_make' not in param:
+                    self.guardrails.make(**param)
 
     def process_action(self, 
         in_vals: OrderedDict[str, np.ndarray|int|float|bool], *args,
@@ -347,46 +358,40 @@ class GPNew(Action):
         gp_register = int(in_vals['gp_register'][0])
         raws = in_vals['long_box'][0]
         arr = (torch.tanh(raws) + 1)/2
-        raws = to_numpy(raws)
-        arr = to_numpy(arr)
-        pop, max_size, episode_len = self.size_factor_cuboid(*arr[:3])
-        pop = self.guardrails['pop'](raws[0], pop)
-        max_size = self.guardrails['max_size'](raws[1], max_size)
-        episode_len = self.guardrails['episode_len'](raws[2], episode_len)
+        raws = ArrayCrawler(to_numpy(raws))
+        arr = ArrayCrawler(to_numpy(arr))
+        pop, max_size, episode_len = self.size_factor_cuboid(*arr(3))
+        pop = self.guardrails['pop'](raw(1), pop)
+        max_size = self.guardrails['max_size'](raw(1), max_size)
+        episode_len = self.guardrails['episode_len'](raw(1), episode_len)
         # XXX TODO make this able to handle more weights
-        sb_weights = scale_to_sum(np.append(1.0, arr[3:3+self.num_sb_weights]))
-        for i, raw in zip(range(self.num_sb_weights), raws[3:3+self.num_sb_weights]):
+        sb_weights = scale_to_sum(np.append(1.0, arr(self.num_sb_weights)))
+        # XXX Watch out testing this: len(sb_weights) is one more than self.num_sb_weights XXX
+        # XXX and the loop below didn't account for that: it only didn't make problems XXX
+        # XXX because it never ran XXX # LogScaling XXX TEST ME
+        for i, raw in zip(range(1, self.num_sb_weights+1), raws(self.num_sb_weights)):
             sb_weights[i] = self.guardrails[f'sb_weight_{i}'](raw, sb_weights[i])
-        crossover_rate = self.guardrails['crossover_rate'](raws[3+self.num_sb_weights], arr[3+self.num_sb_weights]) # no scaling
-        mutation_rate = self.guardrails['mutation_rate'](raws[4+self.num_sb_weights], arr[4+self.num_sb_weights])  # no scaling
-        log_mutation_sd = self.guardrails['log_mutation_sd'](raws[5+self.num_sb_weights], arr[5+self.num_sb_weights])    # no scaling # LogScaling
+        crossover_rate = self.guardrails['crossover_rate'](raws(1), arr(1)) # no scaling
+        mutation_rate = self.guardrails['mutation_rate'](raws(1), arr(1))  # no scaling
+        log_mutation_sd = self.guardrails['log_mutation_sd'](raws(1), arr(1))    # no scaling # LogScaling
         min_max_depth = np.ceil(np.log2(max_size))
         max_max_depth = max_size/2
-        max_depth = int(scale_unit_to_range(arr[6+self.num_sb_weights], min_max_depth, max_max_depth))
-        max_depth = self.guardrails['max_depth'](raws[6+self.num_sb_weights], max_depth)
-        elitism =  int(self.guardrails['elitism'](raws[7+self.num_sb_weights], arr[7+self.num_sb_weights])*pop)
-        temp_coeff = self.guardrails['temp_coeff'](raws[8+self.num_sb_weights], arr[8+self.num_sb_weights])*2
-        obs_params = arr[
-            9+self.num_sb_weights:9+self.num_sb_weights+len(self.world.wobf_param_ranges)
-        ]
-        obs_params_raw = raws[
-            9+self.num_sb_weights:9+self.num_sb_weights+len(self.world.wobf_param_ranges)
-        ]
+        max_depth = int(scale_unit_to_range(arr(1), min_max_depth, max_max_depth))
+        max_depth = self.guardrails['max_depth'](raws(1), max_depth)
+        elitism =  int(self.guardrails['elitism'](raws(1), arr(1))*pop)
+        temp_coeff = self.guardrails['temp_coeff'](raws(1), arr(1))*2
+        obs_params = arr(len(self.world.wobf_param_ranges))
+        obs_params_raw = raws(len(self.world.wobf_param_ranges))
         obs_args = [scale_unit_to_range(val, *bounds) for val, bounds in zip(obs_params, self.world.wobf_param_ranges)]
         obs_args = tuple([
             self.guardrails[gr_name](raw_param, obs_arg) 
             for raw_param, obs_arg, gr_name 
             in zip(obs_params_raw, obs_args, self.obs_guardrail_names)
         ])
-        tf_weights = arr[
-            9+self.num_sb_weights
-            +len(self.world.wobf_param_ranges)
-            :9+self.num_sb_weights
-            +len(self.world.wobf_param_ranges)
-            +len(self.tf_options)
-        ] if len(self.tf_options) > 1 else None
+        tf_weights = arr(len(self.tf_options)) if len(self.tf_options) > 1 else None
         tf_choices = None
         if tf_weights:
+            raws += len(tf_weights) # raws aren't needed for tf_weights, so if tf_weights is not None, skip raws ahead
             tf_weights = scale_to_sum(tf_weights)
             mask = tf_weights > self.theta
             if mask.sum() < len(tf_weights): # XXX test me
@@ -394,27 +399,29 @@ class GPNew(Action):
                 tf_choices = self.tf_options[mask]
             else:
                 tf_choices = self.tf_options
+        all_tf_params = []
+        for tf, num_params in zip(self.tf_options, self.nums_tf_params):
+            if num_params:
+                tf_params = arr(num_params)
+                for i, (dic, param) in (enumerate(zip(tf.tf_guardrail_params, tf_params))):
+                    tf_params[i] = self.guardrails[dic['name']](raw(1), param) 
+                all_tf_params.append(tf_params)
+            else:
+                all_tf_params.append(list())
         mut8or_weights = None
         if len(self.mutators) > 1:
-            mut8or_weights = arr[
-                9+self.num_sb_weights
-                +self.num_wobf_params
-                +self.num_tf_opts:
-            ]
-            mut8or_raws = raws[
-                9+self.num_sb_weights
-                +self.num_wobf_params
-                +self.num_tf_opts:
-            ]
+            mut8or_weights = arr(len(self.mutators))
+            mut8or_raws = raws(len(self.mutators))
             for i, raw in zip(range(len(mut8or_weights)), mut8or_raws):
                 mut8or_weights[i] = self.guardrails[f'mutator_wt_{i}'](raw, mut8or_weights[i])
+                # XXX waaaaait why are mut8or_weights guardrailed and tf_weights aren't?
         
         # temp_coeff,
         return (
             gp_register, 
             tf_choices, 
             tf_weights, 
-            #tf_params, XXX to implement
+            all_tf_params, 
             pop,
             crossover_rate,
             mutation_rate,
@@ -433,7 +440,7 @@ class GPNew(Action):
             gp_register: int, 
             tf_choices: list[int], 
             tf_weights, 
-            #tf_params, 
+            tf_params, 
             pop,
             crossover_rate,
             mutation_rate,
@@ -441,7 +448,6 @@ class GPNew(Action):
             temp_coeff,
             max_depth,
             max_size,
-            #operators, # operators, < derive from TFs
             elitism,
             episode_len,
             sb_weights: np.ndarray[float],
@@ -452,8 +458,7 @@ class GPNew(Action):
         if isinstance(gp_register, torch.Tensor):
             gp_register = gp_register.item()
         observatory = self.world(*[_i(arg) for arg in obs_args])
-        tf_params = [None] # XXX implement this XXX
-        tree_factory = self.get_tfs(tf_choices, tf_weights, tf_params, self.rng)
+        tree_factory = self.get_tfs(tf_choices, tf_weights, tf_params, self.rng) # LogScaling
         scoreboard = self.sb_factory(observatory, _i(temp_coeff), sb_weights)
         if gp_register >= 0 and gp_register < len(self.gptb_list):
             self.gptb_cts[gp_register] += 1
@@ -496,7 +501,7 @@ class GPNew(Action):
             gp_register: int, 
             tf_choices: list[int], 
             tf_weights, 
-            #tf_params, 
+            tf_params, 
             pop,
             crossover_rate,
             mutation_rate,
@@ -515,12 +520,22 @@ class GPNew(Action):
         if isinstance(gp_register, torch.Tensor):
             gp_register = gp_register.item()
         mw = mutator_weights.tolist()
+        tree_fac_params = reduce(
+            lambda d1, d2: {**d1, **d2},
+            [
+                tf.interpret(params) 
+                for tf, params 
+                in zip(self.tf_options, tf_params)
+            ],
+            dict()
+        )
         return {
             'gp_register': gp_register,
             **self.world.interpret(*[_i(arg) for arg in obs_args]),
             # 'obs_args': [_i(arg) for arg in obs_args],
             'tf_choices': tf_choices, 
             'tf_weights': tf_weights,
+            **tree_fac_params,
             'temp_coeff': _i(temp_coeff), 
             'sb_weights': sb_weights,
             'pop': int(_i(pop)),
@@ -539,7 +554,7 @@ class GPNew(Action):
 
     def get_tf(self, idx:int, seed: np.random.Generator, params):
         if idx >= 0 and idx < len(self.tf_options):
-            return self.tf_options[idx](seed=seed, params=params)
+            return self.tf_options[idx](seed=seed, **params) # XXX wait, no, this is a list (??)
         raise ValueError(f'TreeFactory index {idx} out of range')
     
     def get_tfs(self, idxs:list[int], weights:list[float], param_list: list[dict[str, Any]], seed: np.random.Generator):
