@@ -1,7 +1,7 @@
 # echo figtree.py
 # python figtree.py
-# echo gp_fitness.py 
-# python gp_fitness.py 
+echo gp_fitness.py 
+python gp_fitness.py 
 # echo gp_polytest.py
 # python gp_polytest.py
 echo type_ify.py
