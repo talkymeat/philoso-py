@@ -1326,6 +1326,9 @@ class RandomAlgebraicTreeFactory(RandomTreeFactory):
             *args,
             **kwargs
         )
+
+    def interpret(log_float_const_sd):
+        return {'sra_tf_log_float_const_sd': log_float_const_sd}
     
 class SimpleRandomAlgebraicTreeFactory(RandomAlgebraicTreeFactory):
     prefix = 'sra_tf'
