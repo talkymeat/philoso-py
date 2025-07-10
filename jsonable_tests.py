@@ -15,176 +15,8 @@ from hd import HierarchicalDict as HD
 import numpy as np
 from gp import GPTreebank
 from collections import defaultdict
+from test_materials import paramarama, shhhh
 
-from w import w
-
-
-def shhhh(test):
-    """Decorator to make sure tests run without the classes
-    being tested outputting printout
-    """
-    def shushed(*args, **kwargs):
-        # Suppress unwanted printout:
-        suppress_text = io.StringIO()
-        sys.stdout = suppress_text
-        sys.stderr = suppress_text
-        # run test
-        test(*args, **kwargs)
-        # Release output streams:
-        sys.stdout = sys.__stdout__
-        sys.stderr = sys.__stderr__
-    return shushed
-
-paramarama = {
-    "seed": 666,
-    "iv": "x",
-    "dv": "y",
-    "dtype": "float32",
-    "def_fitness": "irmse",
-    "out_dir": "output/l",
-    "ping_freq": 5,
-    "output_prefix": "l__",
-    "days": 100, 
-    "steps_per_day": 100,
-    "world": "SineWorld",
-    "world_params": {
-        "radius": 50,
-        "max_observation_size": 100,
-        "noise_sd": 0.05,
-        "sine_wave_params": [
-            [
-                10,
-                100,
-                0
-            ],
-            [
-                0.1, 
-                1, 
-                0
-            ]
-        ]
-    },
-    "sb_factory": "SimplerGPScoreboardFactory",
-    "sb_factory_params": {
-        "best_outvals": [
-            "irmse", 
-            "size", 
-            "depth", 
-            "penalty", 
-            "hasnans", 
-            "fitness"
-        ]
-    },
-    "gp_vars_core": [
-        "mse", 
-        "rmse", 
-        "size", 
-        "depth", 
-        "raw_fitness", 
-        "fitness", 
-        "value"
-    ],
-    "gp_vars_more": [
-        "crossover_rate", 
-        "mutation_rate", 
-        "mutation_sd", 
-        "max_depth", 
-        "max_size", 
-        "temp_coeff", 
-        "pop", 
-        "elitism", 
-        "obs_start", 
-        "obs_stop", 
-        "obs_num"
-    ],
-    "publication_params": {
-        "rows": 10,
-        "tables": 2,
-        "reward": "ranked",
-        "value": "value",
-        # "types": "float 64"
-    },
-    "agent_populations": [
-        "a"
-    ],
-    "agent_templates": {
-        "a": {
-            "n": 8,
-            "network_class": "ActorCriticNetworkTanh",
-            "device": "cpu",
-            "controller": {
-                "mem_rows": 6,
-                "mem_tables": 3,
-                "tree_factory_classes": [
-                    "SimpleRandomAlgebraicTreeFactory"
-                ],
-                "tree_factory_params": {
-                    "SimpleRandomAlgebraicTreeFactory": {
-                        "range_abs_tree_factory_float_constants": [0.00001, 1.0]
-                    }
-                },
-                "record_obs_len": 50,
-                "max_readings": 3,
-                # "mem_col_types": "float 64",
-                "value": "value",
-                "mutators": [
-                    {
-                        "name": "single_leaf_mutator_factory"
-                    }, 
-                    {
-                        "name": "single_xo_factory"
-                    }
-                ],
-                "num_treebanks": 2,
-                "short_term_mem_size": 5,
-                "max_volume": 50000,
-                "max_max_size": 400, 
-                "max_max_depth": 100,
-                "theta": 0.05,
-                "gp_system": "GPTreebank",
-                "sb_statfuncs": [
-                    {
-                        "name": "mean"
-                    },
-                    {
-                        "name": "mode"
-                    },
-                    {
-                        "name": "std"
-                    },
-                    {
-                        "name": "nanage"
-                    },
-                    {
-                        "name": "infage"
-                    }
-                ],
-                "sb_statfuncs_quantiles": 9
-            },
-            "network_params": {
-                "ppo_clip_val": 0.2,
-                "target_kl_div": 0.01,
-                "max_policy_train_iters": 80,
-                "value_train_iters": 80,
-                "policy_lr": 3e-4,
-                "value_lr": 1e-2
-            }
-        }
-    },
-    "rewards": [
-        "Curiosity",
-        "Renoun",
-        "GuardrailCollisions"
-    ],
-    "reward_params": {
-        "Curiosity": {
-            "def_fitness": "fitness",
-            "first_finding_bonus": 1.0
-        },
-        "Renoun": {},
-        "GuardrailCollisions": {}
-    }
-}
 
 class TestJSONables(unittest.TestCase):
     def __init__(self, methodName = "runTest"):
@@ -201,7 +33,7 @@ class TestJSONables(unittest.TestCase):
     def test_sb_factory_from_json(self):
         gpf = self.make_sb_factory_from_json()
         self.assertEqual(gpf.def_fitness, 'irmse')
-        self.assertEqual(len(gpf.best_outvals), 6)
+        self.assertEqual(len(gpf.best_outvals), 9)
         for b_o in ['irmse', 'size', 'depth', 'penalty', 'hasnans', 'fitness']:
             self.assertIn(b_o, gpf.best_outvals)
         self.assertEqual(gpf.dv, 'y')
@@ -211,15 +43,18 @@ class TestJSONables(unittest.TestCase):
         self.assertEqual(
             gpf.json,
             {
-                'def_fitness': 'irmse',
                 'best_outvals': [
                     'irmse', 
                     'size', 
                     'depth', 
                     'penalty', 
                     'hasnans', 
-                    'fitness'
+                    'raw_fitness',
+                    'fitness',
+                    'value',
+                    'r'
                 ],
+                'def_fitness': 'irmse',
                 'dv': 'y'
             }
         )
@@ -297,7 +132,8 @@ class TestJSONables(unittest.TestCase):
                 'fitness', 'value', 'crossover_rate',
                 'mutation_rate', 'mutation_sd', 'max_depth',
                 'max_size', 'temp_coeff', 'pop', 'elitism',
-                'obs_start', 'obs_stop', 'obs_num'
+                'r', 'bounded_sra_tf_float_const_sd',
+                'obs_centre', 'obs_log_radius'
             }
         )
         self.assertEqual(len(noncore_df), 10)
@@ -323,7 +159,8 @@ class TestJSONables(unittest.TestCase):
                 'fitness', 'value', 'crossover_rate',
                 'mutation_rate', 'mutation_sd', 'max_depth',
                 'max_size', 'temp_coeff', 'pop', 'elitism',
-                'obs_start', 'obs_stop', 'obs_num'
+                'r', 'bounded_sra_tf_float_const_sd',
+                'obs_centre', 'obs_log_radius'
             }
         )
         self.assertEqual(json_['rows'], 10)
@@ -499,7 +336,7 @@ class TestJSONables(unittest.TestCase):
         self.assertEqual(str(ac.out_dir), 'output/l/a_0')
         self.assertIs(ac.gp_system, GPTreebank)
         self.assertEqual(ac.def_fitness, 'irmse')
-        self.assertEqual(ac.max_volume, 50000)
+        self.assertEqual(ac.max_volume, 20000)
         for gptb in ac.gptb_list:
             self.assertIsNone(gptb)
         self.assertIsInstance(ac.sb_factory, SimplerGPScoreboardFactory)
@@ -529,7 +366,8 @@ class TestJSONables(unittest.TestCase):
                 'depth',
                 'raw_fitness',
                 'fitness',
-                'value'
+                'value',
+                'r'
             ]
         )
         self.assertCountEqual(
@@ -543,9 +381,9 @@ class TestJSONables(unittest.TestCase):
                 'temp_coeff',
                 'pop',
                 'elitism',
-                'obs_start',
-                'obs_stop',
-                'obs_num'
+                'bounded_sra_tf_float_const_sd',
+                'obs_centre',
+                'obs_log_radius'
             ]
         )
         self.assertCountEqual(
@@ -573,8 +411,8 @@ class TestJSONables(unittest.TestCase):
         self.assertEqual(ac.memory.rows, 6)
         self.assertEqual(len(ac.memory.tables), 3)
         self.assertEqual(ac.memory.value, 'value')
-        self.assertEqual(ac.memory.max_size, 400)
-        self.assertEqual(ac.memory.max_depth, 100)
+        self.assertEqual(ac.memory.max_size, 200)
+        self.assertEqual(ac.memory.max_depth, 50)
         self.assertEqual(ac.max_readings, 3)
         self.assertCountEqual(
             [tfc.__name__ for tfc in ac.tree_factory_classes],
@@ -622,7 +460,7 @@ class TestJSONables(unittest.TestCase):
         mjson = HD(self.make_model_from_json().json)
         for j in range(3):
             self.assertEqual(mjson['out_dir'], 'output/l')
-            self.assertEqual(mjson['world'], 'SineWorld')
+            self.assertEqual(mjson['world'], 'SineWorld3')
             self.assertEqual(mjson[['world_params', 'radius']], 50)
             self.assertEqual(mjson[['world_params', 'max_observation_size']], 100)
             self.assertAlmostEqual(mjson[['world_params', 'noise_sd']], 0.05)
@@ -632,10 +470,13 @@ class TestJSONables(unittest.TestCase):
             self.assertAlmostEqual(mjson[['world_params', 'speed']], 0.0)
             self.assertEqual(mjson[['world_params', 'dtype']], 'float32')
             self.assertEqual(mjson[['world_params', 'iv']], 'x')
-            self.assertEqual(mjson['sb_factory'], 'SimplerGPScoreboardFactory')
+            self.assertEqual(mjson['sb_factory'], 'SimplerGPScoreboardFactory2')
             self.assertCountEqual(
                 mjson[['sb_factory_params', 'best_outvals']], 
-                ['irmse', 'size', 'depth', 'penalty', 'hasnans', 'fitness']
+                [
+                    'irmse', 'size', 'depth', 'penalty', 'hasnans', 
+                    'fitness', 'raw_fitness', 'value', 'r'
+                ]
             )
             self.assertCountEqual(
                 mjson[['publication_params', 'cols']], 
@@ -643,7 +484,8 @@ class TestJSONables(unittest.TestCase):
                     'mse', 'rmse', 'size', 'depth', 'raw_fitness', 'fitness', 
                     'value', 'crossover_rate', 'mutation_rate', 'mutation_sd', 
                     'max_depth', 'max_size', 'temp_coeff', 'pop', 'elitism', 
-                    'obs_start', 'obs_stop', 'obs_num'
+                    'r', 'bounded_sra_tf_float_const_sd', 'obs_centre',
+                    'obs_log_radius'
                 ]
             )
             self.assertEqual(mjson[['publication_params', 'rows']], 10)
@@ -703,27 +545,27 @@ class TestJSONables(unittest.TestCase):
                 mjson[['agent_templates', 'a', 'controller', 'short_term_mem_size']], 5
             )
             self.assertEqual(
-                mjson[['agent_templates', 'a', 'controller', 'max_volume']], 50000
+                mjson[['agent_templates', 'a', 'controller', 'max_volume']], 20000
             )
             self.assertEqual(
-                mjson[['agent_templates', 'a', 'controller', 'max_max_size']], 400
+                mjson[['agent_templates', 'a', 'controller', 'max_max_size']], 200
             )
             self.assertEqual(
-                mjson[['agent_templates', 'a', 'controller', 'max_max_depth']], 100
+                mjson[['agent_templates', 'a', 'controller', 'max_max_depth']], 50
             )
             self.assertAlmostEqual(
                 mjson[['agent_templates', 'a', 'controller', 'theta']], 0.05 
             )
             self.assertCountEqual(
                 mjson[['agent_templates', 'a', 'controller', 'gp_vars_core']], 
-                ['mse', 'rmse', 'size', 'depth', 'raw_fitness', 'fitness', 'value']
+                ['mse', 'rmse', 'size', 'depth', 'raw_fitness', 'fitness', 'value', 'r']
             )
             self.assertCountEqual(
                 mjson[['agent_templates', 'a', 'controller', 'gp_vars_more']], 
                 [
                     'crossover_rate', 'mutation_rate', 'mutation_sd', 'max_depth', 
-                    'max_size', 'temp_coeff', 'pop', 'elitism', 'obs_start', 
-                    'obs_stop', 'obs_num'
+                    'max_size', 'temp_coeff', 'pop', 'elitism', 
+                    'bounded_sra_tf_float_const_sd', 'obs_centre', 'obs_log_radius'
                 ]
             )
             self.assertAlmostEqual(
