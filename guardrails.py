@@ -2,7 +2,15 @@ import numpy as np
 from typing import Any
 from math import nextafter
 from collections import defaultdict
+from icecream import ic
 
+ic.disable()
+
+def i(val):
+    try:
+        return val.item()
+    except AttributeError:
+        return val
 
 def tanh_arg_extremum(max=True):
     """If `max==False`, finds the highest value of x, given the local standard 
@@ -11,13 +19,13 @@ def tanh_arg_extremum(max=True):
 
     >>> tanh_min = tanh_arg_extremum(max=False)
     >>> tanh_max = tanh_arg_extremum(max=True)
-    >>> np.tanh(tanh_min)
+    >>> np.tanh(tanh_min).item()
     -1.0
-    >>> np.tanh(tanh_max)
+    >>> np.tanh(tanh_max).item()
     1.0
-    >>> np.tanh(nextafter(tanh_min, 0)) == -1.0
+    >>> (np.tanh(nextafter(tanh_min, 0)) == -1.0).item()
     False
-    >>> np.tanh(nextafter(tanh_max, 0)) == 1.0
+    >>> (np.tanh(nextafter(tanh_max, 0)) == 1.0).item()
     False
     """
     lo, hi, prev, current = np.array([0.0, 1000.0, 0.0, 1000.0]) - (0 if max else 1000)
@@ -75,6 +83,12 @@ class Interval:
             self._closed_lo = closed_lo
             self._closed_hi = closed_hi
         self._init_bounds()
+
+    # def __repr__(self):
+    #     return f'{self._min} <{"=" if self._closed_lo else ""} x <{"=" if self._closed_hi else ""} {self._max}'
+
+    # def __str__(self):
+    #     return self.__repr__()
 
     def _verify_minmax(self):
         if self.min > self.max:
@@ -196,6 +210,11 @@ class TanhGuardrail:
         self.gm: GuardrailManager = manager if manager else GuardrailManager()
         self.base_penalty = base_penalty
 
+    def __repr__(self):
+        s = f'TanhGuardrail({self.raw_interval}'.replace('x', 'raw')
+        s += f', {self.interval})'.replace('x', 'cooked')
+        return s
+
     def __call__(self, raw, cooked) -> float:
         """A guardrail receives both the raw output of the Neural Net (logit)
         and the processed ('cooked') value that will actually be used to set a
@@ -237,25 +256,25 @@ class TanhGuardrail:
         >>> eta = 0.0000000001
         >>> print(tanh_only.interval)
         [-1.0, 1.0]
-        >>> tanh_only(tanh_min, -1.0)
+        >>> i(tanh_only(tanh_min, -1.0))
         -1.0
-        >>> tanh_only.gm.reward
+        >>> i(tanh_only.gm.reward)
         0.0
-        >>> tanh_only(tanh_max, 1.0)
+        >>> i(tanh_only(tanh_max, 1.0))
         1.0
-        >>> tanh_only.gm.reward
+        >>> i(tanh_only.gm.reward)
         0.0
-        >>> tanh_only(tanh_min-eta, -1.0)
+        >>> i(tanh_only(tanh_min-eta, -1.0))
         -1.0
-        >>> abs(tanh_only.gm.reward - (-1.0-eta)) < eta*1e-4
+        >>> i(abs(tanh_only.gm.reward - (-(np.log(1.0+eta)+1.0))) < eta*1e-4)
         True
-        >>> tanh_only.gm.reward # cleared
+        >>> i(tanh_only.gm.reward) # cleared
         0.0
-        >>> tanh_only(tanh_max+eta, 1.0)
+        >>> i(tanh_only(tanh_max+eta, 1.0))
         1.0
-        >>> abs(tanh_only.gm.reward - (-1.0-eta)) < eta*1e-4
+        >>> i(abs(tanh_only.gm.reward - (-1.0-eta)) < eta*1e-4)
         True
-        >>> tanh_only.gm.reward # cleared again
+        >>> i(tanh_only.gm.reward) # cleared again
         0.0
         >>> trunc = TanhGuardrail(2.0, 100.0)
         >>> def fit_to_int_range_factory(min, max):
@@ -267,71 +286,77 @@ class TanhGuardrail:
         ...         return np.int32(x)
         ...     return fit_to_int_range
         >>> f = fit_to_int_range_factory(0, 102)
-        >>> trunc(tanh_min-eta, -1.0)
+        >>> i(trunc(tanh_min-eta, -1.0))
         2.0
-        >>> abs(trunc.gm.reward - (-1.0-eta)) < eta*1e-4
+        >>> i(abs(trunc.gm.reward - (-1.0-eta)) < eta*1e-4)
         True
         >>> trunc(-7.0, f(-7.0))
         2.0
-        >>> trunc.gm.reward
+        >>> i(trunc.gm.reward)
         -1.0
         >>> trunc(tanh_min, 0.0)
         2.0
-        >>> abs(trunc.gm.reward - (tanh_min+6.0)) < eta*1e-4
+        >>> i(abs(ic(trunc.gm.reward) - (-(np.log(-tanh_min-6.0)+1.0))) < eta*1e-4)
         True
         >>> trunc(-2.5, f(-2.5))
         2.0
-        >>> trunc.gm.reward
+        >>> i(trunc.gm.reward)
         -1.0
         >>> trunc(-7.0, f(-7.0))
         2.0
-        >>> trunc.gm.reward
-        -5.5
+        >>> i(abs(trunc.gm.reward - -(np.log(5.5)+1.0)) < eta*1e-4)
+        True
         >>> trunc(-2.0, f(-2.0))
         2.0
-        >>> trunc.gm.reward
+        >>> i(trunc.gm.reward)
         -1.0
         >>> trunc(-2.5, f(-2.5))
         2.0
-        >>> trunc.gm.reward
-        -1.5
-        >>> trunc(-7.0, f(-7.0))
+        >>> i(abs(trunc.gm.reward - -(np.log(1.5)+1.0)) < eta*1e-4)
+        True
+        >>> i(trunc(-7.0, f(-7.0)))
         2.0
-        >>> trunc.gm.reward
-        -6.0
-        >>> trunc(-1.9, f(-1.9))
+        >>> i(abs(trunc.gm.reward - -(np.log(6.0)+1.0)) < eta*1e-4)
+        True
+        >>> i(trunc(-1.9, f(-1.9)))
         2
-        >>> trunc.gm.reward
+        >>> i(trunc.gm.reward)
         0.0
-        >>> trunc(-1.0, 12)
+        >>> i(trunc(-1.0, 12))
         12
-        >>> trunc.gm.reward
+        >>> i(trunc.gm.reward)
         0.0
         >>> trunc(2.5, 101.0)
         100.0
-        >>> trunc.gm.reward
+        >>> i(trunc.gm.reward)
         -1.0
-        >>> trunc(19, 102.0)
+        >>> i(trunc(19, 102.0))
         100.0
-        >>> trunc.gm.reward
-        -17.5
+        >>> i(abs(trunc.gm.reward - -(np.log(17.5)+1.0)) < eta*1e-4)
+        True
         """
         if raw not in TANH_ZONE:
             aberrance = raw - self.raw_interval
-            reward = abs(aberrance) + self.base_penalty
-            self.gm._reward -= np.log(reward)
+            reward = np.log(abs(aberrance) + 1.0) + self.base_penalty
+            self.gm._reward -= reward
             return max(self.interval.min, cooked) if aberrance < 0 else min(cooked, self.interval.max)
         if cooked not in self.interval:
             aberrance = cooked - self.interval
-            if aberrance < 0:
+            # if raw==tanh_arg_extremum(max=False) and cooked==0.0:
+            #     ic.enable()
+            #     ic('banana', raw)
+            #     ic(self.raw_interval)
+            if ic(aberrance) < 0:
                 self.raw_interval.min = max(self.raw_interval.min, raw)
-                reward = abs(raw - self.raw_interval) + self.base_penalty
-                self.gm._reward -= np.log(reward)
+                reward = np.log(abs(raw - self.raw_interval) + 1.0) + self.base_penalty
+                # reward = abs(raw - ic(self.raw_interval)) + self.base_penalty
+                self.gm._reward -= reward #np.log(reward)
                 return self.interval.min
             else:
                 self.raw_interval.max = min(self.raw_interval.max, raw)
-                reward = abs(raw - self.raw_interval) + self.base_penalty
-                self.gm._reward -= np.log(reward)
+                reward = np.log(abs(raw - self.raw_interval) + 1.0) + self.base_penalty
+                # reward = abs(raw - self.raw_interval) + self.base_penalty
+                self.gm._reward -= reward #np.log(reward)
                 return self.interval.max
         return cooked
             
