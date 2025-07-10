@@ -8,6 +8,8 @@ echo type_ify.py
 python type_ify.py
 echo gp_trees.py
 python gp_trees.py
+echo guardrails.py
+python guardrails.py
 # echo gp.py
 # python gp.py
 echo mutators.py
