@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Sequence, Callable
 from collections import OrderedDict
-from functools import cached_property
+from functools import cached_property, reduce
 
 from gp import GPTreebank
 from world import World
@@ -11,7 +11,7 @@ from tree_factories import TreeFactory, CompositeTreeFactory
 from model_time import ModelTime
 from repository import Archive, Publication
 from gp_fitness import SimpleGPScoreboardFactory
-from utils import scale_to_sum, InsufficientPostgraduateFundingError, _i
+from utils import scale_to_sum, InsufficientPostgraduateFundingError, _i, ArrayCrawler
 from guardrails import GuardrailManager
 from cuboid import Cuboid
 
@@ -20,6 +20,8 @@ import numpy as np
 from gymnasium.spaces.utils import flatten, unflatten, flatten_space
 from gymnasium.spaces import Dict, Discrete, Box, MultiBinary, MultiDiscrete, Space
 from torch.distributions import Bernoulli, Categorical, Normal
+
+from icecream import ic
 
 
 def min_dim(t: torch.Tensor) -> int:
@@ -166,7 +168,7 @@ class GPNew(Action):
         self.guardrails: GuardrailManager = self.ac.guardrail_manager
         self.sb_factory: SimpleGPScoreboardFactory = self.ac.sb_factory
         # note that the defined fitness value always has a raw weight of 1
-        self.num_sb_weights: int = self.sb_factory.num_sb_weights - 1
+        self.num_sb_weights: int = self.sb_factory.num_sb_weights # Note this does not include the weight for irmse/imse/etc, which is fixed
         if CompositeTreeFactory not in tree_factory_classes:
             self.tf_options = tree_factory_classes
         else:
@@ -185,10 +187,6 @@ class GPNew(Action):
             np.log(range_mutation_sd[0]),
             np.log(range_mutation_sd[1])
         )
-        # self.log_range_abs_tree_fac_fl_consts = (
-        #     np.log(range_abs_tree_fac_fl_consts[0]),
-        #     np.log(range_abs_tree_fac_fl_consts[1])
-        # )
         self.mutators = mutators
         self.num_mut_wts = (
             len(self.mutators) if len(self.mutators) > 1 else 0
@@ -361,9 +359,9 @@ class GPNew(Action):
         raws = ArrayCrawler(to_numpy(raws))
         arr = ArrayCrawler(to_numpy(arr))
         pop, max_size, episode_len = self.size_factor_cuboid(*arr(3))
-        pop = self.guardrails['pop'](raw(1), pop)
-        max_size = self.guardrails['max_size'](raw(1), max_size)
-        episode_len = self.guardrails['episode_len'](raw(1), episode_len)
+        pop = self.guardrails['pop'](raws(1), pop)
+        max_size = self.guardrails['max_size'](raws(1), max_size)
+        episode_len = self.guardrails['episode_len'](raws(1), episode_len)
         # XXX TODO make this able to handle more weights
         sb_weights = scale_to_sum(np.append(1.0, arr(self.num_sb_weights)))
         # XXX Watch out testing this: len(sb_weights) is one more than self.num_sb_weights XXX
@@ -402,9 +400,9 @@ class GPNew(Action):
         all_tf_params = []
         for tf, num_params in zip(self.tf_options, self.nums_tf_params):
             if num_params:
-                tf_params = arr(num_params)
-                for i, (dic, param) in (enumerate(zip(tf.tf_guardrail_params, tf_params))):
-                    tf_params[i] = self.guardrails[dic['name']](raw(1), param) 
+                tf_params = arr(num_params) if num_params != 1 else np.array([arr(num_params)], dtype=np.float32)
+                for i, (dic, param) in (enumerate(zip(ic(tf.tf_guardrail_params), ic(tf_params)))):
+                    tf_params[i] = self.guardrails[dic['name']](raws(1), param) 
                 all_tf_params.append(tf_params)
             else:
                 all_tf_params.append(list())
@@ -415,8 +413,6 @@ class GPNew(Action):
             for i, raw in zip(range(len(mut8or_weights)), mut8or_raws):
                 mut8or_weights[i] = self.guardrails[f'mutator_wt_{i}'](raw, mut8or_weights[i])
                 # XXX waaaaait why are mut8or_weights guardrailed and tf_weights aren't?
-        
-        # temp_coeff,
         return (
             gp_register, 
             tf_choices, 
@@ -425,7 +421,7 @@ class GPNew(Action):
             pop,
             crossover_rate,
             mutation_rate,
-            np.exp(log_mutation_sd), # mutation_sd
+            log_mutation_sd, # np.exp(log_mutation_sd), # mutation_sd
             temp_coeff,
             max_depth,
             max_size,
@@ -523,7 +519,7 @@ class GPNew(Action):
         tree_fac_params = reduce(
             lambda d1, d2: {**d1, **d2},
             [
-                tf.interpret(params) 
+                ic(tf).interpret(ic(params)) 
                 for tf, params 
                 in zip(self.tf_options, tf_params)
             ],

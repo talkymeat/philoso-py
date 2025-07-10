@@ -392,7 +392,7 @@ def torchify_dtype(dtype:str|type|np.dtype) -> torch.dtype:
 
 class ArrayCrawler:
     def __init__(self, array: np.ndarray):
-        self.array = arrays
+        self.array = array
         self.i = 0
 
     def __call__(self, num: int=0):
@@ -401,13 +401,13 @@ class ArrayCrawler:
                 f"i={self.i}, {num=}, i+num={self.i+num}, but the array length " +
                 f"is {len(self.array)}"
             )
-        retval = None
+        retval = np.array([])
         if num < 0:
             raise ValueError("ArrayCrawler can't crawl backwards")
         elif num == 1:
-            retval = array[self.i]
+            retval = self.array[self.i]
         elif num > 1:
-            retval = array[self.i:self.i+num]
+            retval = self.array[self.i:self.i+num]
         self.i += num
         return retval
 
