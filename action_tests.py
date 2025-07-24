@@ -4,6 +4,7 @@ from philoso_py import ModelFactory
 import logging
 import sys
 from collections import defaultdict
+from guardrails import Interval
 
 class TestActions(unittest.TestCase):
     def __init__(self, methodName = "runTest"):
@@ -29,10 +30,55 @@ class TestActions(unittest.TestCase):
         for gptct in gp_new.gptb_cts:
             self.assertEqual(gptct, 0)
 
+    def test_gp_new_gp_vars_out(self):
+        gp_new = self.get_action('gp_new')
+        self.assertEqual(
+            set(gp_new.gp_vars_out),
+            {
+                "mse",
+                "rmse",
+                "size",
+                "depth",
+                "raw_fitness",
+                "fitness",
+                "value",
+                "r",
+                "crossover_rate",
+                "mutation_rate",
+                "mutation_sd",
+                "max_depth",
+                "max_size",
+                "temp_coeff",
+                "bounded_sra_tf_float_const_sd",
+                "pop",
+                "elitism",
+                "obs_centre",
+                "obs_log_radius"
+            },
+        )
+
     def test_gp_new_guardrail_setup(self):
         gp_new = self.get_action('gp_new')
         grm = gp_new.ac.guardrail_manager
-        self.log.debug(grm)
+        intervals = {
+            "pop": Interval("[2, inf]"),
+            "max_size": Interval("[3, inf]"),
+            "episode_len": Interval("[2, inf]"),
+            "crossover_rate": Interval("[0, 1]"),
+            "mutation_rate": Interval("[0, 1]"),
+            "log_mutation_sd": Interval("[-11.512925464970229, 0.0]"),
+            "max_depth": Interval("[1, inf]"),
+            "elitism": Interval("[0, 1]"),
+            "temp_coeff": Interval("[0, inf]"),
+            "mutator_wt_0": Interval("[0, 1]"),
+            "mutator_wt_1": Interval("[0, 1]"),
+            "obs_centre": Interval("[-50, 50]"),
+            "obs_log_radius": Interval("[-inf, 4.605170185988092]"),
+            "sra_tf_log_float_const_sd": Interval("[-11.512925464970229, 0.0]")
+        }
+        for name, gr in grm.items():
+            self.assertEqual(grm[name].raw_interval, Interval("[-10, 10]"))
+            self.assertEqual(grm[name].interval, intervals[name])
         # self.sb_factory: SimpleGPScoreboardFactory = self.ac.sb_factory
         # # note that the defined fitness value always has a raw weight of 1
         # self.num_sb_weights: int = self.sb_factory.num_sb_weights - 1

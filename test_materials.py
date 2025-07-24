@@ -326,6 +326,8 @@ def shhhh(test):
     being tested outputting printout
     """
     def shushed(*args, **kwargs):
+        out = sys.stdout
+        err = sys.stderr
         # Suppress unwanted printout:
         suppress_text = io.StringIO()
         sys.stdout = suppress_text
@@ -333,7 +335,7 @@ def shhhh(test):
         # run test
         retval = test(*args, **kwargs)
         # Release output streams:
-        sys.stdout = sys.__stdout__
-        sys.stderr = sys.__stderr__
+        sys.stdout = out
+        sys.stderr = err
         return retval
     return shushed

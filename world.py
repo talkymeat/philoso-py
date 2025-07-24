@@ -978,7 +978,7 @@ class SineWorld(World):
         return (
             {'name': '_', '_no_make': None}, 
             {'name': '_', '_no_make': None}, 
-            {'name': 'obs_len', 'min': 2, 'max': np.inf}
+            {'name': 'obs_len', 'lo': 2, 'hi': np.inf}
         )
 
     # def act(self, params: np.ndarray):
@@ -1132,13 +1132,13 @@ class SineWorld3(SineWorld2):
         return (
             {
                 'name': 'obs_centre', 
-                'min': self.range[0], 
-                'max': self.range[1]
+                'lo': self.range[0], 
+                'hi': self.range[1]
             }, 
             {
                 'name': 'obs_log_radius', 
-                'min': -np.inf,
-                'max': np.log(self.range[1]-self.range[0])
+                'lo': -np.inf,
+                'hi': np.log(self.range[1]-self.range[0])
             }
         )
     

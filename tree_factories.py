@@ -1251,8 +1251,8 @@ class RandomAlgebraicTreeFactory(RandomTreeFactory):
         return (
             {
                 'name': f'{cls.prefix}_log_float_const_sd', 
-                'min': cls.tf_param_ranges[0][0], 
-                'max': cls.tf_param_ranges[0][1]
+                'lo': cls.tf_param_ranges[0][0], 
+                'hi': cls.tf_param_ranges[0][1]
             }, 
         )
 

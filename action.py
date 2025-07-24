@@ -303,6 +303,7 @@ class GPNew(Action):
             should be respected. This may clamp the `order` of the random 
             polynomial factory
         """
+        # XXX TODO: add a `log_box` head, for log-scaled params, reduce size of long_box (renamed tanh-box?)
         gp_register_sp = Discrete(len(self.gptb_list)) 
         num_wobf_params = len(self.world.wobf_param_ranges)
         num_tf_params = sum(self.nums_tf_params)
@@ -320,23 +321,24 @@ class GPNew(Action):
         })
 
     def set_guardrails(self):
-        self.guardrails.make('pop', min=self.min_pop, max=np.inf)
-        self.guardrails.make('max_size', min=self.min_max_size, max=np.inf)
-        self.guardrails.make('episode_len', min=self.min_ep_len, max=np.inf)
+        # XXX TODO this needs to accommodate LogGuardrails. Also, make LogGuardrail
+        self.guardrails.make('pop', lo=self.min_pop, hi=np.inf)
+        self.guardrails.make('max_size', lo=self.min_max_size, hi=np.inf)
+        self.guardrails.make('episode_len', lo=self.min_ep_len, hi=np.inf)
         for n in range(self.num_sb_weights):
-            self.guardrails.make(f'sb_weight_{n}', min=-np.inf, max=np.inf)
-        self.guardrails.make('crossover_rate', min=0, max=1)
-        self.guardrails.make('mutation_rate', min=0, max=1)
+            self.guardrails.make(f'sb_weight_{n}', lo=-np.inf, hi=np.inf)
+        self.guardrails.make('crossover_rate', lo=0, hi=1)
+        self.guardrails.make('mutation_rate', lo=0, hi=1)
         self.guardrails.make(
             'log_mutation_sd', 
-            min=self.log_range_mutation_sd[0], 
-            max=self.log_range_mutation_sd[1]
+            lo=self.log_range_mutation_sd[0], 
+            hi=self.log_range_mutation_sd[1]
         ) # LogScaling
-        self.guardrails.make('max_depth', min=1, max=np.inf)
-        self.guardrails.make('elitism', min=0, max=1)
-        self.guardrails.make('temp_coeff', min=0, max=np.inf)
+        self.guardrails.make('max_depth', lo=1, hi=np.inf)
+        self.guardrails.make('elitism', lo=0, hi=1)
+        self.guardrails.make('temp_coeff', lo=0, hi=np.inf)
         for i in range(len(self.mutators)):
-            self.guardrails.make(f'mutator_wt_{i}', min=0, max=1)
+            self.guardrails.make(f'mutator_wt_{i}', lo=0, hi=1)
         self.obs_guardrail_names = []
         for param in self.world.wobf_guardrail_params:
             self.obs_guardrail_names.append(param['name'])
@@ -350,6 +352,7 @@ class GPNew(Action):
                     self.guardrails.make(**param)
 
     def process_action(self, 
+        # XXX TODO this needs to handle `log_box` separately from `long_box`/`tanh_box`
         in_vals: OrderedDict[str, np.ndarray|int|float|bool], *args,
         override: bool = False, **kwargs
     ):
@@ -513,6 +516,7 @@ class GPNew(Action):
             mutator_weights,
             *args, **kwargs
         ):
+        # XXX TODO, probably nothing, but make sure this is correct for log params
         if isinstance(gp_register, torch.Tensor):
             gp_register = gp_register.item()
         mw = mutator_weights.tolist()
@@ -617,6 +621,7 @@ class GPContinue(Action):
         XXX TODO: it might be nice to allow this to also adjust scoreboard 
         weights XXX
         """
+        # XXX TODO separate `misc_box` into `tanh_box` and `log_box`
         gp_register_sp = Discrete(len(self.gptb_list)) 
         misc_box       = Box(low=0.0, high=1.0, shape=(5+self.num_mutators,))
         return Dict({
@@ -630,6 +635,7 @@ class GPContinue(Action):
     ):
         # Some refactoring would be good: this would make a good
         # parent class to GPNew
+        # XXX TODO separate handling of
         raws = in_vals['misc_box'][0]
         arr = (torch.tanh(raws) + 1)/2
         raws = to_numpy(raws)
