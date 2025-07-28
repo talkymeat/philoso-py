@@ -15,24 +15,32 @@ def i(val):
     except AttributeError:
         return val
 
-def tanh_arg_extremum(float_class, max=True):
-    """If `max==False`, finds the highest value of x in floating point number
+class FuncArgExtremum(Protocol):
+    def __call__(float_class: type[Float], max_:bool=True) -> Float:
+        ...
+
+class PenaltyFunc(Protocol):
+    def __call__(aberrance: Float) -> Float:
+        ...
+
+def tanh_arg_extremum(float_class: type[Float], max_: bool=True) -> Float:
+    """If `max_==False`, finds the highest value of x in floating point number
     type `float_type` (float, no.float16, np.float32, etc), for which tanh(x) 
-    rounds to -1, or if `max==True`, finds the lowest value of x for which 
+    rounds to -1, or if `max_==True`, finds the lowest value of x for which 
     tanh(x) rounds to 1.
 
     >>> for float_type in (np.float16, np.float32, np.float64, float):
-    ...     tanh_min = tanh_arg_extremum(float_type, max=False)
-    ...     tanh_max = tanh_arg_extremum(float_type, max=True)
+    ...     tanh_min = tanh_arg_extremum(float_type, max_=False)
+    ...     tanh_max = tanh_arg_extremum(float_type, max_=True)
     ...     assert np.tanh(tanh_min) == -1.0
     ...     assert np.tanh(tanh_max) == 1.0
     ...     assert np.tanh(nextafter(tanh_min, 0)) != -1.0
     ...     assert np.tanh(nextafter(tanh_max, 0)) != 1.0
     """
-    lo, hi, prev, current = np.array([0.0, 1000.0, 0.0, 1000.0], dtype=float_class) - (0 if max else 1000)
-    target = 1.0 if max else -1.0
+    lo, hi, prev, current = np.array([0.0, 1000.0, 0.0, 1000.0], dtype=float_class) - (0 if max_ else 1000)
+    target = 1.0 if max_ else -1.0
     while prev != current:
-        if (np.tanh(current)==target) if max else (np.tanh(current)!=target):
+        if (np.tanh(current)==target) if max_ else (np.tanh(current)!=target):
             current, prev, hi = np.mean([current, lo]), current, current
         else:
             current, prev, lo = np.mean([current, hi]), current, current
@@ -42,14 +50,14 @@ def tanh_arg_extremum(float_class, max=True):
         current = nextafter(current, current-target)
     return current
 
-def exp_arg_extremum(float_class: type, max=True):
-    """If `max==False`, finds the highest value of x, given the local standard 
-    for floats, for which tanh(x) rounds to -1, or if `max==True`, finds the 
+def exp_arg_extremum(float_class: type[Float], max_:bool=True) -> Float:
+    """If `max_==False`, finds the highest value of x, given the local standard 
+    for floats, for which tanh(x) rounds to -1, or if `max_==True`, finds the 
     lowest value of x for which tanh(x) rounds to 1.
 
     >>> for float_type in (np.float16, np.float32, np.float64, float):
-    ...     exp_min = exp_arg_extremum(float_type, max=False)
-    ...     exp_max = exp_arg_extremum(float_type, max=True)
+    ...     exp_min = exp_arg_extremum(float_type, max_=False)
+    ...     exp_max = exp_arg_extremum(float_type, max_=True)
     ...     assert np.exp(exp_min) == 0.0, (np.exp(exp_min), exp_min, float_type)
     ...     with warnings.catch_warnings():
     ...         warnings.filterwarnings('ignore')
@@ -57,8 +65,8 @@ def exp_arg_extremum(float_class: type, max=True):
     ...     assert np.exp(nextafter(exp_min, 0)) != 0.0
     ...     assert np.exp(nextafter(exp_max, 0)) != np.inf
     """
-    targ = np.inf if max else 0.0
-    flip = -1.0 if max else 1.0
+    targ = np.inf if max_ else 0.0
+    flip = -1.0 if max_ else 1.0
     a = float_class(0.0)
     b = float_class(-1.0 * flip) # (1.0)
     a_s, b_s = [a], [b]
@@ -87,6 +95,9 @@ def exp_arg_extremum(float_class: type, max=True):
             a_s.append(a)
             b_s.append(b)
     return b
+
+def linear_arg_extremum(float_class: type[Float], max_:bool=True) -> Float:
+    return float_class('inf') * (max_-0.5)
 
 class Interval:
     """Defines an open, closed, or semi-open interval and can be used to test
@@ -123,18 +134,54 @@ class Interval:
     [False, False, True, True, False, False, False]
     >>> [x in str_unit3 for x in testvals]
     [False, False, False, True, False, False, False]
+    >>> unit4_0 = Interval(0, 1)
+    >>> unit4_0
+    Interval('[0, 1]')
+    >>> unit4_1 = Interval(0, 1, True)
+    >>> unit4_1
+    Interval('[0, 1]')
+    >>> unit4_2 = Interval(0, 1, True, True)
+    >>> unit4_2
+    Interval('[0, 1]')
+    >>> unit5 = Interval(0, 1, False, True)
+    >>> unit5
+    Interval('(0, 1]')
+    >>> unit6 = Interval(0, 1, True, False)
+    >>> unit6
+    Interval('[0, 1)')
+    >>> unit7_0 = Interval(0, 1, False)
+    >>> unit7_0
+    Interval('(0, 1)')
+    >>> unit7_1 = Interval(0, 1, False)
+    >>> unit7_1
+    Interval('(0, 1)')
+
+
+    # >>> [x in unit4_0 for x in testvals]
+    # [False, False, True, True, True, False, False]
+    # >>> [x in unit4_1 for x in testvals]
+    # [False, False, True, True, True, False, False]
+    # >>> [x in unit4_2 for x in testvals]
+    # [False, False, True, True, True, False, False]
+    # >>> [x in unit5 for x in testvals]
+    # [False, False, False, True, True, False, False]
+    # >>> [x in unit6 for x in testvals]
+    # [False, False, True, True, False, False, False]
+    # >>> [x in unit7_0 for x in testvals]
+    # [False, False, False, True, False, False, False]
+    # >>> [x in unit7_1 for x in testvals]
+    # [False, False, False, True, False, False, False]
     """
     def __init__(
             self,
             lo: float|int|str = None,
             hi: float|int = None,
             closed: bool = None,
-            closed_lo: bool = None,
             closed_hi: bool = None
         ):
         if isinstance(lo, str):
             paramstring = lo
-            for param in [hi, closed, closed_lo, closed_hi]:
+            for param in [hi, closed, closed_hi]:
                 if param is not None:
                     raise ValueError(
                         "Initialising an interval, if the first" +
@@ -153,16 +200,14 @@ class Interval:
                 closed_hi = m[4] == ']'
             else:
                 raise ValueError(f'Invalid interval string {paramstring}')
-        # ic(repr(lo), 'banana')
+        else:
+            closed_lo = True if closed is None else closed
+            closed_hi = closed_lo if closed_hi is None else closed_hi
         self._min = lo if lo is not None else -np.inf
         self._max = hi if hi is not None else np.inf
-        # ic(lo, type(lo), hi, type(hi))
         self._verify_minmax()
-        if closed is not None:
-            self.closed_lo = self.closed_hi = self.closed
-        else:
-            self._closed_lo = True if closed_lo is None else closed_lo
-            self._closed_hi = True if closed_hi is None else closed_hi
+        self._closed_lo = closed_lo
+        self._closed_hi = closed_hi
         self._init_bounds()
 
     def __eq__(self, other: 'Interval')->bool:
@@ -172,12 +217,6 @@ class Interval:
             self.closed_lo == other.closed_lo and
             self.closed_hi == other.closed_hi
         )
-
-    # def __repr__(self):
-    #     return f'{self.min} <{"=" if self._closed_lo else ""} x <{"=" if self._closed_hi else ""} {self.max}'
-
-    # def __str__(self):
-    #     return self.__repr__()
 
     def _verify_minmax(self):
         if self.min > self.max:
@@ -196,6 +235,10 @@ class Interval:
     @property
     def min(self):
         return self._min
+
+    @property
+    def min_clipped(self):
+        return self._min if self.closed_lo else np.nextafter(self._min, self._max)
     
     @min.setter
     def min(self, lo):
@@ -206,10 +249,14 @@ class Interval:
     @property
     def max(self):
         return self._max
+
+    @property
+    def max_clipped(self):
+        return self._max if self.closed_hi else np.nextafter(self._max, self._min)
     
     @max.setter
-    def max(self, max):
-        self._max = max
+    def max(self, max_):
+        self._max = max_
         self._verify_minmax()
         self._init_bounds()
 
@@ -237,7 +284,7 @@ class Interval:
 
     @property
     def closed(self):
-        return self._closed_lo and self.closed_hi
+        return self.closed_lo and self.closed_hi
     
     @closed.setter
     def closed(self, closed):
@@ -271,8 +318,11 @@ class Interval:
     def __str__(self):
         return f"{'[' if self.closed_lo else '('}{self.min}, {self.max}{']' if self.closed_hi else ')'}"
 
+    def __repr__(self):
+        return f"Interval('{str(self)}')"
 
-TANH_ZONE = Interval(tanh_arg_extremum(np.float32, max=False), tanh_arg_extremum(np.float32))
+
+TANH_ZONE = Interval(tanh_arg_extremum(np.float32, max_=False), tanh_arg_extremum(np.float32))
 
 class Guardrail(Protocol):
     def __call__(self, raw: Float, cooked: Float) -> Float:
@@ -281,40 +331,73 @@ class Guardrail(Protocol):
 def no_guardrail(self, raw: Float, cooked: Float):
     return cooked
 
-class TanhGuardrail:
+class FuncGuardrail:
+    FUNC_NAME = "Func" # XXX probably not needed - remove?
+    SYMMETRIC = True
+    def func_arg_extremum(self, float_class: type[Float], max_:bool=True) -> Float:
+        return linear_arg_extremum(float_class, max_)
+
+    # np.log(abs(raw - self.raw_interval) + 1.0) + self.base_penalty
+    def _penalty_func_lo(self, abs_aberrance: Float) -> Float:
+        return np.log(1.0+abs_aberrance)
+
+    def _penalty_func_hi(self, abs_aberrance: Float) -> Float:
+        return self._penalty_func_lo(abs_aberrance)
+
+    def penalise(self, aberrance: Float):
+        penalty_func = self._penalty_func_lo if aberrance < 0.0 else self._penalty_func_hi
+        penalty = penalty_func(abs(aberrance)) + self.base_penalty
+        self.gm._reward -= penalty #np.log(reward)
+
     def __init__(self,
             lo: float|int = None,
             hi: float|int = None,
             closed: bool = None,
-            closed_lo: bool = True,
-            closed_hi: bool = True,
+            closed_hi: bool = None,
             base_penalty: float = 1.0,
             manager: 'GuardrailManager' = None,
-            dtype: type = np.float32
+            dtype: type = np.float32,
+            reversed_: bool = None
         ) -> None:
+        closed = True if closed is None else closed
+        closed_hi = closed if closed_hi is None else closed_hi
         self.interval = Interval(
             lo if lo is not None else -1.0, 
             hi if hi is not None else 1.0, 
-            closed=closed, closed_lo=closed_lo, closed_hi=closed_hi
+            closed=closed, closed_hi=closed_hi
         )
-        self.raw_interval = Interval(
-            tanh_arg_extremum(dtype, max=False), 
-            tanh_arg_extremum(dtype)
-        )
+        raw_lo = self.func_arg_extremum(dtype, max_=False)
+        raw_hi = self.func_arg_extremum(dtype)
+        # `True and None` is None, which would break the conditionals below, so, `reversed_ is True`
+        # is used below to handle the case where reversed_ is None; this converts `None` to `False`,
+        # so the conjunction is never `None`, but always `True` or `False` 
+        flip_me = not self.SYMMETRIC and reversed_ is True 
+        if not [closed, closed_hi][flip_me]: # this takes advantage of the int-castability of booleans
+            raw_lo = np.nextafter(raw_lo, raw_hi) # because if SYMMETRIC is False and reversed_ is True
+        if not [closed_hi, closed][flip_me]: # that changes which of closed and closed_hi is relevant to
+            raw_hi = np.nextafter(raw_hi, raw_lo) # the truncation of which raw value
+        self.raw_interval = Interval(raw_lo, raw_hi)
         self.gm: GuardrailManager = manager if manager else GuardrailManager()
         self.base_penalty = base_penalty
+        # the reversed_ argument only makes sense for non-symmetric underlying functions:
+        # therefore, if it is passed and SYMMETRIC is True, raise the same error as if
+        # there were no such argument
+        if reversed_ is not None and self.SYMMETRIC:
+            raise TypeError(
+                f"{self.__class__.__name__}.__init__() got an unexpected keyword argument 'reversed_'"
+            )
+        self.reversed = False if reversed_ is None else reversed_ 
 
     def __repr__(self):
-        s = f'TanhGuardrail({self.raw_interval}'.replace('x', 'raw')
-        s += f', {self.interval})'.replace('x', 'cooked')
-        return s
+        return f'{self.__class__.__name__}({self.raw_interval}, {self.interval})'
 
     def __call__(self, raw, cooked) -> float:
         """A guardrail receives both the raw output of the Neural Net (logit)
         and the processed ('cooked') value that will actually be used to set a
         parameter of some behaviour, which may be subject to a maximum or 
-        minimum. This guardrail in particular deals with parameters that use 
-        `tanh` to transform the NN output. The guardrail automatically 
+        minimum. This guardrail is a base template for others, but child 
+        Guardrail classes exist for parameters that use `tanh` and `exp`
+        to transform the NN output. For example, the TanhGuardrail automatically 
         penalises any raw value `x` that falls outside the range which I am
         calling the `tanh zone` - the closed interval such that:
 
@@ -343,152 +426,172 @@ class TanhGuardrail:
         due to guardrail violations. The penalty is the absolute difference
         between the violated boundary and the raw value, plus a base penalty,
         which is 1.0 by default.
-
-        >>> tanh_only = TanhGuardrail(dtype=np.float64)
-        >>> tanh_min = tanh_arg_extremum(np.float64, max=False)
-        >>> tanh_max = tanh_arg_extremum(np.float64, max=True)
-        >>> eta = 0.0000000001
-        >>> print(tanh_only.interval)
-        [-1.0, 1.0]
-        >>> i(tanh_only(tanh_min, -1.0))
-        -1.0
-        >>> i(tanh_only.gm.reward)
-        0.0
-        >>> i(tanh_only(tanh_max, 1.0))
-        1.0
-        >>> i(tanh_only.gm.reward)
-        0.0
-        >>> i(tanh_only(tanh_min-eta, -1.0))
-        -1.0
-        >>> i(abs(tanh_only.gm.reward - (-(np.log(1.0+eta)+1.0))) < eta*1e-4)
-        True
-        >>> i(tanh_only.gm.reward) # cleared
-        0.0
-        >>> i(tanh_only(tanh_max+eta, 1.0))
-        1.0
-        >>> i(abs(tanh_only.gm.reward - (-1.0-eta)) < eta*1e-4)
-        True
-        >>> i(tanh_only.gm.reward) # cleared again
-        0.0
-        >>> trunc = TanhGuardrail(2.0, 100.0, dtype=np.float64)
-        >>> def fit_to_int_range_factory(min, max):
-        ...     def fit_to_int_range(x):
-        ...         x = np.tanh(x)
-        ...         x += 1
-        ...         x *= (max-min)/2.0
-        ...         x += min
-        ...         return np.int32(x)
-        ...     return fit_to_int_range
-        >>> f = fit_to_int_range_factory(0, 102)
-        >>> i(trunc(tanh_min-eta, -1.0))
-        2.0
-        >>> i(abs(trunc.gm.reward - (-1.0-eta)) < eta*1e-4)
-        True
-        >>> trunc(-7.0, f(-7.0))
-        2.0
-        >>> i(trunc.gm.reward)
-        -1.0
-        >>> trunc(tanh_min, 0.0)
-        2.0
-        >>> i(abs(trunc.gm.reward - (-(np.log(-tanh_min-6.0)+1.0))) < eta*1e-4)
-        True
-        >>> trunc(-2.5, f(-2.5))
-        2.0
-        >>> i(trunc.gm.reward)
-        -1.0
-        >>> trunc(-7.0, f(-7.0))
-        2.0
-        >>> i(abs(trunc.gm.reward - -(np.log(5.5)+1.0)) < eta*1e-4)
-        True
-        >>> trunc(-2.0, f(-2.0))
-        2.0
-        >>> i(trunc.gm.reward)
-        -1.0
-        >>> trunc(-2.5, f(-2.5))
-        2.0
-        >>> i(abs(trunc.gm.reward - -(np.log(1.5)+1.0)) < eta*1e-4)
-        True
-        >>> i(trunc(-7.0, f(-7.0)))
-        2.0
-        >>> i(abs(trunc.gm.reward - -(np.log(6.0)+1.0)) < eta*1e-4)
-        True
-        >>> i(trunc(-1.9, f(-1.9)))
-        2
-        >>> i(trunc.gm.reward)
-        0.0
-        >>> i(trunc(-1.0, 12))
-        12
-        >>> i(trunc.gm.reward)
-        0.0
-        >>> trunc(2.5, 101.0)
-        100.0
-        >>> i(trunc.gm.reward)
-        -1.0
-        >>> i(trunc(19, 102.0))
-        100.0
-        >>> i(abs(trunc.gm.reward - -(np.log(17.5)+1.0)) < eta*1e-4)
-        True
         """
         if raw not in self.raw_interval:
             aberrance = raw - self.raw_interval
-            reward = np.log(abs(aberrance) + 1.0) + self.base_penalty
-            self.gm._reward -= reward
-            return max(self.interval.min, cooked) if aberrance < 0 else min(cooked, self.interval.max)
+            self.penalise(aberrance)
+            return max(self.interval.min_clipped, cooked) if (aberrance < 0) != self.reversed else min(cooked, self.interval.max_clipped)
         if cooked not in self.interval:
-            aberrance = cooked - self.interval
-            if aberrance < 0:
+            aberrance = raw - self.raw_interval
+            self.penalise(aberrance)
+            rev_if_rev = lambda x: x
+            if not self.SYMMETRIC and self.reversed:
+                rev_if_rev = lambda x: not x
+            if rev_if_rev(cooked - self.interval < 0):
                 self.raw_interval.min = max(self.raw_interval.min, raw)
-                reward = np.log(abs(raw - self.raw_interval) + 1.0) + self.base_penalty
-                self.gm._reward -= reward #np.log(reward)
-                return self.interval.min
             else:
                 self.raw_interval.max = min(self.raw_interval.max, raw)
-                reward = np.log(abs(raw - self.raw_interval) + 1.0) + self.base_penalty
-                # reward = abs(raw - self.raw_interval) + self.base_penalty
-                self.gm._reward -= reward #np.log(reward)
+            if cooked - self.interval < 0 or cooked == -np.inf:
+                return self.interval.min
+            else:
                 return self.interval.max
         return cooked
 
-class ExponentialGuardrail:
+class TanhGuardrail(FuncGuardrail):
+    FUNC_NAME = "Tanh"
+
+    def func_arg_extremum(self, float_class: type[Float], max_:bool=True) -> Float:
+        return tanh_arg_extremum(float_class, max_)
+
+
+class ExponentialGuardrail(FuncGuardrail):
+    FUNC_NAME = "Exponential"
+    SYMMETRIC = False
+
+    def func_arg_extremum(self, float_class: type[Float], max_:bool=True) -> Float:
+        return exp_arg_extremum(float_class, max_)
 
     def __init__(self,
-        coefficient: float = 1.0,
-        constant: float = 0.0,
-        boundary: float|None = None,
-        boundary_penalty_func: None|Callable = None,
-        base_penalty: float = 1.0,
-        manager: 'GuardrailManager' = None,
-        dtype: type = np.float32
-    ):
-        if coefficient == 0:
+            lo: float|int = 0.0,
+            hi: float|int = np.inf,
+            closed: bool = None,
+            closed_hi: bool = None,
+            base_penalty: float = 1.0,
+            manager: 'GuardrailManager' = None,
+            dtype: type[Float] = np.float32,
+            reversed_: bool = False
+        ) -> None:
+        """The parameters passed to initialise an exponential guardrail behave slightly
+        differently; an exponentially transformed NN output may be translated along the 
+        number line by the addition of a constant, or scaled by a coefficient (which
+        may be positive or negative), but whatever the values of the constant or the
+        coefficient, the transformed value will *in theory* asymptote towards the 
+        constant as the raw value becomes arbitrarily negative, in practice becoming 
+        equal to the constant when the difference becomes less than the minimum 
+        difference expressible for the relevant Float dtype; and the transformed value
+        in theory tends to an arbitrarily high absolute value as the raw value becomes
+        arbitrarily large, but in practice will eventually overflow the Float dtype
+        and become either np.inf or (if the coefficient is negative) -np.inf. This 
+        implies certain validations:
+
+        1)  `lo` can be `-inf`, and 'hi` can be `inf`, but one of them _must_ be finite
+        2)  If `lo` is `-inf`, `reversed_` must be `True`, and if `hi` is `inf`, `reversed`
+            must be `False`
+        3)  If `lo` or `hi` is +/- `inf`, the corresponding `closed_lo|hi` parameter must
+            be `False`, so that infinite `cooked` values should be rejected, returning
+            the minimum or maximum values of the relevant Float type
+
+        The (1) and (2) are enforced with ValueErrors; violations of (3) will cause the
+        relevant value to be coerced to correctness, and a warning will be raised
+
+        The `reversed_` param is also needed because the range of valid `raw` values is
+        not symmetrical; the highest value at which `np.exp(raw)` becomes rounded to 0.0
+        is not equal to zero minus the lowest value at which `np.exp(raw)` overflows to 
+        `inf`.
+        """
+        if np.isinf(lo) and np.isinf(hi):
             raise ValueError(
-                'Coefficient cannot be zero: the range of permitted values' +
-                ' would be empty'
+                'lo and hi cannot both be infinite for an ExponentialGuardrail'
             )
-        self.coeff = coefficient
-        self.raw_interval = Interval(
-            exp_arg_extremum(dtype, max=False),
-            exp_arg_extremum(dtype, max=True)
-        ) 
-        # np.inf is multiplied by coefficient so that self.boundary is -inf if coefficient
-        # is negative; if a finite boundary value is passed, it is not multiplied by 
-        # coefficient
-        self.boundary = boundary if boundary is not None else np.inf * coefficient 
-        self.interval = Interval(
-            constant, boundary
-        ) if coefficient > 0 else Interval(
-            boundary, constant
+        elif np.isinf(hi):
+            if reversed_:
+                raise ValueError(
+                    'hi cannot be infinite for an ExponentialGuardrail if reversed_ is True'
+                )
+            if closed_hi or closed_hi is None:
+                warn_ = closed is not None and not closed
+                # This covers both the case where closed_hi is True, and where it is None:
+                # however, it is not necessary to issue a warning if closed_hi is None and
+                # closed is False, as in these cases, closed_hi would be given 
+                # the correct value of False anyway 
+                closed_hi = False
+                if warn_:
+                    warnings.warn(
+                        'If an ExponentialGuardrail has an infinite upper bound, (`hi=np.inf`), ' +
+                        '`closed_hi` must also `False`, so that `cooked` values may not ' + 
+                        'overflow the Float dtype in use'
+                    )
+        elif np.isinf(lo):
+            if not reversed_:
+                raise ValueError(
+                    'lo cannot be infinite for an ExponentialGuardrail if reversed_ is False'
+                )
+            if closed or closed is None:
+                # `closed` is used to set the closure of the `hi` and `lo` bounds if no value
+                # is provided for `closed_hi` (which may happen if these arguments are passed
+                # positionally, and only three arguments are passed), and is only used to set
+                # the `closed_lo` param if a value is provided for `closed_hi`. The default for
+                # `closed` is `True`, so if `closed is `True` or `None`, it must be coerced to 
+                # `False`; however, in these cases, if `closed_hi` is None, `closed_hi`
+                # was intended to be `True`, and should not be coerced to be `False` simply 
+                # simply because `closed` is being coerced 
+                if closed_hi is None:
+                    closed_hi = True
+                closed = False
+                warnings.warn(
+                    'If a reversed ExponentialGuardrail has an infinite lower bound, ' +
+                    '(`lo=-np.inf`), `closed_lo` must also be `False`, so that `cooked` values' +
+                    ' may not overflow the Float dtype in use'
+                )
+        super().__init__(
+            lo = lo,
+            hi = hi,
+            closed = closed,
+            closed_hi = closed_hi,
+            base_penalty = base_penalty,
+            manager = manager,
+            dtype = dtype,
+            reversed_ = reversed_
         )
-        self.bpf = boundary_penalty_func if boundary_penalty_func else lambda x: x
-        self.dtype = dtype
-        self.gm: GuardrailManager = manager if manager else GuardrailManager()
-        self.base_penalty = base_penalty
 
-    def __call__(self):
-        pass 
+    # def __init__(self,
+    #     coefficient: float = 1.0,
+    #     constant: float = 0.0,
+    #     boundary: float|None = None,
+    #     boundary_penalty_func: None|Callable = None,
+    #     base_penalty: float = 1.0,
+    #     manager: 'GuardrailManager' = None,
+    #     dtype: type = np.float32
+    # ):
+    #     if coefficient == 0:
+    #         raise ValueError(
+    #             'Coefficient cannot be zero: the range of permitted values' +
+    #             ' would be empty'
+    #         )
+    #     self.coeff = coefficient
+    #     self.raw_interval = Interval(
+    #         exp_arg_extremum(dtype, max=False),
+    #         exp_arg_extremum(dtype, max=True)
+    #     ) 
+    #     # np.inf is multiplied by coefficient so that self.boundary is -inf if coefficient
+    #     # is negative; if a finite boundary value is passed, it is not multiplied by 
+    #     # coefficient
+    #     self.boundary = boundary if boundary is not None else np.inf * coefficient 
+    #     self.interval = Interval(
+    #         constant, boundary
+    #     ) if coefficient > 0 else Interval(
+    #         boundary, constant
+    #     )
+    #     self.bpf = boundary_penalty_func if boundary_penalty_func else lambda x: x
+    #     self.dtype = dtype
+    #     self.gm: GuardrailManager = manager if manager else GuardrailManager()
+    #     self.base_penalty = base_penalty
 
-    def __repr__(self):
-        pass 
+    # def __call__(self):
+    #     pass 
+
+    # def __repr__(self):
+    #     pass 
 
 class GuardrailManager(defaultdict):
     gr_kinds = {

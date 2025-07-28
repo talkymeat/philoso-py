@@ -628,7 +628,6 @@ class SimpleGPScoreboardFactory(SimpleJSONable):
         self.dv = dv
         self.int_dtype = int_dtype
         self.float_dtype = float_dtype
-
  
     @property
     def json(self):
