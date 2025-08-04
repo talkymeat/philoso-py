@@ -1,7 +1,7 @@
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Sequence, Callable
+from typing import Any, Sequence, Callable, Protocol
 from collections import OrderedDict
 from functools import cached_property, reduce
 
@@ -14,6 +14,7 @@ from gp_fitness import SimpleGPScoreboardFactory
 from utils import scale_to_sum, InsufficientPostgraduateFundingError, _i, ArrayCrawler
 from guardrails import GuardrailManager
 from cuboid import Cuboid
+from m import MDict
 
 import torch
 import numpy as np
@@ -23,12 +24,26 @@ from torch.distributions import Bernoulli, Categorical, Normal
 
 from icecream import ic
 
+class Guardrailable(Protocol):
+    @property    
+    def param_specs(self) -> tuple[dict]:
+        ...
+
+def func_counts(guardrailable: Guardrailable) -> dict[int]:
+    counter = MDict()
+    for gp in guardrailable.param_specs:
+        f = gp.get('func')
+        counter[f] = counter.get(f, 0) + 1
+    return counter
 
 def min_dim(t: torch.Tensor) -> int:
     return len([d for d in t.shape if d > 1])
 
 def scale_unit_to_range(val, min_, max_):
     return min_ + (val * (max_ - min_))
+
+def scale_lin(val, coeff, const):
+    return const + (val * coeff)
 
 def space_2_distro(space: Space):
     if isinstance(space, Discrete):
@@ -176,17 +191,15 @@ class GPNew(Action):
         self.num_tf_opts = (
             len(self.tf_options) if len(self.tf_options) > 1 else 0
         ) 
-        self.nums_tf_params = [len(tf.tf_guardrail_params) for tf in self.tf_options]
+        # self.nums_tf_params = [len(tf.param_specs) for tf in self.tf_options]
+        self.tf_param_cts = [func_counts(tf) for tf in self.tf_options]
         self.world = world
-        self.num_wobf_params = len(self.world.wobf_param_ranges)
+        self.wobf_param_ct = func_counts(world)
         self.rng = rng
         self.out_dir = out_dir if isinstance(out_dir, Path) else Path(out_dir)
         self.t = time
         self.dv = dv 
-        self.log_range_mutation_sd = (
-            np.log(range_mutation_sd[0]),
-            np.log(range_mutation_sd[1])
-        )
+        self.range_mutation_sd = range_mutation_sd
         self.mutators = mutators
         self.num_mut_wts = (
             len(self.mutators) if len(self.mutators) > 1 else 0
@@ -271,8 +284,6 @@ class GPNew(Action):
                 Tanh, unscaled
             mutation_rate,
                 Tanh, unscaled
-            mutation_sd, # LogScaling
-                Tanh, unscaled
             max_depth,
                 Tanh, Scaled to [ceil(log2(size)), size/2], ceilinged
             elitism
@@ -302,22 +313,39 @@ class GPNew(Action):
             max depth and size should also be passed to TFs, as these maxima
             should be respected. This may clamp the `order` of the random 
             polynomial factory
+
+        The are also -inf to inf boxes which are instead stretched into shape by
+        a Exponential function. A separate sub-action head is used for these:
+
+            mutation_sd, # ExpScaling
+                Exp, unscaled
+
+        There may be other parameters in obs_params or tf_params that are also
+        specified to be Exp transformed, which will be gathered to be generated 
+        by this head
+
         """
         # XXX TODO: add a `log_box` head, for log-scaled params, reduce size of long_box (renamed tanh-box?)
         gp_register_sp = Discrete(len(self.gptb_list)) 
-        num_wobf_params = len(self.world.wobf_param_ranges)
-        num_tf_params = sum(self.nums_tf_params)
-        box_len = 9 + self.num_sb_weights + num_wobf_params + (
+        # num_wobf_params = len(self.world.wobf_param_ranges) XXX del
+        tanh_box_len = 8 + self.num_sb_weights + self.wobf_param_ct['tanh'] + (
             len(self.tf_options) if len(self.tf_options) > 1 else 0
         ) + (
-            num_tf_params
+            sum(self.tf_param_cts, start={}).get('tanh', 0)
         ) + (
             len(self.mutators) if len(self.mutators) > 1 else 0
         )
-        long_box = Box(low=-np.inf, high=np.inf, shape=(box_len,))
+        tanh_box = Box(low=-np.inf, high=np.inf, shape=(tanh_box_len,))
+        exp_box_len = (
+            1 + 
+            sum(self.tf_param_cts, start={}).get('exp', 0) + 
+            self.wobf_param_ct.get('exp', 0)
+        )
+        exp_box = Box(low=-np.inf, high=np.inf, shape=(exp_box_len,))
         return Dict({
             'gp_register': gp_register_sp,
-            'long_box': long_box
+            'tanh_box': tanh_box,
+            'exp_box': exp_box
         })
 
     def set_guardrails(self):
@@ -330,26 +358,27 @@ class GPNew(Action):
         self.guardrails.make('crossover_rate', lo=0, hi=1)
         self.guardrails.make('mutation_rate', lo=0, hi=1)
         self.guardrails.make(
-            'log_mutation_sd', 
-            lo=self.log_range_mutation_sd[0], 
-            hi=self.log_range_mutation_sd[1]
-        ) # LogScaling
+            'mutation_sd', 
+            lo=self.range_mutation_sd[0], 
+            hi=self.range_mutation_sd[1],
+            func='exp'
+        ) # ExpScaling
         self.guardrails.make('max_depth', lo=1, hi=np.inf)
         self.guardrails.make('elitism', lo=0, hi=1)
         self.guardrails.make('temp_coeff', lo=0, hi=np.inf)
         for i in range(len(self.mutators)):
             self.guardrails.make(f'mutator_wt_{i}', lo=0, hi=1)
-        self.obs_guardrail_names = []
-        for param in self.world.wobf_guardrail_params:
-            self.obs_guardrail_names.append(param['name'])
-            if '_no_make' not in param:
-                self.guardrails.make(**param)
-        self.tf_guardrail_names = []
+        #self.obs_guardrail_names = []
+        for param_spec in self.world.param_specs:
+            #self.obs_guardrail_names.append(param_spec['name'])
+            if '_no_make' not in param_spec:
+                self.guardrails.make(**param_spec)
+        #self.tf_guardrail_names = []
         for tf in self.tf_options:
-            for param in tf.tf_guardrail_params:
-                self.tf_guardrail_names.append(param['name'])
-                if '_no_make' not in param:
-                    self.guardrails.make(**param)
+            for param_spec in tf.param_specs:
+                #self.tf_guardrail_names.append(param_spec['name'])
+                if '_no_make' not in param_spec:
+                    self.guardrails.make(**param_spec)
 
     def process_action(self, 
         # XXX TODO this needs to handle `log_box` separately from `long_box`/`tanh_box`
@@ -357,40 +386,65 @@ class GPNew(Action):
         override: bool = False, **kwargs
     ):
         gp_register = int(in_vals['gp_register'][0])
-        raws = in_vals['long_box'][0]
-        arr = (torch.tanh(raws) + 1)/2
-        raws = ArrayCrawler(to_numpy(raws))
-        arr = ArrayCrawler(to_numpy(arr))
-        pop, max_size, episode_len = self.size_factor_cuboid(*arr(3))
-        pop = self.guardrails['pop'](raws(1), pop)
-        max_size = self.guardrails['max_size'](raws(1), max_size)
-        episode_len = self.guardrails['episode_len'](raws(1), episode_len)
+        raws = {'tanh': in_vals['tanh_box'][0], 'exp': in_vals['exp_box'][0]}
+        arr = {
+            'tanh': (torch.tanh(raws['tanh']) + 1)/2, 
+            'exp': torch.exp(raws['exp'])
+        }
+        raws = {k: ArrayCrawler(to_numpy(v)) for k, v in raws.items()}
+        arr = {k: ArrayCrawler(to_numpy(v)) for k, v in arr.items()}
+        pop, max_size, episode_len = self.size_factor_cuboid(*arr['tanh'](3))
+        pop = self.guardrails['pop'](raws['tanh'](1), pop)
+        max_size = self.guardrails['max_size'](raws['tanh'](1), max_size)
+        episode_len = self.guardrails['episode_len'](raws['tanh'](1), episode_len)
         # XXX TODO make this able to handle more weights
-        sb_weights = scale_to_sum(np.append(1.0, arr(self.num_sb_weights)))
+        sb_weights = scale_to_sum(np.append(1.0, arr['tanh'](self.num_sb_weights)))
         # XXX Watch out testing this: len(sb_weights) is one more than self.num_sb_weights XXX
         # XXX and the loop below didn't account for that: it only didn't make problems XXX
-        # XXX because it never ran XXX # LogScaling XXX TEST ME
-        for i, raw in zip(range(1, self.num_sb_weights+1), raws(self.num_sb_weights)):
+        # XXX because it never ran XXX # ExpScaling XXX TEST ME
+        for i, raw in zip(range(1, self.num_sb_weights+1), raws['tanh'](self.num_sb_weights)):
             sb_weights[i] = self.guardrails[f'sb_weight_{i}'](raw, sb_weights[i])
-        crossover_rate = self.guardrails['crossover_rate'](raws(1), arr(1)) # no scaling
-        mutation_rate = self.guardrails['mutation_rate'](raws(1), arr(1))  # no scaling
-        log_mutation_sd = self.guardrails['log_mutation_sd'](raws(1), arr(1))    # no scaling # LogScaling
+        crossover_rate = self.guardrails['crossover_rate'](raws['tanh'](1), arr['tanh'](1)) # no scaling
+        mutation_rate = self.guardrails['mutation_rate'](raws['tanh'](1), arr['tanh'](1))  # no scaling
+        mutation_sd = self.guardrails['mutation_sd'](raws['exp'](1), arr['exp'](1))    # no scaling # ExpScaling
         min_max_depth = np.ceil(np.log2(max_size))
         max_max_depth = max_size/2
-        max_depth = int(scale_unit_to_range(arr(1), min_max_depth, max_max_depth))
-        max_depth = self.guardrails['max_depth'](raws(1), max_depth)
-        elitism =  int(self.guardrails['elitism'](raws(1), arr(1))*pop)
-        temp_coeff = self.guardrails['temp_coeff'](raws(1), arr(1))*2
-        obs_params = arr(len(self.world.wobf_param_ranges))
-        obs_params_raw = raws(len(self.world.wobf_param_ranges))
-        obs_args = [scale_unit_to_range(val, *bounds) for val, bounds in zip(obs_params, self.world.wobf_param_ranges)]
-        obs_args = tuple([
-            self.guardrails[gr_name](raw_param, obs_arg) 
-            for raw_param, obs_arg, gr_name 
-            in zip(obs_params_raw, obs_args, self.obs_guardrail_names)
-        ])
-        tf_weights = arr(len(self.tf_options)) if len(self.tf_options) > 1 else None
+        max_depth = int(scale_unit_to_range(arr['tanh'](1), min_max_depth, max_max_depth))
+        max_depth = self.guardrails['max_depth'](raws['tanh'](1), max_depth)
+        elitism =  int(self.guardrails['elitism'](raws['tanh'](1), arr['tanh'](1))*pop)
+        temp_coeff = self.guardrails['temp_coeff'](raws['tanh'](1), arr['tanh'](1))*2
+        ######
+        obs_args = []
+        for param_spec in self.world.param_specs:
+            obs_arg = arr[param_spec['func']](1)
+            raw_param = raws[param_spec['func']](1)
+            if param_spec['func'] == 'tanh':
+                obs_arg = scale_unit_to_range(
+                    obs_arg, 
+                    param_spec.get('scale_lo', param_spec['lo']), 
+                    param_spec.get('scale_hi', param_spec['hi'])
+                )
+            elif param_spec['func'] == 'exp':
+                obs_arg = scale_lin(
+                    obs_arg, 
+                    param_spec.get('coeff', 1.0), 
+                    param_spec.get('const', 0.0)
+                )
+            obs_args.append(self.guardrails[param_spec['name']](raw_param, obs_arg))
+        # obs_params = arr(len(self.world.wobf_param_ranges))
+        # obs_params_raw = raws(len(self.world.wobf_param_ranges))
+        # obs_args = [scale_unit_to_range(val, *bounds) for val, bounds in zip(obs_params, self.world.wobf_param_ranges)]
+        # obs_args = tuple([
+        #     self.guardrails[gr_name](raw_param, obs_arg) 
+        #     for raw_param, obs_arg, gr_name 
+        #     in zip(obs_params_raw, obs_args, self.obs_guardrail_names)
+        # ])
+        tf_weights = arr['tanh'](len(self.tf_options)) if len(self.tf_options) > 1 else None
         tf_choices = None
+        ## XXX IMPORTANT: This is currently implemented without guardrails:
+        # which I now suspect is a bad idea, but since the models I'm working on
+        # only use one kind of TreeFactory, and so don't need tf_weights, I'm not
+        # going to fix this now
         if tf_weights:
             raws += len(tf_weights) # raws aren't needed for tf_weights, so if tf_weights is not None, skip raws ahead
             tf_weights = scale_to_sum(tf_weights)
@@ -400,19 +454,38 @@ class GPNew(Action):
                 tf_choices = self.tf_options[mask]
             else:
                 tf_choices = self.tf_options
-        all_tf_params = []
-        for tf, num_params in zip(self.tf_options, self.nums_tf_params):
-            if num_params:
-                tf_params = arr(num_params) if num_params != 1 else np.array([arr(num_params)], dtype=np.float32)
-                for i, (dic, param) in (enumerate(zip(ic(tf.tf_guardrail_params), ic(tf_params)))):
-                    tf_params[i] = self.guardrails[dic['name']](raws(1), param) 
-                all_tf_params.append(tf_params)
-            else:
-                all_tf_params.append(list())
+        all_tf_args = list()
+        for tf in self.tf_options:
+            tf_args = list()
+            for param_spec in tf.param_specs:
+                tf_arg = arr[param_spec['func']](1)
+                raw_param = raws[param_spec['func']](1)
+                if param_spec['func'] == 'tanh':
+                    tf_arg = scale_unit_to_range(
+                        tf_arg, 
+                        param_spec.get('scale_lo', param_spec['lo']), 
+                        param_spec.get('scale_hi', param_spec['hi'])
+                    )
+                elif param_spec['func'] == 'exp':
+                    tf_arg = scale_lin(
+                        tf_arg, 
+                        param_spec.get('coeff', 1.0), 
+                        param_spec.get('const', 0.0)
+                    )
+                tf_args.append(self.guardrails[param_spec['name']](raw_param, tf_arg))
+            all_tf_args.append(tf_args)
+        # for tf, num_params in zip(self.tf_options, self.nums_tf_params):
+        #     if num_params:
+        #         tf_params = arr(num_params) if num_params != 1 else np.array([arr(num_params)], dtype=np.float32)
+        #         for i, (dic, param) in (enumerate(zip(ic(tf.param_specs), ic(tf_params)))):
+        #             tf_params[i] = self.guardrails[dic['name']](raws(1), param) 
+        #         all_tf_params.append(tf_params)
+        #     else:
+        #         all_tf_params.append(list())
         mut8or_weights = None
         if len(self.mutators) > 1:
-            mut8or_weights = arr(len(self.mutators))
-            mut8or_raws = raws(len(self.mutators))
+            mut8or_weights = arr['tanh'](len(self.mutators))
+            mut8or_raws = raws['tanh'](len(self.mutators))
             for i, raw in zip(range(len(mut8or_weights)), mut8or_raws):
                 mut8or_weights[i] = self.guardrails[f'mutator_wt_{i}'](raw, mut8or_weights[i])
                 # XXX waaaaait why are mut8or_weights guardrailed and tf_weights aren't?
@@ -420,11 +493,11 @@ class GPNew(Action):
             gp_register, 
             tf_choices, 
             tf_weights, 
-            all_tf_params, 
+            all_tf_args, 
             pop,
             crossover_rate,
             mutation_rate,
-            log_mutation_sd, # np.exp(log_mutation_sd), # mutation_sd
+            mutation_sd, # np.exp(log_mutation_sd), # mutation_sd
             temp_coeff,
             max_depth,
             max_size,
@@ -457,7 +530,7 @@ class GPNew(Action):
         if isinstance(gp_register, torch.Tensor):
             gp_register = gp_register.item()
         observatory = self.world(*[_i(arg) for arg in obs_args])
-        tree_factory = self.get_tfs(tf_choices, tf_weights, tf_params, self.rng) # LogScaling
+        tree_factory = self.get_tfs(tf_choices, tf_weights, tf_params, self.rng) # ExpScaling
         scoreboard = self.sb_factory(observatory, _i(temp_coeff), sb_weights)
         if gp_register >= 0 and gp_register < len(self.gptb_list):
             self.gptb_cts[gp_register] += 1
@@ -541,7 +614,7 @@ class GPNew(Action):
             'pop': int(_i(pop)),
             'crossover_rate': _i(crossover_rate),
             'mutation_rate': _i(mutation_rate),
-            'mutation_sd': _i(mutation_sd), # LogScaling
+            'mutation_sd': _i(mutation_sd), # ExpScaling
             'max_depth': int(_i(max_depth)),
             'max_size': int(_i(max_size)),
             'episode_len': int(_i(episode_len)),
@@ -623,10 +696,12 @@ class GPContinue(Action):
         """
         # XXX TODO separate `misc_box` into `tanh_box` and `log_box`
         gp_register_sp = Discrete(len(self.gptb_list)) 
-        misc_box       = Box(low=0.0, high=1.0, shape=(5+self.num_mutators,))
+        tanh_box       = Box(low=0.0, high=1.0, shape=(4+self.num_mutators,))
+        exp_box       = Box(low=0.0, high=1.0, shape=(1,))
         return Dict({
             'gp_register': gp_register_sp,
-            'misc_box': misc_box
+            'tanh_box': tanh_box,
+            'exp_box': exp_box
         })
 
     def process_action(self, 
@@ -644,7 +719,7 @@ class GPContinue(Action):
             gp_register = in_vals['gp_register'].item()
             crossover_rate = self.guardrails['crossover_rate'](raws[0], arr[0]) # no scaling
             mutation_rate = self.guardrails['mutation_rate'](raws[1], arr[1])  # no scaling
-            log_mutation_sd = self.guardrails['log_mutation_sd'](raws[2], arr[2])  # no scaling  # LogScaling
+            mutation_sd = self.guardrails['mutation_sd'](raws[2], arr[2])  # no scaling  # ExpScaling
             elitism =  int(
                 _i(self.guardrails['elitism'](raws[3], arr[3]))*self.gptb_list[gp_register].pop
             ) if self.gptb_list[gp_register] else _i(self.guardrails['elitism'](raws[3], arr[3])) if override else -1
@@ -657,7 +732,7 @@ class GPContinue(Action):
                     mut8or_weights[i] = self.guardrails[f'mutator_wt_{i}'](raw, mut8or_weights[i])
         else:
             gp_register = -1
-            crossover_rate = mutation_rate = mutation_sd = temp_coeff = 0.0 # LogScaling
+            crossover_rate = mutation_rate = mutation_sd = temp_coeff = 0.0 # ExpScaling
             elitism = 0
             if self.num_mutators > 1:
                 mut8or_weights = [0.0]*self.num_mutators
@@ -665,7 +740,7 @@ class GPContinue(Action):
             gp_register, 
             crossover_rate,
             mutation_rate,
-            np.exp(log_mutation_sd), # mutation_sd
+            mutation_sd,
             temp_coeff,
             elitism,
             mut8or_weights
@@ -749,7 +824,7 @@ class GPContinue(Action):
             'gp_register': gp_register,
             'crossover_rate': _i(crossover_rate),
             'mutation_rate': _i(mutation_rate),
-            'mutation_sd': _i(mutation_sd), # LogScaling
+            'mutation_sd': _i(mutation_sd), # ExpScaling
             'temp_coeff': _i(temp_coeff),
             'elitism': _i(elitism) ,
             **{

@@ -188,7 +188,7 @@ class Interval:
                         "parameter is a string, no other params" +
                         "should be passed"
                     )
-            if m := re.match(r'([(\[]) *([-+]?[.0-9einf]+), *([-+]?[.0-9einf]+) *([)\]])', paramstring):
+            if m := re.match(r'([(\[]) *([-+]?[.0-9einf\-]+), *([-+]?[.0-9einf\-]+) *([)\]])', paramstring):
                 # regex does not specify exact float format, using float 
                 # conversion to catch malformed strings. However, I'm
                 # not `try...except`-ing these str-to-float conversions, 
@@ -357,7 +357,8 @@ class FuncGuardrail:
             base_penalty: float = 1.0,
             manager: 'GuardrailManager' = None,
             dtype: type = np.float32,
-            reversed_: bool = None
+            reversed_: bool = None,
+            **kwargs
         ) -> None:
         closed = True if closed is None else closed
         closed_hi = closed if closed_hi is None else closed_hi
@@ -469,7 +470,8 @@ class ExponentialGuardrail(FuncGuardrail):
             base_penalty: float = 1.0,
             manager: 'GuardrailManager' = None,
             dtype: type[Float] = np.float32,
-            reversed_: bool = False
+            reversed_: bool = False,
+            **kwargs
         ) -> None:
         """The parameters passed to initialise an exponential guardrail behave slightly
         differently; an exponentially transformed NN output may be translated along the 
@@ -602,22 +604,20 @@ class GuardrailManager(defaultdict):
     def make(
             self,
             name, 
-            kind: str = 'tanh',
+            func: str = 'tanh',
             base_penalty: float = None,
             **kwargs
         ):
-        if '_no_make' in kwargs or kind=='null':
+        if '_no_make' in kwargs or func=='null':
             return
-        if kind not in self.gr_kinds:
-            raise ValueError(f'Invalid guardrail type, : {kind}')
-        GR = self.gr_kinds[kind]
-        gr = GR(
+        if func not in self.gr_kinds:
+            raise ValueError(f'Invalid guardrail type, : {func}')
+        self[name] = self.gr_kinds[func](
             manager=self,
             base_penalty = base_penalty if base_penalty is not None else self.base_penalty,
             **kwargs
         )
-        self[name] = gr
-        return gr
+        return self[name]
 
 #     def make(
 #             self,
