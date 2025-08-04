@@ -23,6 +23,17 @@ T = TypeVar('T')
 Var:   TypeAlias = tuple[type, str]
 Const: TypeAlias = tuple[type[T], Callable[[], T]]
 
+"""XXX IMPORTANT XXX
+
+The version of `param_specs` in `RandomAlgebraicTreeFactory` and
+`SimpleRandomAlgebraicTreeFactory` are the way I want `TreeFactories`
+to represent the way their NN-settable parameters work; however, I only 
+need these two to work for the moment, so the others are lefted
+incompatible with the expectations of other philoso.py classes; these
+will need to be fixed to conform to the new standard before they are used 
+again
+"""
+
 class TreeFactory(ABC):
     @property
     @abstractmethod
@@ -67,7 +78,7 @@ class TreeFactory(ABC):
         return tuple()
 
     @property
-    def tf_guardrail_params(self) -> tuple[str]:
+    def param_specs(self) -> tuple[str]:
         return tuple()
 
 
@@ -183,7 +194,7 @@ class RandomPolynomialFactory(TreeFactory):
         # return ('order', 'const_min', 'const_max')
 
     @property
-    def tf_guardrail_params(self):
+    def param_specs(self):
         return ((1., 25.), (-np.inf, np.inf), (-np.inf, np.inf))
     
     @property
@@ -1227,7 +1238,8 @@ class RandomTreeFactory(TreeFactory):
             ss.perform_substitution(self.rand_var_else_const(ss.label.class_id))
             subsites = t.get_all_substitution_sites()
         return t
-    
+
+
 class RandomAlgebraicTreeFactory(RandomTreeFactory):
     # _act_param_space = Box(
     #     low=0.0,
@@ -1236,8 +1248,8 @@ class RandomAlgebraicTreeFactory(RandomTreeFactory):
     # )
     # _act_param_names = ['const_abs_max']
     # _param_prefix = 'rand_alg_tf'
-    _tf_base_param_ranges = ((0.0, 1.0),)
-    _tf_param_ranges = ((-np.inf, 0.0),)
+    _tf_param_ranges = ((0.0, np.inf),)
+    #_tf_base_param_ranges = ((-np.inf, 0.0),)
     prefix = "rand_alg_tf"
 
     @classmethod
@@ -1247,12 +1259,15 @@ class RandomAlgebraicTreeFactory(RandomTreeFactory):
 
     @classmethod
     @property
-    def tf_guardrail_params(cls):
+    def param_specs(cls):
         return (
             {
-                'name': f'{cls.prefix}_log_float_const_sd', 
+                'name': f'{cls.prefix}_const_sd', 
                 'lo': cls.tf_param_ranges[0][0], 
-                'hi': cls.tf_param_ranges[0][1]
+                'hi': cls.tf_param_ranges[0][1],
+                'const': 0.0,
+                'coeff': 1.0,
+                'func': 'exp'
             }, 
         )
 
@@ -1267,22 +1282,15 @@ class RandomAlgebraicTreeFactory(RandomTreeFactory):
     def json(cls):
         return {
             "range_abs_tree_factory_float_constants": [
-                cls._tf_base_param_ranges[0][0], 
-                cls._tf_base_param_ranges[0][1]
+                list(cls._tf_base_param_ranges[0])
             ]
         }
 
     @classmethod
     def factory(cls, range_abs_tree_factory_float_constants: list[float, float]=[0.0, np.inf]):
-        if range_abs_tree_factory_float_constants[0] > 0:
-            low = np.log(range_abs_tree_factory_float_constants[0])
-        elif range_abs_tree_factory_float_constants[0] == 0:
-            low = -np.inf
-        else:
-            raise ValueError(f'Log of a negative number is underfined')
-        if range_abs_tree_factory_float_constants[1] > low:
-            high = np.log(range_abs_tree_factory_float_constants[1])
-        else:
+        if range_abs_tree_factory_float_constants[0] < 0:
+            raise ValueError(f'Absolute value cannot be negative')
+        if range_abs_tree_factory_float_constants[1] < range_abs_tree_factory_float_constants[1]:
             raise ValueError(
                 'the upper bound must be greater than the lower'
             )
@@ -1290,8 +1298,7 @@ class RandomAlgebraicTreeFactory(RandomTreeFactory):
             cls.__name__, 
             (cls,),
             {
-                "_tf_param_ranges": ((low, high),),
-                "_tf_base_param_ranges": (range_abs_tree_factory_float_constants,),
+                "_tf_param_ranges": (range_abs_tree_factory_float_constants,),
                 "_param_prefix": f'bounded_{cls.prefix}'
             }
         )
@@ -1328,7 +1335,7 @@ class RandomAlgebraicTreeFactory(RandomTreeFactory):
         )
 
     def interpret(log_float_const_sd):
-        return {'sra_tf_log_float_const_sd': log_float_const_sd}
+        return {'sra_tf_const_sd': log_float_const_sd}
     
 class SimpleRandomAlgebraicTreeFactory(RandomAlgebraicTreeFactory):
     prefix = 'sra_tf'
@@ -1342,7 +1349,7 @@ class SimpleRandomAlgebraicTreeFactory(RandomAlgebraicTreeFactory):
         templates = (
             (float, 'POLY', (float, float, int, float)),
             (float, 'x'),
-            (float, lambda: self.np_random.normal(0, float_const_sd)), # LogScaling
+            (float, lambda: self.np_random.normal(0, float_const_sd)), # ExpScaling
             (int, lambda: self.np_random.integers(10))
         )
         root_types = [float] 

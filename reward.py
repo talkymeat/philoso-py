@@ -35,12 +35,13 @@ class Reward(SimpleJSONable, ABC):
             for ag in self.model.agents
         }).astype(self.dtype)
 
-    def __call__(self) -> MDict[str, float]:
-        return self.process_reward(self.get_reward_data())
+    def __call__(self, verbose=True) -> MDict[str, float]:
+        return self.process_reward(self.get_reward_data(), verbose=verbose)
 
-    def process_reward(self, rewards, *args) -> MDict[str, float]:
-        _print(f'{self.__name__} rewards:')
-        _print(rewards)
+    def process_reward(self, rewards, *args, verbose=True) -> MDict[str, float]:
+        if verbose:
+            _print(f'{self.__name__} rewards:')
+            _print(rewards)
         self.record.loc[len(self.record)] = {
             f'{k}__{self.__name__}': v
             for k, v in rewards.items()
@@ -69,46 +70,56 @@ class Curiosity(Reward):
     in each agent's own memory repositories.
     
     >>> from philoso_py import example_model
-    OK
     >>> from gp import GPTreebank
-    >>> from test_materials import T0, T1, T2, T3, T4, T5
-    >>> from utils import aeq
-    >>> model = example_model(seed=42)
+    >>> from test_materials import T0, T1, T2B, T3, T4B, T5
+    >>> from utils import aeq, _i
+    >>> import warnings
+    >>> with warnings.catch_warnings():
+    ...     warnings.filterwarnings("ignore")
+    ...     model = example_model(seed=42)
     Seed: 42
+    cpu
+    cpu
+    cpu
+    cpu
+    cpu
+    cpu
+    cpu
+    cpu
     >>> model.agents[0].ac.gptb_list[0] = GPTreebank()
     >>> tt0 = T0.copy_out(model.agents[0].ac.gptb_list[0])
-    >>> dummy_data = {'mse': 1.0, 'rmse': 1.0, 'wt_depth': 0.2, 'crossover_rate': 0.2, 
-    ...     'wt_size': 0.3, 'obs_stop':10.1, 'depth': 4, 'pop': 99, 'mutation_sd': 0.4, 'max_depth': 25, 
-    ...     'mutation_rate': 0.3, 'wt_fitness': 1.0, 'max_size': 55, 'raw_fitness': 0.9, 
+    >>> dummy_data = {'mse': 1.0, 'rmse': 1.0, 'crossover_rate': 0.2, 
+    ...     'obs_stop':10.1, 'depth': 4, 'pop': 99, 'mutation_sd': 0.4, 'max_depth': 25, 
+    ...     'mutation_rate': 0.3, 'max_size': 55, 'raw_fitness': 0.9, 'value': 9.9,
     ...     'temp_coeff': 0.5, 'size': 13, 'obs_start':9.9, 'obs_num': 100, 'elitism':0.1}
     >>> model.agents[0].ac.memory.insert_tree(tt0, 0, 0, fitness=0.9, **dummy_data)
-    >>> aeq(model.rewards[0]()['a0'], 1.0)
+    >>> _i(aeq(model.rewards[0](verbose=False)['ag_0'], 1.0))
     True
     >>> model.t.tick()
-    >>> aeq(model.rewards[0]()['a0'], 0.0)
+    >>> _i(aeq(model.rewards[0](verbose=False)['ag_0'], 0.0))
     True
     >>> model.t.tick()
     >>> tt1 = T1.copy_out(model.agents[0].ac.gptb_list[0])
     >>> model.agents[0].ac.memory.insert_tree(tt1, 1, 0, fitness=2.7, **dummy_data)
-    >>> aeq(model.rewards[0]()['a0'], 3.0)
+    >>> _i(aeq(model.rewards[0](verbose=False)['ag_0'], 3.0))
     True
     >>> model.t.tick()
-    >>> tt2 = T2.copy_out(model.agents[0].ac.gptb_list[0])
+    >>> tt2 = T2B.copy_out(model.agents[0].ac.gptb_list[0])
     >>> model.agents[0].ac.memory.insert_tree(tt2, 1, 0, fitness=0.9, **dummy_data)
-    >>> aeq(model.rewards[0]()['a0'], -0.5)
+    >>> _i(aeq(model.rewards[0](verbose=False)['ag_0'], -0.5))
     True
     >>> model.t.tick()
-    >>> aeq(model.rewards[0]()['a0'], -0.5)
+    >>> _i(aeq(model.rewards[0](verbose=False)['ag_0'], -0.5))
     True
     >>> model.t.tick()
     >>> tt3 = T3.copy_out(model.agents[0].ac.gptb_list[0])
     >>> model.agents[0].ac.memory.insert_tree(tt3, 1, 0, fitness=1.8, **dummy_data)
-    >>> aeq(model.rewards[0]()['a0'], -0.25)
+    >>> _i(aeq(model.rewards[0](verbose=False)['ag_0'], -0.25))
     True
     >>> model.t.tick()
-    >>> tt4 = T4.copy_out(model.agents[0].ac.gptb_list[0])
+    >>> tt4 = T4B.copy_out(model.agents[0].ac.gptb_list[0])
     >>> model.agents[0].ac.memory.insert_tree(tt4, 1, 1, fitness=1.8, **dummy_data)
-    >>> aeq(model.rewards[0]()['a0'], 0.25)
+    >>> _i(aeq(model.rewards[0](verbose=False)['ag_0'], 0.25))
     True
     """
     args = ['dtype', "def_fitness", "first_finding_bonus"]
@@ -160,12 +171,22 @@ class Renoun(Reward):
     """Gathers rewards for all agents besed on their contributin to shared repositories
     
     >>> from philoso_py import example_model
-    OK
     >>> from gp import GPTreebank
     >>> from test_materials import T0, T1, T2, T3, T4, T5
     >>> from utils import aeq
-    >>> model = example_model(seed=42)
+    >>> import warnings
+    >>> with warnings.catch_warnings():
+    ...     warnings.filterwarnings("ignore")
+    ...     model = example_model(seed=42)
     Seed: 42
+    cpu
+    cpu
+    cpu
+    cpu
+    cpu
+    cpu
+    cpu
+    cpu
     >>> model.agents[0].ac.gptb_list[0] = GPTreebank()
     >>> tt0 = T0.copy_out(model.agents[0].ac.gptb_list[0])
     >>> dummy_data = {'mse': 1.0, 'rmse': 1.0, 'wt_depth': 0.2, 'crossover_rate': 0.2, 

@@ -450,17 +450,17 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output'), model_id='te
         agent.ac.model = model
     model.add_reward(
         Curiosity(
-            model, 'fitness', 1.0
+            model, np.float64, 'fitness', 1.0
         )
     )
     model.add_reward(
         Renoun(
-            model
+            model, np.float64
         )
     )
     model.add_reward(
         GuardrailCollisions(
-            model
+            model, np.float64
         )
     )
     return model

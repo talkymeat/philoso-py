@@ -109,8 +109,10 @@ GP = GPTreebank(operators=[ops.SUM, ops.PROD, ops.SQ, ops.CUBE, ops.POW], tree_f
 T0 = GP.tree('([float]<SUM>([float]<SQ>([float]<SUM>([float]<SQ>([int]$mu))([float]<SUM>([float]<PROD>([int]3)([int]$mu))([int]2))))([float]<SUM>([float]<PROD>([int]3)([int]$mu))([int]2)))')
 T1 = GP.tree('([float]<PROD>([int]3)([int]2))')
 T2 = GP.tree('([int]5)')
+T2B = GP.tree('([float]<PROD>([int]37)([int]43))')
 T3 = GP.tree('([float]<PROD>([int]7)([int]11))')
 T4 = GP.tree('([int]13)')
+T4B = GP.tree('([float]<PROD>([int]7)([int]99))')
 T5 = GP.tree('([float]<SUM>([float]<SQ>([float]<SUM>([float]<SQ>([int]17))([float]<SUM>([float]<PROD>([int]3)([int]19))([int]2))))([float]<SUM>([float]<PROD>([int]3)([int]23))([int]2)))')
 TF = TestTreeFactory(T0)
 

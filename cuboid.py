@@ -105,8 +105,9 @@ class Cuboid:
     def solve_quadratic(self, a, b, c):
         """Solves a quadratic, given input values a, b, c, using the quadratic formula
         
+        >>> from utils import _i
         >>> c = Cuboid(5,3,2,1000000)
-        >>> c.solve_quadratic(2,6,4)
+        >>> tuple([_i(b) for b in c.solve_quadratic(2,6,4)])
         (-1.0, -2.0)
         """
         det = np.sqrt(b**2 - 4*a*c)

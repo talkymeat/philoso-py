@@ -729,7 +729,7 @@ class NullMutatorFactory(MutatorFactory):
     >>> (raw_arr == np.array(T6())).all().item()
     True
     >>> sum_arr = np.zeros(4, dtype=np.complex128)
-    >>> n = 1024*16
+    >>> n = 1024*64
     >>> eta = 0.15
     >>> for _ in range(n):
     ...     t6_copy = T6.copy(gp_copy=True)

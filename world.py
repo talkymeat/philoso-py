@@ -39,7 +39,7 @@ class World(Actionable, SimpleJSONable):
 
     @property
     @abstractmethod
-    def wobf_guardrail_params(self):
+    def param_specs(self):
         pass
 
     @property
@@ -973,12 +973,41 @@ class SineWorld(World):
     def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
         return self.range, self.range, (2, self.max_observation_size)
 
+    # XXX This was used in earlier tests, but was ditched for consistency
+    # with changes made when introducing the ExponentialGuardrail; probably
+    # should do some tests reruning old stuff with the updated
+    # `wobf_param_ranges`. Not reruning everything, just one or two to ensure
+    # it's not changing anything dramatic XXX XXX XXX
+    # @property    
+    # def param_specs(self):
+    #     return (
+    #         {'name': '_', '_no_make': None}, 
+    #         {'name': '_', '_no_make': None}, 
+    #         {'name': 'obs_len', 'lo': 2, 'hi': np.inf}
+    #     )
+
     @property    
-    def wobf_guardrail_params(self):
+    def param_specs(self):
         return (
-            {'name': '_', '_no_make': None}, 
-            {'name': '_', '_no_make': None}, 
-            {'name': 'obs_len', 'lo': 2, 'hi': np.inf}
+            {
+                'name': 'obs_start', 
+                'lo': self.range[0], 
+                'hi': self.range[1], 
+                'func': 'tanh'
+            }, 
+            {
+                'name': 'obs_stop', 
+                'lo': self.range[0], 
+                'hi': self.range[1], 
+                'func': 'tanh'
+            }, 
+            {
+                'name': 'obs_len', 
+                'lo': 2, 
+                'hi': np.inf, 
+                'hi_scale': self.max_observation_size,
+                'func': 'tanh'
+            }
         )
 
     # def act(self, params: np.ndarray):
@@ -1068,17 +1097,29 @@ class SineWorld2(SineWorld):
     def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
         return self.range, self.range
 
+    # XXX This was used in earlier tests, but was ditched for consistency
+    # with changes made when introducing the ExponentialGuardrail; probably
+    # should do some tests reruning old stuff with the updated
+    # `wobf_param_ranges`. Not reruning everything, just one or two to ensure
+    # it's not changing anything dramatic XXX XXX XXX
+    # @property    
+    # def param_specs(self):
+    #     return (
+    #         {'name': '_', '_no_make': None}, 
+    #         {'name': '_', '_no_make': None}
+    #     )
+
     @property    
-    def wobf_guardrail_params(self):
+    def param_specs(self):
         return (
-            {'name': '_', '_no_make': None}, 
-            {'name': '_', '_no_make': None}
+            {'name': 'obs_start', 'lo': self.range[0], 'hi': self.range[1], 'func': 'tanh'}, 
+            {'name': 'obs_stop', 'lo': self.range[0], 'hi': self.range[1], 'func': 'tanh'}, 
         )
 
-    # def act(self, params: np.ndarray):
-    #     super().act(params)
-    #     start, stop = tuple(np.sort(params).astype(self.dtype))
-    #     return SineWorldObservatory(self.iv, self.dv, world=self, start=start, stop=stop, num=self.max_observation_size) 
+    def act(self, params: np.ndarray):
+        super().act(params)
+        start, stop = tuple(np.sort(params).astype(self.dtype))
+        return SineWorldObservatory(self.iv, self.dv, world=self, start=start, stop=stop, num=self.max_observation_size) 
     
     def interpret(self, start: float, stop: float):
         return {
@@ -1099,6 +1140,27 @@ class SineWorld3(SineWorld2):
             dtype=self.dtype
         )
 
+    @property    
+    def param_specs(self) -> tuple[dict]:
+        return (
+            {
+                'name': 'obs_centre', 
+                'lo': self.range[0], 
+                'hi': self.range[1], 
+                'func': 'tanh'
+            }, 
+            {
+                'name': 'obs_radius', 
+                'lo': 1.0/(self.range[1]-self.range[0]), 
+                'hi': self.range[1]-self.range[0], 
+                'func': 'exp'
+            }, 
+        )
+
+    @property
+    def wobf_param_ranges(self) -> tuple[tuple[int, int]]:
+        return self.range, (1.0/(self.range[1]-self.range[0]), self.range[1]-self.range[0]) # XXX ???
+
     def __call__(
             self, centre: float, log_radius: float, **kwargs: Any
         ) -> Observatory:
@@ -1118,7 +1180,7 @@ class SineWorld3(SineWorld2):
         )
     
     def interpret(self, centre: float, log_radius: float, ):
-        radius = float(np.exp(log_radius))
+        radius = float(np.exp(log_radius)) # XXX Exp-ing should be shifted into Action, along with other Exp Params
         start = max(centre-radius, self.range[0])
         stop  = min(centre+radius, self.range[1])
         return {
@@ -1127,20 +1189,22 @@ class SineWorld3(SineWorld2):
             'obs_width': stop-start,
         }   
 
-    @property
-    def wobf_guardrail_params(self):
-        return (
-            {
-                'name': 'obs_centre', 
-                'lo': self.range[0], 
-                'hi': self.range[1]
-            }, 
-            {
-                'name': 'obs_log_radius', 
-                'lo': -np.inf,
-                'hi': np.log(self.range[1]-self.range[0])
-            }
-        )
+    # @property
+    # def param_specs(self):
+    #     return (
+    #         {
+    #             'name': 'obs_centre', 
+    #             'lo': self.range[0], 
+    #             'hi': self.range[1] #,
+    #             # 'func': 'tanh'
+    #         }, 
+    #         {
+    #             'name': 'obs_log_radius', 
+    #             'lo': -np.inf,
+    #             'hi': np.log(self.range[1]-self.range[0]) #,
+    #             # 'func': 'tanh'
+    #         }
+    #     )
     
 
 

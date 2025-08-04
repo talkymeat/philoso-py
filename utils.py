@@ -6,8 +6,7 @@ import numpy as np
 from typing import Any, Callable
 from functools import reduce
 import torch
-import re
-
+import re, os, sys
 
 def scale_to_sum(arr: np.ndarray, _sum=1) -> np.ndarray:
     return arr/arr.sum() * _sum
@@ -397,7 +396,7 @@ class ArrayCrawler:
 
     def __call__(self, num: int=0):
         if self.i + num > len(self.array):
-            raise IndexOutOfBoundsError(
+            raise IndexError(
                 f"i={self.i}, {num=}, i+num={self.i+num}, but the array length " +
                 f"is {len(self.array)}"
             )
@@ -413,6 +412,16 @@ class ArrayCrawler:
 
     def __iadd__(self, num: int):
         self.i += num
+
+
+class HiddenPrints:
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        sys.stdout = open(os.devnull, 'w')
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout.close()
+        sys.stdout = self._original_stdout
 
 def main():
     import doctest

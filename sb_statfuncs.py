@@ -226,22 +226,23 @@ class Quantile(SimpleJSONable):
             float : between 0.0 and 1.0 inclusive
 
         >>> from test_materials import col, nans, infs
+        >>> i = lambda x: x if isinstance(x, float) and not isinstance(x, np.float64) else x.item()
         >>> np.random.shuffle(col)
-        >>> [q(col) for q in Quantile.multi(5)] 
+        >>> [i(q(col)) for q in Quantile.multi(5)] 
         [1.0, 8.75, 16.0, 32.5, 69.0]
-        >>> [q(col+nans) for q in Quantile.multi(5)] 
+        >>> [i(q(col+nans)) for q in Quantile.multi(5)] 
         [1.0, 8.75, 16.0, 32.5, 69.0]
-        >>> [q(col+infs) for q in Quantile.multi(5)] 
+        >>> [i(q(col+infs)) for q in Quantile.multi(5)] 
         [1.0, 8.75, 16.0, 32.5, 69.0]
-        >>> [q(col+nans+infs) for q in Quantile.multi(5)] 
+        >>> [i(q(col+nans+infs)) for q in Quantile.multi(5)] 
         [1.0, 8.75, 16.0, 32.5, 69.0]
-        >>> [q(nans*4) for q in Quantile.multi(5)] 
+        >>> [i(q(nans*4)) for q in Quantile.multi(5)] 
         [0.0, 0.0, 0.0, 0.0, 0.0]
-        >>> [q(infs*4) for q in Quantile.multi(5)] 
+        >>> [i(q(infs*4)) for q in Quantile.multi(5)] 
         [0.0, 0.0, 0.0, 0.0, 0.0]
-        >>> [q(nans*2+infs*2) for q in Quantile.multi(5)] 
+        >>> [i(q(nans*2+infs*2)) for q in Quantile.multi(5)] 
         [0.0, 0.0, 0.0, 0.0, 0.0]
-        >>> [q([5.0]*16) for q in Quantile.multi(5)] 
+        >>> [i(q([5.0]*16)) for q in Quantile.multi(5)] 
         [5.0, 5.0, 5.0, 5.0, 5.0]
         """
         col = _filter_col(col)
