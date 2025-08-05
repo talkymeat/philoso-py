@@ -149,6 +149,31 @@ class Action(ABC):
             for sub_name, sub_logits
             in logits.items()
         })
+
+def tanh_scaled_to_unit(raws: torch.tensor) -> torch.tensor:
+    return (torch.tanh(raws) + 1)/2
+
+FUNCS = {
+    'tanh': tanh_scaled_to_unit,
+    'exp': torch.exp
+}
+
+def prep_raws(
+        in_vals: OrderedDict[str, torch.tensor],
+        suffix: str = '_box',
+        funcs: dict[Callable] = FUNCS
+    ) -> tuple[dict[str, ArrayCrawler]]:
+    funcnames = [k[:-len(suffix)] for k in in_vals.keys() if k.endswith(suffix)]
+    for name in funcnames:
+        if name not in funcs:
+            raise ValueError(
+                f'{name} function not provided for {name}{suffix}.'
+            )
+    raws = {name: in_vals[f'{name}{suffix}'][0] for name in funcnames}
+    arr = {name: funcs[name](raws[name]) for name in funcnames}
+    raws = {k: ArrayCrawler(to_numpy(v)) for k, v in raws.items()}
+    arr = {k: ArrayCrawler(to_numpy(v)) for k, v in arr.items()}
+    return raws, arr
         
 
 # GP should put hyperparam and obs param data in self.best, so that's available when it's called by storemem, etc
@@ -386,13 +411,7 @@ class GPNew(Action):
         override: bool = False, **kwargs
     ):
         gp_register = int(in_vals['gp_register'][0])
-        raws = {'tanh': in_vals['tanh_box'][0], 'exp': in_vals['exp_box'][0]}
-        arr = {
-            'tanh': (torch.tanh(raws['tanh']) + 1)/2, 
-            'exp': torch.exp(raws['exp'])
-        }
-        raws = {k: ArrayCrawler(to_numpy(v)) for k, v in raws.items()}
-        arr = {k: ArrayCrawler(to_numpy(v)) for k, v in arr.items()}
+        raws, arr = prep_raws(in_vals)
         pop, max_size, episode_len = self.size_factor_cuboid(*arr['tanh'](3))
         pop = self.guardrails['pop'](raws['tanh'](1), pop)
         max_size = self.guardrails['max_size'](raws['tanh'](1), max_size)
@@ -456,7 +475,7 @@ class GPNew(Action):
                 tf_choices = self.tf_options
         all_tf_args = list()
         for tf in self.tf_options:
-            tf_args = list()
+            tf_args = dict()
             for param_spec in tf.param_specs:
                 tf_arg = arr[param_spec['func']](1)
                 raw_param = raws[param_spec['func']](1)
@@ -472,7 +491,7 @@ class GPNew(Action):
                         param_spec.get('coeff', 1.0), 
                         param_spec.get('const', 0.0)
                     )
-                tf_args.append(self.guardrails[param_spec['name']](raw_param, tf_arg))
+                tf_args[param_spec['name']] = self.guardrails[param_spec['name']](raw_param, tf_arg)
             all_tf_args.append(tf_args)
         # for tf, num_params in zip(self.tf_options, self.nums_tf_params):
         #     if num_params:
@@ -711,23 +730,20 @@ class GPContinue(Action):
         # Some refactoring would be good: this would make a good
         # parent class to GPNew
         # XXX TODO separate handling of
-        raws = in_vals['misc_box'][0]
-        arr = (torch.tanh(raws) + 1)/2
-        raws = to_numpy(raws)
-        arr = to_numpy(arr)
+        raws, arr = prep_raws(in_vals)
         if self.gptb_list[in_vals['gp_register'].item()] or override:
             gp_register = in_vals['gp_register'].item()
-            crossover_rate = self.guardrails['crossover_rate'](raws[0], arr[0]) # no scaling
-            mutation_rate = self.guardrails['mutation_rate'](raws[1], arr[1])  # no scaling
-            mutation_sd = self.guardrails['mutation_sd'](raws[2], arr[2])  # no scaling  # ExpScaling
+            crossover_rate = self.guardrails['crossover_rate'](raws['tanh'](1), arr['tanh'](1)) # no scaling
+            mutation_rate = self.guardrails['mutation_rate'](raws['tanh'](1), arr['tanh'](1))  # no scaling
+            mutation_sd = self.guardrails['mutation_sd'](raws['exp'](1), arr['exp'](1))  # no scaling  # ExpScaling
             elitism =  int(
-                _i(self.guardrails['elitism'](raws[3], arr[3]))*self.gptb_list[gp_register].pop
-            ) if self.gptb_list[gp_register] else _i(self.guardrails['elitism'](raws[3], arr[3])) if override else -1
-            temp_coeff = _i(self.guardrails['temp_coeff'](raws[4], arr[4]))*2
+                _i(self.guardrails['elitism'](raws['tanh'](1), arr['tanh'](1)))*self.gptb_list[gp_register].pop
+            ) if self.gptb_list[gp_register] else _i(self.guardrails['elitism'](raws['tanh'](1), arr['tanh'](1))) if override else -1
+            temp_coeff = _i(self.guardrails['temp_coeff'](raws['tanh'](1), arr['tanh'](1)))*2
             mut8or_weights = None
             if self.num_mutators > 1:
-                mut8or_weights = arr[5:]
-                mut8or_raws = raws[5:]
+                mut8or_weights = arr['tanh'](self.num_mutators)
+                mut8or_raws = raws['tanh'](self.num_mutators)
                 for i, raw in zip(range(len(mut8or_weights)), mut8or_raws):
                     mut8or_weights[i] = self.guardrails[f'mutator_wt_{i}'](raw, mut8or_weights[i])
         else:

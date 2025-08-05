@@ -1,5 +1,5 @@
 import unittest
-from test_materials import paramarama, shhhh
+from test_materials import paramarama, shhhh, DummyTreebank
 from philoso_py import ModelFactory
 from action import scale_unit_to_range
 import logging
@@ -10,7 +10,7 @@ import torch
 from collections import OrderedDict
 import numpy as np
 
-PARAM_NAMES = (
+PARAM_NAMES_NEW = (
     'gp_register', # own head
     'tf_choices', # --
     'tf_weights', # --
@@ -27,6 +27,16 @@ PARAM_NAMES = (
     'sb_weights', # --
     'obs_args', # 9-10: 9 loc, 10 log rad
     'mut8or_weights' # 12-13
+)
+
+PARAM_NAMES_CONTINUE = (
+    'gp_register', 
+    'crossover_rate',
+    'mutation_rate',
+    'mutation_sd',
+    'temp_coeff',
+    'elitism',
+    'mut8or_weights'
 )
 
 class TestActions(unittest.TestCase):
@@ -161,7 +171,7 @@ class TestActions(unittest.TestCase):
         action['exp_box'][0][1] = 1.0
         action['exp_box'][0][2] = np.log(0.01)
         act_params = gp_new.process_action(action, log=self.log.debug)
-        params = dict(zip(PARAM_NAMES, act_params))
+        params = dict(zip(PARAM_NAMES_NEW, act_params))
         self.assertEqual(params['gp_register'], 0)
         self.assertIsNone(params['tf_choices'])
         self.assertIsNone(params['tf_weights'])
@@ -173,7 +183,7 @@ class TestActions(unittest.TestCase):
         self.assertEqual(params['mutation_rate'], 0.5)
         self.assertEqual(params['temp_coeff'], 1)
         self.assertEqual(params['max_depth'], np.ceil((np.floor(np.log2(params['max_size'])) + params['max_size']/2)/2))
-        self.assertEqual(params['elitism'], int(params['max_size']/2))
+        self.assertEqual(params['elitism'], int(params['pop']/2))
         self.assertEqual(params['sb_weights'], [1])
         self.assertListEqual(list(params['mut8or_weights']), [0.5, 0.5])
         self.assertAlmostEqual(params['all_tf_params'][0][0], 0.01)
@@ -191,14 +201,46 @@ class TestActions(unittest.TestCase):
                 'exp_box': torch.log(randvals)
             })
             act_params = gp_new.process_action(action, log=self.log.debug)
-            params = dict(zip(PARAM_NAMES, act_params))
+            params = dict(zip(PARAM_NAMES_NEW, act_params))
             self.assertAlmostEqual(params['mutation_sd'], randvals[0][0]) # 0
             self.assertEqual(params['obs_args'][1], randvals[0][1]) # 1
             self.assertAlmostEqual(params['all_tf_params'][0][0], randvals[0][2]) # 2
-        
-    def test_gp_continue(self):
+
+    def test_gp_continue_process_action(self):
         gp_continue = self.get_action('gp_continue')
-        self.assertTrue(1==1)
+        gp_continue.gptb_list[0] = DummyTreebank()
+        gp_continue.gptb_cts[0] = 1
+        action = OrderedDict({
+            'gp_register': torch.tensor([0], dtype=torch.int32), 
+            'tanh_box': torch.zeros((1, 6), dtype=torch.float32), 
+            'exp_box': torch.zeros((1, 1), dtype=torch.float32)
+        })
+        # action['tanh_box'][0][8] = .5
+        action['exp_box'][0][0] = np.log(0.1)
+        act_params = gp_continue.process_action(action, log=self.log.debug)
+        params = dict(zip(PARAM_NAMES_CONTINUE, act_params))
+        self.assertEqual(params['gp_register'], 0) #
+        self.assertEqual(params['crossover_rate'], 0.5) #
+        self.assertEqual(params['mutation_rate'], 0.5) #
+        self.assertEqual(params['temp_coeff'], 1) #
+        self.assertEqual(params['elitism'], gp_continue.gptb_list[0].pop//2) #
+        self.assertListEqual(list(params['mut8or_weights']), [0.5, 0.5]) #
+        self.assertAlmostEqual(params['mutation_sd'], 0.1) #
+
+    def test_gp_continue_exp_box(self):
+        gp_continue = self.get_action('gp_continue')
+        for _ in range(100):
+            randval = torch.rand((1, 1), dtype=torch.float32)
+            gp_continue.gptb_list[0] = DummyTreebank()
+            gp_continue.gptb_cts[0] = 1
+            action = OrderedDict({
+                'gp_register': torch.tensor([0], dtype=torch.int32), 
+                'tanh_box': torch.zeros((1, 6), dtype=torch.float32), 
+                'exp_box': torch.log(randval)
+            })
+            act_params = gp_continue.process_action(action, log=self.log.debug)
+            params = dict(zip(PARAM_NAMES_CONTINUE, act_params))
+            self.assertAlmostEqual(params['mutation_sd'], randval.numpy()[0, 0]) 
 
     def test_use_mem(self):
         use_mem = self.get_action('use_mem')

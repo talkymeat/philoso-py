@@ -1274,7 +1274,7 @@ class RandomAlgebraicTreeFactory(RandomTreeFactory):
     @property
     def tf_params(self):
         return {
-            f'{self.prefix}_float_const_sd': self.float_const_sd
+            f'{self.prefix}_const_sd': self.const_sd
         }
 
     @classmethod
@@ -1282,7 +1282,7 @@ class RandomAlgebraicTreeFactory(RandomTreeFactory):
     def json(cls):
         return {
             "range_abs_tree_factory_float_constants": [
-                list(cls._tf_base_param_ranges[0])
+                list(cls._tf_param_ranges[0])
             ]
         }
 
@@ -1303,24 +1303,18 @@ class RandomAlgebraicTreeFactory(RandomTreeFactory):
             }
         )
 
-    def get_lin_float_const_sd(self, log_float_const_sd: float):
-        if log_float_const_sd < self.tf_param_ranges[0][0] or log_float_const_sd > self.tf_param_ranges[0][1]:
-            return np.exp(log_float_const_sd)
-        else:
-            raise ValueError(f'log_float_const_sd out of bounds')
-
     def __init__(self,
             *args, 
             treebank: Treebank=None,
-            log_float_const_sd: float=0.0,
+            const_sd: float=0.0,
             **kwargs): 
-        self.float_const_sd = self.get_lin_float_const_sd(log_float_const_sd)
+        self.const_sd = const_sd
         templates = (
             (float, 'SUM', (float, float)),
             (float, 'PROD', (float, float)),
             (float, 'POW', (float, int)),
             (float, 'x'),
-            (float, lambda: self.np_random.normal(0, self.float_const_sd)),
+            (float, lambda: self.np_random.normal(0, self.const_sd)),
             (int, lambda: self.np_random.integers(10))
         )
         root_types = [float] 
@@ -1334,8 +1328,8 @@ class RandomAlgebraicTreeFactory(RandomTreeFactory):
             **kwargs
         )
 
-    def interpret(log_float_const_sd):
-        return {'sra_tf_const_sd': log_float_const_sd}
+    def interpret(self, const_sd):
+        return {f'{self.prefix}_const_sd': const_sd}
     
 class SimpleRandomAlgebraicTreeFactory(RandomAlgebraicTreeFactory):
     prefix = 'sra_tf'
@@ -1343,13 +1337,13 @@ class SimpleRandomAlgebraicTreeFactory(RandomAlgebraicTreeFactory):
     def __init__(self,
             *args, 
             treebank: Treebank=None,
-            log_float_const_sd: float=0.0,
+            const_sd: float=0.0,
             **kwargs): 
-        float_const_sd = self.get_lin_float_const_sd(log_float_const_sd)
+        self.const_sd = const_sd
         templates = (
             (float, 'POLY', (float, float, int, float)),
             (float, 'x'),
-            (float, lambda: self.np_random.normal(0, float_const_sd)), # ExpScaling
+            (float, lambda: self.np_random.normal(0, self.const_sd)), # ExpScaling
             (int, lambda: self.np_random.integers(10))
         )
         root_types = [float] 

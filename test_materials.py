@@ -103,6 +103,10 @@ class DummyController:
         self.repository = PLOS1
         self.guardrail_manager = GuardrailManager()
 
+class DummyTreebank:
+    def __init__(self):
+        self.pop = 100
+
 DTF = DummyTreeFactory()
 DC = DummyController()
 GP = GPTreebank(operators=[ops.SUM, ops.PROD, ops.SQ, ops.CUBE, ops.POW], tree_factory=DummyTreeFactory())
