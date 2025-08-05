@@ -883,7 +883,7 @@ class SineWorld3Observatory(SineWorld2Observatory):
             sources: dict = None, # Not needed, except for compatability
             world: 'World' = None, 
             centre: float = None, 
-            log_radius: float = None, 
+            radius: float = None, 
             num: int = None, 
             **kwargs
         ):
@@ -891,21 +891,20 @@ class SineWorld3Observatory(SineWorld2Observatory):
         self.dvs = collect(dvs, list)
         self.world = world
         self.centre = centre
-        self.log_radius = log_radius
-        radius = np.exp(log_radius)
-        self.start = max(centre-radius, world.range[0])
-        self.stop = min(centre+radius, world.range[1])
+        self.radius = radius
+        self.start = max(centre-self.radius, world.range[0])
+        self.stop = min(centre+self.radius, world.range[1])
         self.num = num
         self.data = None
 
     def __str__(self):
-        return f'SineWorldObservatory(ivs={self.ivs}, dvs={self.dvs}, start={self.centre}, stop={self.log_radius})'
+        return f'SineWorldObservatory(ivs={self.ivs}, dvs={self.dvs}, start={self.centre}, stop={self.radius})'
     
     @property
     def obs_params(self):
         return {
             'obs_centre': self.centre,
-            'obs_log_radius': self.log_radius,
+            'obs_radius': self.radius,
             'obs_start': self.start,
             'obs_stop': self.stop
         }

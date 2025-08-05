@@ -24,7 +24,7 @@ if __name__ == '__main__':
     worlds = ['SineWorld2', 'SineWorld3']
     gvmfs = [
         lambda gvm: gvm[:-1],
-        lambda gvm: gvm[:-3] + ['obs_centre', 'obs_log_radius']
+        lambda gvm: gvm[:-3] + ['obs_centre', 'obs_radius']
     ]
     for w, g in zip(worlds, gvmfs):
         mod_json(w, g, 'mps', sources, idc)
@@ -35,7 +35,7 @@ if __name__ == '__main__':
 
 # gp_vars_more:
 # 1 - lose last (obs_num)
-# 2 - obs_start, obs_stop -> obs_centre, obs_log_radius
+# 2 - obs_start, obs_stop -> obs_centre, obs_radius
 
 # output_prefix bo__ - bv__
 # out_dir output/bo - output/bv

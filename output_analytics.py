@@ -147,8 +147,8 @@ class AgentMemData:
             for df in dfs:
                 if 'obs_stop' in df and 'obs_start' in df:
                     df['obs_width'] = (df['obs_stop']-df['obs_start']).abs()
-                elif 'obs_centre' in df and 'obs_log_radius' in df:
-                    radius = np.exp(df['obs_log_radius'])
+                elif 'obs_centre' in df and 'obs_log_radius' in df: # now obs_radius
+                    radius = np.exp(df['obs_log_radius']) # now obs_radius
                     start = (df['obs_centre']-radius).apply(lambda x: max(x, self.model.world.range[0]))
                     stop = (df['obs_centre']+radius).apply(lambda x: min(x, self.model.world.range[1]))
                     df['obs_width'] = stop - start
@@ -275,8 +275,8 @@ class AgentMemData:
                 s = '\n'.join([s[i:i+w] for i in range(0, len(s), w)])
                 if 'obs_start' in row and 'obs_stop' in row:
                     world_args = [row['obs_start'], row['obs_stop']]
-                elif 'obs_centre' in row and 'obs_log_radius' in row:
-                    world_args = [row['obs_centre'], row['obs_log_radius']]
+                elif 'obs_centre' in row and 'obs_log_radius' in row: # now obs_radius
+                    world_args = [row['obs_centre'], row['obs_log_radius']] # now obs_radius
                 if 'obs_num' in row:
                     world_args.append('obs_num')
                 swo = self.model.world(*world_args)
@@ -309,7 +309,7 @@ class AgentDeedData:
         'tensor([6])': 'read'
     }
     MEANABLES = [
-        'obs_start', 'obs_stop', 'obs_log_radius', 'obs_centre',
+        'obs_start', 'obs_stop', 'obs_log_radius', 'obs_centre',  # now obs_radius
         'obs_width', 'obs_num', 'temp_coeff',  'pop',
         'crossover_rate', 'mutation_rate', 'mutation_sd', 'max_depth',
         'max_size', 'episode_len', 'elitism', 'elitism_normed', 

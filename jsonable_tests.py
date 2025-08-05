@@ -133,7 +133,7 @@ class TestJSONables(unittest.TestCase):
                 'mutation_rate', 'mutation_sd', 'max_depth',
                 'max_size', 'temp_coeff', 'pop', 'elitism',
                 'r', 'bounded_sra_tf_float_const_sd',
-                'obs_centre', 'obs_log_radius'
+                'obs_centre', 'obs_radius'
             }
         )
         self.assertEqual(len(noncore_df), 10)
@@ -160,7 +160,7 @@ class TestJSONables(unittest.TestCase):
                 'mutation_rate', 'mutation_sd', 'max_depth',
                 'max_size', 'temp_coeff', 'pop', 'elitism',
                 'r', 'bounded_sra_tf_float_const_sd',
-                'obs_centre', 'obs_log_radius'
+                'obs_centre', 'obs_radius'
             }
         )
         self.assertEqual(json_['rows'], 10)
@@ -383,7 +383,7 @@ class TestJSONables(unittest.TestCase):
                 'elitism',
                 'bounded_sra_tf_float_const_sd',
                 'obs_centre',
-                'obs_log_radius'
+                'obs_radius'
             ]
         )
         self.assertCountEqual(
@@ -485,7 +485,7 @@ class TestJSONables(unittest.TestCase):
                     'value', 'crossover_rate', 'mutation_rate', 'mutation_sd', 
                     'max_depth', 'max_size', 'temp_coeff', 'pop', 'elitism', 
                     'r', 'bounded_sra_tf_float_const_sd', 'obs_centre',
-                    'obs_log_radius'
+                    'obs_radius'
                 ]
             )
             self.assertEqual(mjson[['publication_params', 'rows']], 10)
@@ -565,7 +565,7 @@ class TestJSONables(unittest.TestCase):
                 [
                     'crossover_rate', 'mutation_rate', 'mutation_sd', 'max_depth', 
                     'max_size', 'temp_coeff', 'pop', 'elitism', 
-                    'bounded_sra_tf_float_const_sd', 'obs_centre', 'obs_log_radius'
+                    'bounded_sra_tf_float_const_sd', 'obs_centre', 'obs_radius'
                 ]
             )
             self.assertAlmostEqual(

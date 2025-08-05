@@ -231,7 +231,7 @@ paramarama = HD({
         "pop",
         "elitism",
         "obs_centre",
-        "obs_log_radius"
+        "obs_radius"
     ],
     "publication_params": {
         "reward": "ranked",

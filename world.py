@@ -1130,7 +1130,7 @@ class SineWorld2(SineWorld):
     
 
 class SineWorld3(SineWorld2):
-    _act_param_names = ['centre', 'log_radius']
+    _act_param_names = ['centre', 'radius']
     ObsClass = SineWorld3Observatory
 
     def _set_obs_space(self):
@@ -1162,10 +1162,8 @@ class SineWorld3(SineWorld2):
         return self.range, (1.0/(self.range[1]-self.range[0]), self.range[1]-self.range[0]) # XXX ???
 
     def __call__(
-            self, centre: float, log_radius: float, **kwargs: Any
+            self, centre: float, radius: float, **kwargs: Any
         ) -> Observatory:
-        # radius = np.exp(log_radius)
-        # return super().__call__(centre-radius, centre+radius, **kwargs)
         if centre > self.range[1]:
             centre = self.range[1]
         elif centre < self.range[0]:
@@ -1174,18 +1172,18 @@ class SineWorld3(SineWorld2):
             self.iv,
             self.dv,
             world=self,
-            log_radius = log_radius,
+            radius = radius,
             centre = centre,
             num = self.max_observation_size
         )
     
-    def interpret(self, centre: float, log_radius: float, ):
-        radius = float(np.exp(log_radius)) # XXX Exp-ing should be shifted into Action, along with other Exp Params
+    def interpret(self, centre: float, radius: float, ):
+        # radius = float(np.exp(log_radius)) # XXX Exp-ing should be shifted into Action, along with other Exp Params
         start = max(centre-radius, self.range[0])
         stop  = min(centre+radius, self.range[1])
         return {
             'obs_centre': centre,
-            'obs_log_radius': log_radius,
+            'obs_radius': radius,
             'obs_width': stop-start,
         }   
 

@@ -86,7 +86,7 @@ class TestActions(unittest.TestCase):
                 "pop",
                 "elitism",
                 "obs_centre",
-                "obs_log_radius"
+                "obs_radius"
             },
         )
 
@@ -186,7 +186,7 @@ class TestActions(unittest.TestCase):
         self.assertEqual(params['elitism'], int(params['pop']/2))
         self.assertEqual(params['sb_weights'], [1])
         self.assertListEqual(list(params['mut8or_weights']), [0.5, 0.5])
-        self.assertAlmostEqual(params['all_tf_params'][0][0], 0.01)
+        self.assertAlmostEqual(params['all_tf_params'][0]['sra_tf_const_sd'], 0.01)
         self.assertAlmostEqual(params['mutation_sd'], 0.1)
         self.assertAlmostEqual(params['obs_args'][0], np.tanh(.5)*50, places=5)
         self.assertEqual(params['obs_args'][1], np.e)
@@ -204,7 +204,7 @@ class TestActions(unittest.TestCase):
             params = dict(zip(PARAM_NAMES_NEW, act_params))
             self.assertAlmostEqual(params['mutation_sd'], randvals[0][0]) # 0
             self.assertEqual(params['obs_args'][1], randvals[0][1]) # 1
-            self.assertAlmostEqual(params['all_tf_params'][0][0], randvals[0][2]) # 2
+            self.assertAlmostEqual(params['all_tf_params'][0]['sra_tf_const_sd'], randvals[0][2]) # 2
 
     def test_gp_continue_process_action(self):
         gp_continue = self.get_action('gp_continue')
