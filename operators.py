@@ -204,7 +204,7 @@ def make_return_validator(rv: type, force_type: ForceType = ForceType.NO):
     >>> retval = make_return_validator(int, ForceType.STRICT)
     >>> retval(666)
     666
-    >>> retval(666.0)
+    >>> retval(666.0).item()
     666
     >>> retval(666.666)
     Traceback (most recent call last):
@@ -253,9 +253,9 @@ def make_return_validator(rv: type, force_type: ForceType = ForceType.NO):
     Traceback (most recent call last):
         ....
     TypeError: Converting [6.66 6.66 6.66] to int16 cannot be done without loss of information
-    >>> retval(666)
+    >>> retval(666).item()
     666
-    >>> retval(666.0)
+    >>> retval(666.0).item()
     666
     >>> retval(666.666)
     Traceback (most recent call last):
@@ -275,9 +275,9 @@ def make_return_validator(rv: type, force_type: ForceType = ForceType.NO):
     array([6, 6, 6])
     >>> retval(666)
     666
-    >>> retval(666.0)
+    >>> retval(666.0).item()
     666
-    >>> retval(666.666)
+    >>> retval(666.666).item()
     666
     >>> #### slice    #### #### #### LOSSY  ####
     >>> retval = make_return_validator(slice, ForceType.LOSSY)
@@ -295,13 +295,13 @@ def make_return_validator(rv: type, force_type: ForceType = ForceType.NO):
     array([6, 6, 6], dtype=int16)
     >>> retval(np.array([6.66, 6.66, 6.66]))
     array([6, 6, 6], dtype=int16)
-    >>> retval(666)
+    >>> retval(666).item()
     666
-    >>> retval(666.0)
+    >>> retval(666.0).item()
     666
-    >>> retval(666.666)
+    >>> retval(666.666).item()
     666
-    >>> retval(np.int32(666_666_666))
+    >>> retval(np.int32(666_666_666)).item()
     -31062
     """
     dtype = None 
@@ -478,7 +478,7 @@ class Operator:
         >>> op_A_PLUS_B_WRONG = Operator(a_plus_b, "A_PLUS_B_WRONG", validator=conjoin_tests(same_args_diff_rtn_validator_factory(int, int, float), num_args_eq_validator(2)), return_validator=int)
         >>> op_A_PLUS_B_WRONG.is_valid(int, str, str)
         False
-        >>> op_A_PLUS_B_WRONG(2, 3)
+        >>> op_A_PLUS_B_WRONG(2, 3).item()
         5
         >>> op_A_PLUS_B_WRONG(2.0, 3.0)
         Traceback (most recent call last):
@@ -487,9 +487,9 @@ class Operator:
         >>> op_A_PLUS_B = Operator(lambda a, b: a+b, "A_PLUS_B", validator=conjoin_tests(same_args_diff_rtn_validator_factory(int, int, float), num_args_eq_validator(2)), return_validator=float, force_type=ForceType.STRICT)
         >>> op_A_PLUS_B_WRONG.is_valid(float, str, str)
         False
-        >>> op_A_PLUS_B(2, 3)
+        >>> op_A_PLUS_B(2, 3).item()
         5.0
-        >>> op_A_PLUS_B(2.0, 3.0)
+        >>> op_A_PLUS_B(2.0, 3.0).item()
         5.0
         >>> op_SUM = Operator(_sum, "SUM_FL", validator=same_args_diff_rtn_validator_factory(Any, int, float), return_validator=float, force_type=ForceType.NO)
         >>> op_SUM_FL = Operator(_sum, "SUM_FL", validator=same_args_diff_rtn_validator_factory(Any, int, float), return_validator=float, force_type=ForceType.STRICT)
@@ -499,17 +499,17 @@ class Operator:
         Traceback (most recent call last):
             ....
         TypeError: Operator SUM_FL encountered a problem: Operator returned 5 which is a int64, not a float64 as expected.
-        >>> op_SUM_FL(2, 3)
+        >>> op_SUM_FL(2, 3).item()
         5.0
-        >>> op_SUM_INT(2.0, 3.0)
+        >>> op_SUM_INT(2.0, 3.0).item()
         5
         >>> op_SUM_INT(2.0, 2.5)
         Traceback (most recent call last):
             ....
         TypeError: Operator SUM_INT encountered a problem: Converting 4.5 to int cannot be done without loss of information
-        >>> op_SUM_INT_LOSSY(2.0, 2.5)
+        >>> op_SUM_INT_LOSSY(2.0, 2.5).item()
         4
-        >>> op_SUM(2.0, 3.0, 5.0)
+        >>> op_SUM(2.0, 3.0, 5.0).item()
         10.0
         >>> op_A_PLUS_B.is_valid(int, int, int)
         True
@@ -1155,31 +1155,31 @@ def main():
     two something's got to give
     three something's got to give
     four something's got to give
-    >>> SUM(4, 5)
+    >>> SUM(4, 5).item()
     9.0
     >>> SUM(df["i1"], df['i2'])
     array([ 43.,  71., 423., 670.])
     >>> SUM(df['i2'], df['f2'], df1['i2'], df1['f2'])
     array([ 458.142,  484.718,  834.414, 1080.618])
-    >>> PROD(1, 2, 3, 4)
+    >>> PROD(1, 2, 3, 4).item()
     24.0
     >>> PROD(df['i1'], df['f1'])
     array([ 1.,  4.,  9., 16.])
     >>> PROD(df['i1'], df['i1'], df1['f2'])
     array([  9.,  36.,  81., 144.])
-    >>> SQ(12)
+    >>> SQ(12).item()
     144.0
     >>> SQ(df['i1'])
     array([ 1.,  4.,  9., 16.])
     >>> SQ(df['f1'])
     array([ 1.,  4.,  9., 16.])
-    >>> CUBE(3)
+    >>> CUBE(3).item()
     27.0
     >>> CUBE(df['i1'])
     array([ 1.,  8., 27., 64.])
     >>> CUBE(df['f1'])
     array([ 1.,  8., 27., 64.])
-    >>> POW(2, 8)
+    >>> POW(2, 8).item()
     256.0
     >>> POW(df['i1'], df['i1'])
     array([  1.,   4.,  27., 256.])
@@ -1193,9 +1193,9 @@ def main():
     array([  5.,  25., 125., 625.])
     >>> POW(df['f1'], df1['f2'])
     array([1.00000e+00, 5.12000e+02, 1.96830e+04, 2.62144e+05])
-    >>> EQ(1, 2)
+    >>> EQ(1, 2).item()
     False
-    >>> EQ(1, 1.0)
+    >>> EQ(1, 1.0).item()
     True
     >>> EQ(df["i1"], df["f1"])
     array([ True,  True,  True,  True])
@@ -1203,9 +1203,9 @@ def main():
     array([False,  True, False,  True])
     >>> EQ(df["i1"], df1["f3"])
     array([False, False,  True, False])
-    >>> NEQ(1, 2)
+    >>> NEQ(1, 2).item()
     True
-    >>> NEQ(1, 1.0)
+    >>> NEQ(1, 1.0).item()
     False
     >>> NEQ(df["i1"], df["f1"])
     array([False, False, False, False])
@@ -1229,7 +1229,7 @@ def main():
     array([False, False,  True, False])
     >>> EQ(df['i3'], TERN_INT(df['b2'], df['i2'], df['i1']))
     array([ True,  True,  True,  True])
-    >>> POLY(3.0, 5.0, 2, 100.0)
+    >>> POLY(3.0, 5.0, 2, 100.0).item()
     175.0
     """
     import doctest

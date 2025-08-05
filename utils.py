@@ -6,8 +6,7 @@ import numpy as np
 from typing import Any, Callable
 from functools import reduce
 import torch
-import re
-
+import re, os, sys
 
 def scale_to_sum(arr: np.ndarray, _sum=1) -> np.ndarray:
     return arr/arr.sum() * _sum
@@ -389,6 +388,40 @@ def torchify_dtype(dtype:str|type|np.dtype) -> torch.dtype:
             raise ValueError(f"'{dtype}' is not a valid torch dtype")
     else:
         raise ValueError(f"'{dtype}' is an invalid string")
+
+class ArrayCrawler:
+    def __init__(self, array: np.ndarray):
+        self.array = array
+        self.i = 0
+
+    def __call__(self, num: int=0):
+        if self.i + num > len(self.array):
+            raise IndexError(
+                f"i={self.i}, {num=}, i+num={self.i+num}, but the array length " +
+                f"is {len(self.array)}"
+            )
+        retval = np.array([])
+        if num < 0:
+            raise ValueError("ArrayCrawler can't crawl backwards")
+        elif num == 1:
+            retval = self.array[self.i]
+        elif num > 1:
+            retval = self.array[self.i:self.i+num]
+        self.i += num
+        return retval
+
+    def __iadd__(self, num: int):
+        self.i += num
+
+
+class HiddenPrints:
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        sys.stdout = open(os.devnull, 'w')
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout.close()
+        sys.stdout = self._original_stdout
 
 def main():
     import doctest

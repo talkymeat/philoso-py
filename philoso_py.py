@@ -22,13 +22,16 @@ from pathlib import Path
 from copy import copy, deepcopy
 from datetime import datetime
 
-# from icecream import ic
+from icecream import ic
+
 
 import numpy as np
 import pandas as pd
 
 import json
 import re
+
+from w import w
 
 class Model:
     def __init__(self,
@@ -447,17 +450,17 @@ def example_model(seed: int=None, out_dir: str|Path=Path('output'), model_id='te
         agent.ac.model = model
     model.add_reward(
         Curiosity(
-            model, 'fitness', 1.0
+            model, np.float64, 'fitness', 1.0
         )
     )
     model.add_reward(
         Renoun(
-            model
+            model, np.float64
         )
     )
     model.add_reward(
         GuardrailCollisions(
-            model
+            model, np.float64
         )
     )
     return model
@@ -752,14 +755,21 @@ class ModelFactory:
                 if device: # if a device other than the one specified in
                     # json is given, update the json with the device
                     json_[["agent_templates", nom, "device"]] = device
-                print(json_)
                 # Agents require a number of helper classes and functions,
                 # which here are picked out from the dictionaries stored
                 # in ModelFactory, using data from json. Note the use of
                 # lists of keys to address items in the nested dictionaries
                 # of the json. Each agent needs...
+                tf_params = json_[[
+                    "agent_templates", 
+                    nom, 
+                    "controller", 
+                    "tree_factory_params"
+                ]]
                 tree_factory_classes = [
-                    self.tree_factory_classes[tfc]
+                    self.tree_factory_classes[tfc].factory(**tf_params[tfc])
+                    if tfc in tf_params
+                    else self.tree_factory_classes[tfc]
                     for tfc 
                     in json_[[
                         "agent_templates", 
@@ -768,6 +778,7 @@ class ModelFactory:
                         "tree_factory_classes"
                     ]] # One or more tree factory classes
                 ]
+                ic.disable()
                 gp_system = self.gp_systems[
                     json_[[
                         "agent_templates", 

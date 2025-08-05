@@ -579,7 +579,7 @@ class TagTriggeredIntMutator(TagTriggeredMutator, IntMutator):
     ...     operators=[ops.INT_SUM]
     ... )
     >>> t = gp.tree('([int]<INT_SUM>([int]5)([int]11))')
-    >>> t[0]()
+    >>> t[0]().item()
     5
     >>> mf = null_mutator_factory(gp)
     >>> mf()
@@ -599,7 +599,7 @@ class TagTriggeredIntMutator(TagTriggeredMutator, IntMutator):
     ...     operators=[ops.INT_SUM]
     ... )
     >>> t0 = gp0.tree('([int]<INT_SUM>([int]6)([int]13))')
-    >>> t0[0]()
+    >>> t0[0]().item()
     6
     >>> mf = null_mutator_factory(gp0)
     >>> mf()
@@ -726,10 +726,10 @@ class NullMutatorFactory(MutatorFactory):
     >>> mm = single_xo_factory(GP2)
     >>> raw_arr = np.array(T6())
     >>> mm()
-    >>> (raw_arr == np.array(T6())).all()
+    >>> (raw_arr == np.array(T6())).all().item()
     True
     >>> sum_arr = np.zeros(4, dtype=np.complex128)
-    >>> n = 1024*16
+    >>> n = 1024*64
     >>> eta = 0.15
     >>> for _ in range(n):
     ...     t6_copy = T6.copy(gp_copy=True)
@@ -767,7 +767,7 @@ class SinglePointLeafMutatorFactory(MutatorFactory):
     >>> mm = single_leaf_mutator_factory(GP2)
     >>> raw_arr = np.array(T6())
     >>> mm()
-    >>> (raw_arr == np.array(T6())).all()
+    >>> (raw_arr == np.array(T6())).all().item()
     True
     >>> for _ in range(512):
     ...     assert (raw_arr == np.array(T6.copy(gp_copy=True)())).sum() == 3

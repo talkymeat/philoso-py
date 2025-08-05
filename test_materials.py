@@ -9,6 +9,9 @@ from repository import Archive, Publication
 import numpy as np
 from model_time import ModelTime
 from guardrails import GuardrailManager
+from hd import HierarchicalDict as HD
+import sys
+import io
 
 
 class DummyAgent:
@@ -100,14 +103,20 @@ class DummyController:
         self.repository = PLOS1
         self.guardrail_manager = GuardrailManager()
 
+class DummyTreebank:
+    def __init__(self):
+        self.pop = 100
+
 DTF = DummyTreeFactory()
 DC = DummyController()
 GP = GPTreebank(operators=[ops.SUM, ops.PROD, ops.SQ, ops.CUBE, ops.POW], tree_factory=DummyTreeFactory())
 T0 = GP.tree('([float]<SUM>([float]<SQ>([float]<SUM>([float]<SQ>([int]$mu))([float]<SUM>([float]<PROD>([int]3)([int]$mu))([int]2))))([float]<SUM>([float]<PROD>([int]3)([int]$mu))([int]2)))')
 T1 = GP.tree('([float]<PROD>([int]3)([int]2))')
 T2 = GP.tree('([int]5)')
+T2B = GP.tree('([float]<PROD>([int]37)([int]43))')
 T3 = GP.tree('([float]<PROD>([int]7)([int]11))')
 T4 = GP.tree('([int]13)')
+T4B = GP.tree('([float]<PROD>([int]7)([int]99))')
 T5 = GP.tree('([float]<SUM>([float]<SQ>([float]<SUM>([float]<SQ>([int]17))([float]<SUM>([float]<PROD>([int]3)([int]19))([int]2))))([float]<SUM>([float]<PROD>([int]3)([int]23))([int]2)))')
 TF = TestTreeFactory(T0)
 
@@ -160,3 +169,179 @@ TS = [
 col = [1,4,8, 9,11,13, 19,19,30, 40,50,69]
 nans = [np.nan, np.nan, np.nan, np.nan]
 infs = [np.inf, -np.inf, np.inf, -np.inf]
+
+paramarama = HD({
+    "seed": 666,
+    "iv": "x",
+    "dv": "y",
+    "dtype": "float32",
+    "out_dir": "output/l",
+    "ping_freq": 5,
+    "output_prefix": "l__",
+    "world": "SineWorld3",
+    "world_params": {
+        "radius": 50,
+        "max_observation_size": 100,
+        "noise_sd": 0.05,
+        "sine_wave_params": [
+            [
+                10,
+                100,
+                0
+            ],
+            [
+                0.1,
+                1,
+                0
+            ]
+        ]
+    },
+    "sb_factory": "SimplerGPScoreboardFactory2",
+    "sb_factory_params": {
+        "best_outvals": [
+            "irmse",
+            "size",
+            "depth",
+            "penalty",
+            "hasnans",
+            "raw_fitness",
+            "fitness",
+            "value",
+            "r"
+        ]
+    },
+    "gp_vars_core": [
+        "mse",
+        "rmse",
+        "size",
+        "depth",
+        "raw_fitness",
+        "fitness",
+        "value",
+        "r"
+    ],
+    "gp_vars_more": [
+        "crossover_rate",
+        "mutation_rate",
+        "mutation_sd",
+        "max_depth",
+        "max_size",
+        "temp_coeff",
+        "bounded_sra_tf_float_const_sd",
+        "pop",
+        "elitism",
+        "obs_centre",
+        "obs_log_radius"
+    ],
+    "publication_params": {
+        "reward": "ranked",
+        "value": "value",
+        "types": "float32",
+        "rows": 10,
+        "tables": 2
+    },
+    "agent_populations": [
+        "a"
+    ],
+    "agent_templates": {
+        "a": {
+            "device": "cpu",
+            "controller": {
+                "tree_factory_classes": [
+                    "SimpleRandomAlgebraicTreeFactory"
+                ],
+                "tree_factory_params": {
+                    "SimpleRandomAlgebraicTreeFactory": {
+                        "range_abs_tree_factory_float_constants": [0.00001, 1.0]
+                    }
+                },
+                "record_obs_len": 50,
+                "max_readings": 3,
+                "mem_col_types": "float32",
+                "value": "value",
+                "mutators": [
+                    {
+                        "name": "single_leaf_mutator_factory"
+                    },
+                    {
+                        "name": "single_xo_factory"
+                    }
+                ],
+                "gp_system": "GPTreebank",
+                "sb_statfuncs": [
+                    {
+                        "name": "mean"
+                    },
+                    {
+                        "name": "mode"
+                    },
+                    {
+                        "name": "std"
+                    },
+                    {
+                        "name": "nanage"
+                    },
+                    {
+                        "name": "infage"
+                    }
+                ],
+                "sb_statfuncs_quantiles": 9,
+                "mem_rows": 6,
+                "mem_tables": 3,
+                "num_treebanks": 2,
+                "max_volume": 20000,
+                "max_max_size": 200,
+                "max_max_depth": 50,
+                "range_mutation_sd": [0.00001, 1.0], 
+                "theta": 0.05,
+                "short_term_mem_size": 5
+            },
+            "network_params": {
+                "target_kl_div": 0.01,
+                "max_policy_train_iters": 80,
+                "value_train_iters": 80,
+                "ppo_clip_val": 0.2,
+                "policy_lr": 0.0003,
+                "value_lr": 0.01
+            },
+            "n": 8,
+            "network_class": "ActorCriticNetworkTanh"
+        }
+    },
+    "rewards": [
+        "Curiosity",
+        "Renoun",
+        "GuardrailCollisions"
+    ],
+    "reward_params": {
+        "Curiosity": {
+            "def_fitness": "fitness",
+            "first_finding_bonus": 1.0
+        },
+        "Renoun": {},
+        "GuardrailCollisions": {}
+    },
+    "def_fitness": "irmse",
+    "days": 100,
+    "steps_per_day": 100,
+    # "model_id": "bw"
+})
+
+def shhhh(test):
+    """Decorator to make sure tests run without the classes
+    being tested outputting printout
+    """
+    def shushed(*args, **kwargs):
+        out = sys.stdout
+        err = sys.stderr
+        # Suppress unwanted printout:
+        suppress_text = io.StringIO()
+        sys.stdout = suppress_text
+        sys.stderr = suppress_text
+        # run test
+        retval = test(*args, **kwargs)
+        # Release output streams:
+        sys.stdout = out
+        sys.stderr = err
+        return retval
+    return shushed

@@ -45,7 +45,8 @@ class AgentController(Env, SimpleJSONable):
     kwargs = (
         "max_readings", "num_treebanks", "short_term_mem_size", "value", "max_volume", 
         "max_max_size", "max_max_depth",  "theta", "gp_vars_core", "gp_vars_more", 
-        "ping_freq", "guardrail_base_penalty", "mem_col_types", "dtype"
+        "ping_freq", "guardrail_base_penalty", "mem_col_types", "dtype", "range_mutation_sd",
+        "range_abs_tree_factory_float_constants"
     )
     arg_source_order = (1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0)
 
@@ -125,6 +126,7 @@ class AgentController(Env, SimpleJSONable):
             'dv': self.dv,
             'def_fitness': self.def_fitness,
             'tree_factory_classes': [tfc.__name__ for tfc in self.tree_factory_classes],
+            'tree_factory_params': {tfc.__name__: tfc.json for tfc in self.tree_factory_classes if tfc.json},
             'agent_indices': self.agent_names,
             'out_dir': str(self.out_dir.parent),
             'record_obs_len': self.record_obs_len,
@@ -144,6 +146,8 @@ class AgentController(Env, SimpleJSONable):
             'guardrail_base_penalty': self.guardrail_manager.base_penalty,
             'ping_freq': self.ping_freq,
             'mutators': [mut.json for mut in self.mutators],
+            "range_mutation_sd": list(self.range_mutation_sd),
+            # "range_abs_tree_factory_float_constants": list(self.range_abs_tree_fac_fl_consts),
             'args': self.args, 
             'kwargs': self.kwargs
         }
@@ -181,6 +185,9 @@ class AgentController(Env, SimpleJSONable):
             mutators: Sequence[Callable]=None,
             prefix: str=None,
             dtype: np.dtype|str = np.float32,
+            range_mutation_sd: list[float, float]|None = None, # default[0.00001, 1.0],
+            # range_abs_tree_factory_float_constants: list[float, float]|None = None, # default [0.0001, 10.0],
+            tree_factory_params: dict[str, dict]| None = None,
             *args, **kwargs
         ):
         """What should be in __init__, and what in reset?
@@ -211,6 +218,8 @@ class AgentController(Env, SimpleJSONable):
         self.meta = {}
         self.tmp = {}
         self._mems_to_use = []
+        self.range_mutation_sd = tuple(range_mutation_sd) if range_mutation_sd else (0.00001, 1.0)
+        # self.range_abs_tree_fac_fl_consts = tuple(range_abs_tree_factory_float_constants) if range_abs_tree_factory_float_constants else (0.0001, 10.0),
         self.mutators = [random_mutator_factory] if mutators is None else mutators
         # self.tree_factory_factories = tree_factory_factories
         self.gp_vars_core = gp_vars_core if gp_vars_core else [ 
@@ -249,6 +258,7 @@ class AgentController(Env, SimpleJSONable):
         self.repository = repository
         self.repository._add_user(self)
         self.tree_factory_classes = tree_factory_classes
+        self.tree_factory_params = tree_factory_params
         self.args = args
         self.kwargs = kwargs
     
@@ -258,12 +268,15 @@ class AgentController(Env, SimpleJSONable):
         self.actions["gp_new"]      = GPNew(self,
                                             self.world,
                                             self.tree_factory_classes,
+                                            self.tree_factory_params,
                                             self.np_random,
                                             self.out_dir,
                                             self.t,
                                             self.dv,
                                             self.def_fitness,
                                             self.max_volume,
+                                            self.range_mutation_sd,
+                                            # self.range_abs_tree_fac_fl_consts,
                                             self.mutators,
                                             self.theta,
                                             self.ping_freq
@@ -271,7 +284,8 @@ class AgentController(Env, SimpleJSONable):
         self.actions["gp_continue"] = GPContinue(self,
                                             self.out_dir,
                                             self.t, 
-                                            len(self.mutators)
+                                            len(self.mutators),
+                                            self.range_mutation_sd
                                         )
         self.actions["use_mem"]     = UseMem(self) 
         self.actions["store_mem"]   = StoreMem(self) 

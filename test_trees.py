@@ -74,7 +74,7 @@ def test_gp_trees() -> list[GPNonTerminal]:
     >>> for gpt in gpts:
     ...     out = gpt(**df)
     ...     try:
-    ...         print(list(out))
+    ...         print([item.item() for item in list(out)])
     ...     except TypeError:
     ...         print(out)
     [9.0, 18.0, 31.0, 48.0, 69.0]

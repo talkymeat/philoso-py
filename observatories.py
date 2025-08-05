@@ -245,7 +245,7 @@ class FunctionObservatory:
     <class 'pandas.core.frame.DataFrame'>
     >>> type(y)
     <class 'pandas.core.frame.DataFrame'>
-    >>> (y.y == fx).all()
+    >>> (y.y == fx).all().item()
     True
     >>> def fn(x: pd.Series = None):
     ...     return 2*x

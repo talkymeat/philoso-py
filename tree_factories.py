@@ -23,6 +23,17 @@ T = TypeVar('T')
 Var:   TypeAlias = tuple[type, str]
 Const: TypeAlias = tuple[type[T], Callable[[], T]]
 
+"""XXX IMPORTANT XXX
+
+The version of `param_specs` in `RandomAlgebraicTreeFactory` and
+`SimpleRandomAlgebraicTreeFactory` are the way I want `TreeFactories`
+to represent the way their NN-settable parameters work; however, I only 
+need these two to work for the moment, so the others are lefted
+incompatible with the expectations of other philoso.py classes; these
+will need to be fixed to conform to the new standard before they are used 
+again
+"""
+
 class TreeFactory(ABC):
     @property
     @abstractmethod
@@ -56,11 +67,19 @@ class TreeFactory(ABC):
     
     @property
     def tf_params(self):
-        return {}
+        return dict()
     
     @property
     def prefix(self):
         pass
+
+    @property
+    def tf_param_ranges(self) -> tuple[tuple[int, int]]:
+        return tuple()
+
+    @property
+    def param_specs(self) -> tuple[str]:
+        return tuple()
 
 
 class TestTreeFactory(TreeFactory):
@@ -86,6 +105,7 @@ class TestTreeFactory(TreeFactory):
     @property
     def prefix(self):
         return "test"
+
     
 class CompositeTreeFactory(TreeFactory):
     def __init__(self, 
@@ -161,17 +181,32 @@ class CompositeTreeFactory(TreeFactory):
     def prefix(self):
         return ""
 
+
 class RandomPolynomialFactory(TreeFactory):
     """A TreeFactory which makes random trees representing polynomials of a specified
     order (`order`) and set of variables (`vars`), with random coefficients uniformly 
     distributed in a specified range (`const_min` to `const_max`)
     """
-    _act_param_space = Box(
-        low=np.array([1.0, -np.inf, -np.inf]),
-        high=np.array([25., np.inf, np.inf]),
-        dtype=np.float32
-    )
-    _act_param_names = ['order', 'const_min', 'const_max']
+
+    @property
+    def tf_param_ranges(self) -> tuple[tuple[float, float]]:
+        return ((1., 25.), (-np.inf, np.inf), (-np.inf, np.inf))
+        # return ('order', 'const_min', 'const_max')
+
+    @property
+    def param_specs(self):
+        return ((1., 25.), (-np.inf, np.inf), (-np.inf, np.inf))
+    
+    @property
+    def prefix(self):
+        return "rpf"
+
+    # _act_param_space = Box(
+    #     low=np.array([1.0, -np.inf, -np.inf]),
+    #     high=np.array([25., np.inf, np.inf]),
+    #     dtype=np.float32
+    # )
+    # _act_param_names = ['order', 'const_min', 'const_max']
 
     def __init__(
             self,
@@ -477,7 +512,7 @@ class RandomPolynomialFactory(TreeFactory):
         >>> gp = GPTreebank(max_size=10, max_depth=5)
         >>> rpf = RandomPolynomialFactory(params = np.array([3., -10.0, 10.0], dtype=np.float32), treebank=gp)
         >>> p1 = rpf('x', coefficients={((), ()): 1, (('x',), (1,)): 1, (('x',), (2,)): 1, (('x',), (3,)): 1})
-        >>> list(p1(**pd.DataFrame({'x': [1, 2, 3, 4]})))
+        >>> [item.item() for item in list(p1(**pd.DataFrame({'x': [1, 2, 3, 4]})))]
         [4.0, 15.0, 40.0, 85.0]
         """
         # The overall proceedure here is to create subtrees for the terms of the
@@ -547,17 +582,17 @@ class RandomPolynomialFactory(TreeFactory):
     def prefix(self):
         return 'poly'
 
-class TreeFactoryFactory(Actionable):
-    """Don't look at me."""
-    def __init__(self, tf_type=type[TreeFactory], seed=int|None):
-        self.tf_type = tf_type
-        self.seed = seed
-        self._act_param_space = tf_type._act_param_space
-        self._act_param_names = tf_type._act_param_names
+# class TreeFactoryFactory(Actionable):
+#     """Don't look at me."""
+#     def __init__(self, tf_type=type[TreeFactory], seed=int|None):
+#         self.tf_type = tf_type
+#         self.seed = seed
+#         self._act_param_space = tf_type._act_param_space
+#         self._act_param_names = tf_type._act_param_names
 
-    def act(self, params: np.ndarray|dict|list, *args, **kwargs):
-        super().act(params, *args, **kwargs)
-        return self.tf_type(params, seed=self.seed, treebank=kwargs['treebank'])
+#     def act(self, params: np.ndarray|dict|list, *args, **kwargs):
+#         super().act(params, *args, **kwargs)
+#         return self.tf_type(params, seed=self.seed, treebank=kwargs['treebank'])
 
 # XXX consider `full` and `grow` (Poli et al. p.12) methods for tree seeding
 
@@ -1203,18 +1238,83 @@ class RandomTreeFactory(TreeFactory):
             ss.perform_substitution(self.rand_var_else_const(ss.label.class_id))
             subsites = t.get_all_substitution_sites()
         return t
-    
+
+
 class RandomAlgebraicTreeFactory(RandomTreeFactory):
+    # _act_param_space = Box(
+    #     low=0.0,
+    #     high=np.inf,
+    #     dtype=np.float32
+    # )
+    # _act_param_names = ['const_abs_max']
+    # _param_prefix = 'rand_alg_tf'
+    _tf_param_ranges = ((0.0, np.inf),)
+    #_tf_base_param_ranges = ((-np.inf, 0.0),)
+    prefix = "rand_alg_tf"
+
+    @classmethod
+    @property
+    def tf_param_ranges(cls) -> tuple[tuple[float, float]]:
+        return cls._tf_param_ranges
+
+    @classmethod
+    @property
+    def param_specs(cls):
+        return (
+            {
+                'name': f'{cls.prefix}_const_sd', 
+                'lo': cls.tf_param_ranges[0][0], 
+                'hi': cls.tf_param_ranges[0][1],
+                'const': 0.0,
+                'coeff': 1.0,
+                'func': 'exp'
+            }, 
+        )
+
+    @property
+    def tf_params(self):
+        return {
+            f'{self.prefix}_const_sd': self.const_sd
+        }
+
+    @classmethod
+    @property
+    def json(cls):
+        return {
+            "range_abs_tree_factory_float_constants": [
+                list(cls._tf_param_ranges[0])
+            ]
+        }
+
+    @classmethod
+    def factory(cls, range_abs_tree_factory_float_constants: list[float, float]=[0.0, np.inf]):
+        if range_abs_tree_factory_float_constants[0] < 0:
+            raise ValueError(f'Absolute value cannot be negative')
+        if range_abs_tree_factory_float_constants[1] < range_abs_tree_factory_float_constants[1]:
+            raise ValueError(
+                'the upper bound must be greater than the lower'
+            )
+        return type(
+            cls.__name__, 
+            (cls,),
+            {
+                "_tf_param_ranges": (range_abs_tree_factory_float_constants,),
+                "_param_prefix": f'bounded_{cls.prefix}'
+            }
+        )
+
     def __init__(self,
             *args, 
             treebank: Treebank=None,
+            const_sd: float=0.0,
             **kwargs): 
+        self.const_sd = const_sd
         templates = (
             (float, 'SUM', (float, float)),
             (float, 'PROD', (float, float)),
             (float, 'POW', (float, int)),
             (float, 'x'),
-            (float, lambda: self.np_random.normal(0, 0.1)),
+            (float, lambda: self.np_random.normal(0, self.const_sd)),
             (int, lambda: self.np_random.integers(10))
         )
         root_types = [float] 
@@ -1227,16 +1327,23 @@ class RandomAlgebraicTreeFactory(RandomTreeFactory):
             *args,
             **kwargs
         )
+
+    def interpret(self, const_sd):
+        return {f'{self.prefix}_const_sd': const_sd}
     
-class SimpleRandomAlgebraicTreeFactory(RandomTreeFactory):
+class SimpleRandomAlgebraicTreeFactory(RandomAlgebraicTreeFactory):
+    prefix = 'sra_tf'
+
     def __init__(self,
             *args, 
             treebank: Treebank=None,
+            const_sd: float=0.0,
             **kwargs): 
+        self.const_sd = const_sd
         templates = (
             (float, 'POLY', (float, float, int, float)),
             (float, 'x'),
-            (float, lambda: self.np_random.normal(0, 0.1)),
+            (float, lambda: self.np_random.normal(0, self.const_sd)), # ExpScaling
             (int, lambda: self.np_random.integers(10))
         )
         root_types = [float] 

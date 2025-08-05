@@ -193,35 +193,36 @@ class GPTreebank(TypeLabelledTreebank):
         below. Decorators screw with doctest.
 
         >>> from test_materials import MarkedDummyA, MarkedDummyB, MarkedDummyC
+        >>> from utils import _i
         >>> mfs = [MarkedDummyA, MarkedDummyB, MarkedDummyC]
         >>> gp = GPTreebank(pop=120, mutator_factories=mfs)
         a
         b
         c
         >>> gp.mutator_weights = [1,1,1]
-        >>> gp._mutator_change_indices
+        >>> [_i(i) for i in gp._mutator_change_indices]
         [0, 40, 80]
         >>> [str(mf) for mf in gp.mutator_factories]
         ['a', 'b', 'c']
         >>> gp.mutator_weights = [0,0,0]
         >>> [str(mf) for mf in gp.mutator_factories]
         ['a', 'b', 'c']
-        >>> gp._mutator_change_indices
+        >>> [_i(i) for i in gp._mutator_change_indices]
         [0, 40, 80]
         >>> gp.mutator_weights = [0,1,1]
         >>> [str(mf) for mf in gp.mutator_factories]
         ['b', 'c']
-        >>> gp._mutator_change_indices
+        >>> [_i(i) for i in gp._mutator_change_indices]
         [0, 60]
         >>> gp.mutator_weights = [2,0,1]
         >>> [str(mf) for mf in gp.mutator_factories]
         ['a', 'c']
-        >>> gp._mutator_change_indices
+        >>> [_i(i) for i in gp._mutator_change_indices]
         [0, 80]
         >>> gp.mutator_weights = [0,0.5362523,0]
         >>> [str(mf) for mf in gp.mutator_factories]
         ['b']
-        >>> gp._mutator_change_indices
+        >>> [_i(i) for i in gp._mutator_change_indices]
         [0]
         """
         pass

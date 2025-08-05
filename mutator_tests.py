@@ -5,6 +5,7 @@ from icecream import ic
 from mutators import *
 from test_materials import Dummy
 from utils import aeq
+from model_time import ModelTime
 
 mt=ModelTime()
 

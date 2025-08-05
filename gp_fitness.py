@@ -628,7 +628,6 @@ class SimpleGPScoreboardFactory(SimpleJSONable):
         self.dv = dv
         self.int_dtype = int_dtype
         self.float_dtype = float_dtype
-
  
     @property
     def json(self):
@@ -1071,7 +1070,7 @@ class GPScoreboard(pd.DataFrame):
         >>> for k in range(6):
         ...     best = gps.k_best(k)
         ...     print(len(best))
-        ...     print(sorted([tree() for tree in best])) 
+        ...     print(sorted([tree().item() for tree in best])) 
         ...     print([tt.tmp["to_delete"] for tt in t])
         0
         []
@@ -1231,16 +1230,16 @@ class GPScoreboard(pd.DataFrame):
         9  0.000244  0.015625     0.984615     3      2            1.0
         >>> gps2[cols[7:]] 
            hasnans  penalty  pre_fitness_2  survive  pre_fitness_3  fitness
-        0     True      1.0            NaN    False            NaN  0.00000
-        1     True      1.0        1.00000    False        0.00000  0.00000
-        2     True      2.0        0.50000     True        0.50000  0.50000
-        3     True      1.0        1.00000    False        0.00000  0.00000
-        4     True     32.0        0.03125     True        0.03125  0.03125
-        5     True     16.0        0.06250     True        0.06250  0.06250
-        6     True      8.0        0.12500     True        0.12500  0.12500
-        7     True      4.0        0.25000     True        0.25000  0.25000
-        8     True      2.0        0.50000     True        0.50000  0.50000
-        9    False      1.0        1.00000     True        1.00000  1.00000
+        0     True      1.0            NaN    False            NaN      0.0
+        1     True      1.0        1.00000    False            0.0      0.0
+        2     True      2.0        0.50000    False            0.0      0.0
+        3     True      1.0        1.00000    False            0.0      0.0
+        4     True     32.0        0.03125    False            0.0      0.0
+        5     True     16.0        0.06250    False            0.0      0.0
+        6     True      8.0        0.12500    False            0.0      0.0
+        7     True      4.0        0.25000    False            0.0      0.0
+        8     True      2.0        0.50000    False            0.0      0.0
+        9    False      1.0        1.00000     True            1.0      1.0
         >>> op3 = [ops.PROD, ops.POW]
         >>> gp3 = GPTreebank(operators = op3, temp_coeff=0.5, tree_factory=DummyTreeFactory())
         >>> iv3 = [1., 2., 3., 4., 5., 6.]
@@ -1295,7 +1294,7 @@ class GPScoreboard(pd.DataFrame):
                 if exn in cols:
                     cols.remove(exn)
         else:
-            cols = deepcopy(self.def_outputs|{'tree'})
+            cols = deepcopy(set(self.def_outputs)|{'tree'})
         best = self.nlargest(1, 'fitness')[list(cols)]
         best_dic = {}
         for col in cols:
