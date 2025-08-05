@@ -20,6 +20,7 @@ class IDCoder:
         return self
 
     def __next__ (self):
+        print(len(self.chars)**self.n, self.i, 'blonk')
         if(self.i >= len(self.chars)**self.n):
             raise StopIteration()
         id_ = "".join([(self.chars)[(self.i//(len(self.chars)**j))%(len(self.chars))] for j in range(self.n)])
@@ -42,8 +43,13 @@ def make_jsons(alts: dict, cartesians: Container[str], prefix: str|IDCoder):
         else:
             for json_ in jsons:
                 json_.update(sub_dics[0])
+    print('blop', len(jsons))
+    ii = 0
     for j in jsons:
+        print(ii, prefix, type(prefix))
+        ii+=1
         pref = prefix if isinstance(prefix, str) else next(prefix)
+        print('blurp')
         j['out_dir'] = j['out_dir'].replace('*', pref)
         j['model_id'] = j['model_id'].replace('*', pref)
         j['output_prefix'] = j['output_prefix'].replace('*', pref)
@@ -59,36 +65,38 @@ def count_jsons(alts: dict, all_cartesians: Container[Container[str]]):
         sum_ += prod
     return sum_
 
-def make_all_jsons(alts: dict, all_cartesians: Container[Container[str]], chars=ascii_lowercase):
+def make_all_jsons(alts: dict, all_cartesians: Container[Container[str]], chars=ascii_lowercase, k_chars=None, i=0):
     n_chars = len(chars)
     n_jsons = count_jsons(alts, all_cartesians)
-    k_chars = ceil(log(n_jsons, n_chars))
-    idc = IDCoder(k_chars)
+    k_chars = ceil(log(n_jsons, n_chars)) if not k_chars else k_chars 
+    idc = IDCoder(k_chars, i=i)
     for cartesians in all_cartesians:
         for j, jfname in make_jsons(alts, cartesians, prefix=idc):
+            print(jfname)
             yield j, jfname 
 
-def save_all_jsons(alts: dict, all_cartesians: Container[Container[str]], chars=ascii_lowercase):
+def save_all_jsons(alts: dict, all_cartesians: Container[Container[str]], chars=ascii_lowercase, id_len=2, id_start=0):
     os.makedirs('model_json', exist_ok=True)
-    for j, fn in make_all_jsons(alts, all_cartesians, chars=ascii_lowercase):
+    for j, fn in make_all_jsons(alts, all_cartesians, chars=ascii_lowercase, k_chars=id_len, i=id_start):
         json.dump(j, open(fn, 'w'), indent=4)
 
 if __name__ == '__main__':
-    alts = json.load(open('alternatives_2.json'))
+    alts = json.load(open('alternatives_3.json'))
     cartesians = [
-        ['n_agents'], 
-        ['policy_lr', 'value_lr'],
-        ['day_len'], 
-        ['volume'],
-        ['publication_params', 'memory_dims'], 
-        ['num_treebanks'], 
-        ['network_class'], 
-        ['short_term_mem_size'], 
-        ['ppo_clip_val'], 
-        ['def_fitness'], 
-        ['weight_threshhold']
+        ['n_agents', 'volume'] 
+        # ['n_agents'], 
+        # ['policy_lr', 'value_lr'],
+        # ['day_len'], 
+        # ['volume'],
+        # ['publication_params', 'memory_dims'], 
+        # ['num_treebanks'], 
+        # ['network_class'], 
+        # ['short_term_mem_size'], 
+        # ['ppo_clip_val'], 
+        # ['def_fitness'], 
+        # ['weight_threshhold']
     ]
-    save_all_jsons(alts, cartesians)
+    save_all_jsons(alts, cartesians, id_start=50)
     # jsons = make_jsons(alts, ['publication_params'], 'x')
     # print(len(jsons))
     # for i, j in enumerate(jsons):
